@@ -27,9 +27,10 @@ if (process.env.NODE_ENV !== 'production') {
 const express = require('express');
 const cors    = require('cors');
 
-const healthRouter    = require('./src/routes/health');
-const evaluateRouter  = require('./src/routes/evaluate');
-const benchmarkRouter = require('./src/routes/benchmark');
+const healthRouter     = require('./src/routes/health');
+const evaluateRouter   = require('./src/routes/evaluate');
+const benchmarkRouter  = require('./src/routes/benchmark');
+const sendReportRouter = require('./src/routes/send-report');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -53,9 +54,10 @@ app.use(express.json());
 // Routes
 // ---------------------------------------------------------------
 
-app.use('/health',    healthRouter);
-app.use('/evaluate',  evaluateRouter);
-app.use('/benchmark', benchmarkRouter);
+app.use('/health',      healthRouter);
+app.use('/evaluate',    evaluateRouter);
+app.use('/benchmark',   benchmarkRouter);
+app.use('/send-report', sendReportRouter);
 
 // Catch-all for unknown routes — returns a clean JSON 404
 app.use((req, res) => {
@@ -85,6 +87,9 @@ app.listen(PORT, () => {
     }
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
         console.warn('[server] WARNING: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set. /benchmark will fail.');
+    }
+    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        console.warn('[server] WARNING: SMTP_HOST, SMTP_USER, or SMTP_PASS is not set. /send-report will fail.');
     }
 });
 
