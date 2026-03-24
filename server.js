@@ -27,8 +27,9 @@ if (process.env.NODE_ENV !== 'production') {
 const express = require('express');
 const cors    = require('cors');
 
-const healthRouter   = require('./src/routes/health');
-const evaluateRouter = require('./src/routes/evaluate');
+const healthRouter    = require('./src/routes/health');
+const evaluateRouter  = require('./src/routes/evaluate');
+const benchmarkRouter = require('./src/routes/benchmark');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -52,8 +53,9 @@ app.use(express.json());
 // Routes
 // ---------------------------------------------------------------
 
-app.use('/health',   healthRouter);
-app.use('/evaluate', evaluateRouter);
+app.use('/health',    healthRouter);
+app.use('/evaluate',  evaluateRouter);
+app.use('/benchmark', benchmarkRouter);
 
 // Catch-all for unknown routes — returns a clean JSON 404
 app.use((req, res) => {
@@ -80,6 +82,9 @@ app.listen(PORT, () => {
     // but this makes misconfiguration obvious in deployment logs.
     if (!process.env.OPENAI_API_KEY) {
         console.warn('[server] WARNING: OPENAI_API_KEY environment variable is not set. /evaluate will fail.');
+    }
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.warn('[server] WARNING: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not set. /benchmark will fail.');
     }
 });
 
