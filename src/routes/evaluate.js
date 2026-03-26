@@ -3,8 +3,9 @@
 const { Router } = require('express');
 const router = Router();
 
-const { scrapeCompanyPages } = require('../services/scraper');
-const { callOpenAI }         = require('../services/openai');
+const { scrapeCompanyPages }    = require('../services/scraper');
+const { callOpenAI }             = require('../services/openai');
+const { generatePremiumReport } = require('../services/report-generator');
 
 // POST /evaluate
 //
@@ -128,14 +129,44 @@ router.post('/', async (req, res) => {
     console.log(`[evaluate] OpenAI call finished — ${Date.now() - aiStart}ms`);
 
     // ----------------------------------------------------------------
-    // 5. Return — shape matches WordPress snippet exactly
+    // 5A. Generate premium report narrative (Phase 3)
+    //
+    // Runs AFTER evaluationData is populated. Uses evaluationData and
+    // scraped text only — does NOT compute scores, confidence, or
+    // certification status (those belong to the frontend).
+    //
+    // snapshot fields (alignment_level, evidence_strength,
+    // certification_status, benchmark_position) are returned as null
+    // and populated by the frontend after exact score calculations.
+    //
+    // Fail-safe: any failure sets premiumReport to null without
+    // affecting the evaluation response or downstream PDF/email flow.
+    // ----------------------------------------------------------------
+    console.log(`[evaluate] Premium report generation started`);
+    const reportStart = Date.now();
+    let premiumReport = null;
+
+    try {
+        premiumReport = await generatePremiumReport(
+            evaluationData,
+            scrapeResult.combined_text
+        );
+        console.log(`[evaluate] Premium report generation finished — ${Date.now() - reportStart}ms — success: ${premiumReport !== null}`);
+    } catch (err) {
+        // generatePremiumReport is designed not to throw — this is a last-resort catch
+        console.warn(`[evaluate] Premium report threw unexpectedly (${Date.now() - reportStart}ms):`, err.message);
+        premiumReport = null;
+    }
+
+    // ----------------------------------------------------------------
+    // 5B. Return — all original fields preserved, premiumReport added
     //
     // main.js reads:
-    //   resData.success
-    //   resData.data.evaluation   → applied to assessmentState by criterion key
-    //   resData.data.scraped_pages → stored as window.currentScrapedPages
+    //   resData.data.evaluation      → applied to assessmentState by criterion key
+    //   resData.data.scraped_pages   → stored as window.currentScrapedPages
     //   resData.data.scraper_blocked → stored as window.scraperBlocked
-    //   resData.data.message      → shown in warning when scraper_blocked
+    //   resData.data.message         → shown in warning when scraper_blocked
+    //   resData.data.premiumReport   → NEW: stored as window.currentPremiumReport
     //   (scraped_text_preview and limited_access are returned but not consumed)
     // ----------------------------------------------------------------
     const totalMs = Date.now() - requestStart;
@@ -147,7 +178,8 @@ router.post('/', async (req, res) => {
             evaluation:           evaluationData,
             scraped_pages:        scrapeResult.scraped_pages,
             scraped_text_preview: scrapeResult.combined_text.slice(0, 5000),
-            limited_access:       scrapeResult.limited_access
+            limited_access:       scrapeResult.limited_access,
+            premiumReport:        premiumReport
         }
     });
 });
