@@ -185,64 +185,182 @@ Before returning:
 // GOVERNANCE SIGNAL DETECTION
 // ---------------------------------------------------------------
 
-const HIGH_SIGNAL_PATTERNS = [
-    /responsible\s+ai/i,
-    /ai\s+principles/i,
-    /ai\s+governance/i,
-    /governance\s+framework/i,
-    /ai\s+ethics/i,
-    /ethical\s+ai/i,
-    /ai\s+safety/i,
-    /safety\s+framework/i,
-    /ai\s+policy\s+hub/i,
-    /dedicated\s+ai\s+policy/i,
-    /human.{0,10}alignment/i,
-    /trustworthy\s+ai/i,
-    /responsible\s+technology/i,
-    /ai\s+accountability/i,
+// ---------------------------------------------------------------
+// TEXT-BODY patterns — match governance language in page content.
+// Separators are [\s\-_] so "responsible-ai", "responsible ai",
+// and "responsible_ai" all match. Previously \s+ missed hyphens.
+// ---------------------------------------------------------------
+const HIGH_TEXT_PATTERNS = [
+    /responsible[\s\-_]ai/i,
+    /ai[\s\-_]principles/i,
+    /ai[\s\-_]governance/i,
+    /governance[\s\-_]framework/i,
+    /ai[\s\-_]ethics/i,
+    /ethical[\s\-_]ai/i,
+    /ai[\s\-_]safety/i,
+    /safety[\s\-_]framework/i,
+    /ai[\s\-_]policy/i,
+    /human[\s\-_]?alignment/i,
+    /trustworthy[\s\-_]ai/i,
+    /responsible[\s\-_]technology/i,
+    /ai[\s\-_]accountability/i,
 ];
 
-const MEDIUM_SIGNAL_PATTERNS = [
-    /trust\s+cent(?:er|re)/i,
-    /transparency\s+report/i,
-    /transparency\s+disclosure/i,
-    /public\s+commitment/i,
-    /governance\s+disclosure/i,
-    /structured\s+governance/i,
-    /data\s+governance/i,
-    /algorithmic\s+accountability/i,
-    /ai\s+use\s+policy/i,
-    /model\s+card/i,
-    /system\s+card/i,
-    /impact\s+assessment/i,
-    /risk\s+management\s+framework/i,
+const MEDIUM_TEXT_PATTERNS = [
+    /trust[\s\-_]cent(?:er|re)/i,
+    /transparency[\s\-_]report/i,
+    /transparency[\s\-_]disclosure/i,
+    /public[\s\-_]commitment/i,
+    /governance[\s\-_]disclosure/i,
+    /data[\s\-_]governance/i,
+    /algorithmic[\s\-_]accountability/i,
+    /model[\s\-_]card/i,
+    /system[\s\-_]card/i,
+    /impact[\s\-_]assessment/i,
+    /risk[\s\-_]management[\s\-_]framework/i,
 ];
 
-const LOW_SIGNAL_PATTERNS = [
-    /privacy\s+policy/i,
-    /terms\s+of\s+(use|service)/i,
-    /cookie\s+policy/i,
-    /legal\s+notice/i,
+const LOW_TEXT_PATTERNS = [
+    /privacy[\s\-_]policy/i,
+    /terms[\s\-_]of[\s\-_](use|service)/i,
+    /cookie[\s\-_]policy/i,
+    /legal[\s\-_]notice/i,
     /disclaimer/i,
-    /copyright\s+notice/i,
-    /marketing/i,
+    /copyright[\s\-_]notice/i,
 ];
 
+// ---------------------------------------------------------------
+// URL-SLUG patterns — classify URLs from section headers.
+// The scraper emits "--- Content from URL ---" headers even when
+// a page body is blocked or empty. These slugs are the strongest
+// signal available when body content cannot be retrieved.
+// ---------------------------------------------------------------
+
+const HIGH_URL_SLUGS = [
+    'responsible-ai', 'responsible_ai',
+    'ai-policy',      'ai_policy',
+    'ai-principles',  'ai_principles',
+    'ai-ethics',      'ai_ethics',
+    '/ethics',
+    'ai-governance',  'ai_governance',
+    '/governance',
+    'ai-safety',      'ai_safety',
+    '/responsible',
+    'human-alignment','human_alignment',
+];
+
+const MEDIUM_URL_SLUGS = [
+    '/trust',         'trust-center',  'trustcenter',
+    '/transparency',  'transparency-report',
+    '/responsibility',
+    '/security',
+    '/compliance',
+];
+
+const LOW_URL_SLUGS = [
+    '/privacy', '/terms', '/legal', '/cookie', '/disclaimer',
+];
+
+// ---------------------------------------------------------------
+// detectGovernanceSignals
+//
+// Two-pass detection:
+//   Pass 1 — extract URLs from section headers and classify slugs
+//   Pass 2 — run text-body patterns against full combined_text
+//
+// A signal is counted ONCE per unique pattern/slug match.
+// A URL and a body-text match for the same concept count as one
+// hit (URL wins first; text patterns skip if already matched).
+// This prevents double-counting "responsible-ai" URL + body text.
+// ---------------------------------------------------------------
 function detectGovernanceSignals(scrapedText) {
     if (!scrapedText || typeof scrapedText !== 'string') {
         return { high_signals: 0, medium_signals: 0, low_signals: 0, matched_phrases: [] };
     }
+
     const matched = [];
     let high = 0, medium = 0, low = 0;
-    for (const p of HIGH_SIGNAL_PATTERNS) {
-        if (p.test(scrapedText)) { high++; const m = scrapedText.match(p); if (m) matched.push({ tier: 'high', phrase: m[0].trim() }); }
+
+    // ── Pass 1: URL slug classification ──────────────────────────
+    const urls = [];
+    const urlHeaderRe = /---\s*Content from\s+(https?:\/\/\S+?)\s*---/gi;
+    let m;
+    while ((m = urlHeaderRe.exec(scrapedText)) !== null) {
+        urls.push(m[1].toLowerCase());
     }
-    for (const p of MEDIUM_SIGNAL_PATTERNS) {
-        if (p.test(scrapedText)) { medium++; const m = scrapedText.match(p); if (m) matched.push({ tier: 'medium', phrase: m[0].trim() }); }
+
+    // Track which conceptual signals have already been found via URL
+    // so text-body pass does not double-count the same concept.
+    const urlMatchedConcepts = new Set();
+
+    for (const url of urls) {
+        for (const slug of HIGH_URL_SLUGS) {
+            if (url.includes(slug) && !urlMatchedConcepts.has('high:' + slug)) {
+                urlMatchedConcepts.add('high:' + slug);
+                high++;
+                matched.push({ tier: 'high', phrase: slug + ' (url)', source: 'url' });
+                break; // one classification per URL
+            }
+        }
+        for (const slug of MEDIUM_URL_SLUGS) {
+            if (url.includes(slug) && !urlMatchedConcepts.has('medium:' + slug)) {
+                urlMatchedConcepts.add('medium:' + slug);
+                medium++;
+                matched.push({ tier: 'medium', phrase: slug + ' (url)', source: 'url' });
+                break;
+            }
+        }
+        for (const slug of LOW_URL_SLUGS) {
+            if (url.includes(slug) && !urlMatchedConcepts.has('low:' + slug)) {
+                urlMatchedConcepts.add('low:' + slug);
+                low++;
+                matched.push({ tier: 'low', phrase: slug + ' (url)', source: 'url' });
+                break;
+            }
+        }
     }
-    for (const p of LOW_SIGNAL_PATTERNS) {
-        if (p.test(scrapedText)) { low++; const m = scrapedText.match(p); if (m) matched.push({ tier: 'low', phrase: m[0].trim() }); }
+
+    // ── Pass 2: text-body pattern matching ───────────────────────
+    for (const p of HIGH_TEXT_PATTERNS) {
+        const hit = scrapedText.match(p);
+        if (hit) {
+            const phrase = hit[0].trim().toLowerCase();
+            // Only count if not already captured by a URL slug for the same concept
+            const alreadyCounted = matched.some(
+                x => x.tier === 'high' && x.source === 'url' &&
+                     phrase.replace(/[\s_]/g, '-').includes(x.phrase.replace(' (url)', ''))
+            );
+            if (!alreadyCounted) {
+                high++;
+                matched.push({ tier: 'high', phrase, source: 'text' });
+            }
+        }
     }
+    for (const p of MEDIUM_TEXT_PATTERNS) {
+        const hit = scrapedText.match(p);
+        if (hit) {
+            const phrase = hit[0].trim().toLowerCase();
+            const alreadyCounted = matched.some(x => x.tier === 'medium' && x.source === 'url' &&
+                phrase.replace(/[\s_]/g, '-').includes(x.phrase.replace(' (url)', '')));
+            if (!alreadyCounted) {
+                medium++;
+                matched.push({ tier: 'medium', phrase, source: 'text' });
+            }
+        }
+    }
+    for (const p of LOW_TEXT_PATTERNS) {
+        const hit = scrapedText.match(p);
+        if (hit) {
+            const phrase = hit[0].trim().toLowerCase();
+            const alreadyCounted = matched.some(x => x.tier === 'low' && x.source === 'url' &&
+                phrase.replace(/[\s_]/g, '-').includes(x.phrase.replace(' (url)', '')));
+            if (!alreadyCounted) {
+                low++;
+                matched.push({ tier: 'low', phrase, source: 'text' });
+            }
+        }
+    }
+
     return { high_signals: high, medium_signals: medium, low_signals: low, matched_phrases: matched };
 }
 
