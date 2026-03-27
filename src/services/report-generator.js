@@ -441,14 +441,25 @@ function countPillarsWithEvidence(evaluationData) {
     return count;
 }
 
-function classifySignalTier(signals, evaluationData) {
+function classifySignalTier(signals, evaluationData, confPercent) {
     const { high_signals, medium_signals } = signals;
     const pillarsWithEvidence = countPillarsWithEvidence(evaluationData);
-    if (high_signals >= 4 && pillarsWithEvidence >= 4) return { tier: 4, pillarsWithEvidence };
-    if (high_signals >= 3)                             return { tier: 3, pillarsWithEvidence };
-    if (high_signals >= 1)                             return { tier: 2, pillarsWithEvidence };
-    if (medium_signals >= 1)                           return { tier: 1, pillarsWithEvidence };
-    return { tier: 0, pillarsWithEvidence };
+
+    // Tier 4: high signals AND broad pillar coverage
+    // Tier 3.5 downgrade: qualifies for Tier4 by signal count but confidence is low,
+    // suggesting URL slugs exist without confirmed deep body evidence.
+    // Treated as Tier3 for uplift; multi-pillar bonus suppressed.
+    if (high_signals >= 4 && pillarsWithEvidence >= 4) {
+        const conf = typeof confPercent === 'number' ? confPercent : 100;
+        if (conf < EVIDENCE_CAP_THRESHOLD) {
+            return { tier: 3, pillarsWithEvidence, downgraded: true };
+        }
+        return { tier: 4, pillarsWithEvidence, downgraded: false };
+    }
+    if (high_signals >= 3) return { tier: 3, pillarsWithEvidence, downgraded: false };
+    if (high_signals >= 1) return { tier: 2, pillarsWithEvidence, downgraded: false };
+    if (medium_signals >= 1) return { tier: 1, pillarsWithEvidence, downgraded: false };
+    return { tier: 0, pillarsWithEvidence, downgraded: false };
 }
 
 
@@ -459,9 +470,16 @@ function classifySignalTier(signals, evaluationData) {
 // Uplift midpoints by tier — calibrated so strong governance companies
 // (Tier 3-4) land meaningfully above weak companies after uplift.
 // These apply to the frontend's exact claimedScore as the base.
-// Tier ranges: Tier1=+3–7, Tier2=+10–20, Tier3=+22–35, Tier4=+35–50
-const UPLIFT_MIDPOINTS = { 1: 5, 2: 15, 3: 29, 4: 42 };
+// Tier ranges: Tier1=+3–7, Tier2=+10–20, Tier3=+22–35, Tier4=+25–45
+// Tier4 midpoint reduced (42→35) so high-signal companies with strong conf
+// score meaningfully but don't over-inflate relative to evidence depth.
+const UPLIFT_MIDPOINTS = { 1: 5, 2: 15, 3: 29, 4: 35 };
 const SCORE_CAP = 85;
+
+// Evidence-based score cap: prevents high score + low evidence contradiction.
+// Applied when exact confPercent is available (frontend) and when proxy is used (backend).
+const EVIDENCE_CAP_THRESHOLD = 70;  // confPercent below this triggers the cap
+const EVIDENCE_CAP_VALUE     = 75;  // max score when evidence is below threshold
 
 
 // ---------------------------------------------------------------
@@ -561,16 +579,35 @@ function getInterpretationFrame(signalProfile) {
 
 
 
-function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent) {
-    if (tier === 0) return { calibrated_score: rawScore, uplift_applied: 0, multi_pillar_bonus: 0, tier };
+function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent, downgraded) {
+    if (tier === 0) return { calibrated_score: rawScore, uplift_applied: 0, multi_pillar_bonus: 0, tier, downgraded: false };
     let uplift = UPLIFT_MIDPOINTS[tier] || 0;
+
     // Confidence modifier: reduce uplift 20% when evidence strength < 50%
     if (typeof confPercent === 'number' && confPercent < 50) {
         uplift = Math.round(uplift * 0.8);
     }
-    const multiPillarBonus = pillarsWithEvidence >= 4 ? 8 : 0;
-    const finalScore = Math.min(Math.max(rawScore + uplift + multiPillarBonus, 1), SCORE_CAP);
-    return { calibrated_score: Math.round(finalScore * 10) / 10, uplift_applied: uplift, multi_pillar_bonus: multiPillarBonus, tier };
+
+    // Multi-pillar bonus suppressed for Tier3.5 downgrades —
+    // the broad coverage exists only at URL-slug level, not confirmed rubric depth.
+    const multiPillarBonus = (pillarsWithEvidence >= 4 && !downgraded) ? 8 : 0;
+
+    let finalScore = Math.min(Math.max(rawScore + uplift + multiPillarBonus, 1), SCORE_CAP);
+
+    // Evidence-based cap: prevents high score + low confidence contradiction.
+    // Applied here using the proxy confPercent; the frontend re-applies with exact value.
+    if (typeof confPercent === 'number' && confPercent < EVIDENCE_CAP_THRESHOLD) {
+        finalScore = Math.min(finalScore, EVIDENCE_CAP_VALUE);
+    }
+
+    return {
+        calibrated_score:   Math.round(finalScore * 10) / 10,
+        uplift_applied:     uplift,
+        multi_pillar_bonus: multiPillarBonus,
+        tier,
+        downgraded:         !!downgraded,
+        evidence_cap_applied: (typeof confPercent === 'number' && confPercent < EVIDENCE_CAP_THRESHOLD)
+    };
 }
 
 
@@ -709,10 +746,12 @@ async function generatePremiumReport(evaluationData, scrapedText) {
     }
 
     // Step 3: Tier and calibration
-    const { tier, pillarsWithEvidence } = classifySignalTier(signals, evaluationData);
+    // confPercent not available at backend — pass null so Tier3.5 downgrade
+    // fires conservatively. Frontend re-applies with exact confPercent.
+    const { tier, pillarsWithEvidence, downgraded } = classifySignalTier(signals, evaluationData, null);
     const rawScoreProxy = deriveRawScoreProxy(evaluationData);
     // confPercent not available here; frontend applies its own exact confPercent
-    const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null);
+    const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null, downgraded);
     console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} calibratedProxy:${calibration.calibrated_score} uplift:${calibration.uplift_applied}`);
 
     // Step 4: Generate narrative report
@@ -771,9 +810,14 @@ async function generatePremiumReport(evaluationData, scrapedText) {
         matched_phrases: signals.matched_phrases.slice(0, 10)
     };
     report.calibration = {
-        tier, uplift_applied: calibration.uplift_applied,
-        multi_pillar_bonus: calibration.multi_pillar_bonus,
-        raw_score_proxy: rawScoreProxy, score_cap: SCORE_CAP
+        tier,
+        uplift_applied:      calibration.uplift_applied,
+        multi_pillar_bonus:  calibration.multi_pillar_bonus,
+        raw_score_proxy:     rawScoreProxy,
+        score_cap:           SCORE_CAP,
+        evidence_cap_threshold: EVIDENCE_CAP_THRESHOLD,
+        evidence_cap_value:     EVIDENCE_CAP_VALUE,
+        downgraded:          calibration.downgraded
     };
 
     return report;
