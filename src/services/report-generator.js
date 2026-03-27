@@ -166,6 +166,16 @@ AVOID:
 - "leverage"
 - "synergies"
 - "suboptimal"
+- "no evidence found" (when signals are present — use tier-based language instead)
+- "limited across all areas" (when high signals >= 3 — acknowledge presence, describe gaps)
+- "no governance" or "absence of governance" (when signal evidence exists)
+
+SIGNAL-AWARE NARRATIVE RULES (MANDATORY):
+- If the user prompt says high-value signals >= 3: the executive_summary MUST acknowledge governance signals are present. It must describe gaps, not absence.
+- If the user prompt marks a pillar as [SIGNAL PRESENT]: that pillar's status_label must be "Developing" or better.
+- evidence_summary.summary must use the exact evidence language tier from the interpretation frame in the user prompt.
+- The certification_statement must reflect the actual evidence tier, not assume no evidence exists.
+- Never contradict the signal profile in the narrative. If signals are high, the narrative must reflect that.
 
 -------------------------------------
 FINAL VALIDATION (MANDATORY)
@@ -178,7 +188,9 @@ Before returning:
 - Ensure no text outside the JSON object
 - Ensure every improvement area has what_to_do_next
 - Ensure every pillar has a next_step
-- Ensure language is simple and clear`;
+- Ensure language is simple and clear
+- Ensure narrative language matches signal tier (no "no evidence" when high signals >= 3)
+- Ensure pillars marked [SIGNAL PRESENT] have status_label of "Developing" or better`;
 
 
 // ---------------------------------------------------------------
@@ -447,8 +459,107 @@ function classifySignalTier(signals, evaluationData) {
 // Uplift midpoints by tier — calibrated so strong governance companies
 // (Tier 3-4) land meaningfully above weak companies after uplift.
 // These apply to the frontend's exact claimedScore as the base.
-const UPLIFT_MIDPOINTS = { 1: 5, 2: 15, 3: 30, 4: 42 };
+// Tier ranges: Tier1=+3–7, Tier2=+10–20, Tier3=+22–35, Tier4=+35–50
+const UPLIFT_MIDPOINTS = { 1: 5, 2: 15, 3: 29, 4: 42 };
 const SCORE_CAP = 85;
+
+
+// ---------------------------------------------------------------
+// SIGNAL-TO-PILLAR MAPPING
+//
+// Maps detected high/medium signal slugs to the HAI pillars they
+// most directly support. Used to build the interpretation frame
+// that prevents "no evidence" language when signals ARE present.
+// ---------------------------------------------------------------
+const SIGNAL_TO_PILLAR = {
+    // High-value URL slugs
+    'responsible-ai':   ['Trust', 'Accountability', 'Purpose'],
+    'ai-principles':    ['Trust', 'Accountability', 'Purpose'],
+    'ai-ethics':        ['Trust', 'Purpose'],
+    '/ethics':          ['Trust', 'Purpose'],
+    'ai-governance':    ['Accountability', 'Transparency'],
+    '/governance':      ['Accountability', 'Transparency'],
+    'ai-policy':        ['Accountability', 'Transparency'],
+    'ai-safety':        ['Safety'],
+    '/responsible':     ['Trust', 'Accountability'],
+    'human-alignment':  ['Trust', 'Purpose', 'Impact'],
+    // Medium-value URL slugs
+    '/trust':           ['Trust'],
+    'trust-center':     ['Trust', 'Transparency'],
+    '/transparency':    ['Transparency'],
+    'transparency-report': ['Transparency'],
+    '/security':        ['Safety', 'Trust'],
+    '/compliance':      ['Accountability'],
+    '/responsibility':  ['Accountability', 'Purpose'],
+    // Text-body phrases (normalised)
+    'responsible ai':   ['Trust', 'Accountability', 'Purpose'],
+    'ai principles':    ['Trust', 'Accountability'],
+    'ai governance':    ['Accountability', 'Transparency'],
+    'governance framework': ['Accountability'],
+    'ai ethics':        ['Trust', 'Purpose'],
+    'ethical ai':       ['Trust', 'Purpose'],
+    'ai safety':        ['Safety'],
+    'ai policy':        ['Accountability', 'Transparency'],
+    'human alignment':  ['Trust', 'Purpose', 'Impact'],
+    'transparency report': ['Transparency'],
+    'data governance':  ['Transparency', 'Accountability'],
+    'impact assessment': ['Impact'],
+};
+
+/**
+ * Returns the set of pillar names evidenced by detected signals.
+ * A pillar is "evidenced by signals" even when the rubric item count is 0
+ * because signals come from URL slugs on blocked pages.
+ */
+function getPillarsEvidencedBySignals(signalProfile) {
+    const pillarSet = new Set();
+    if (!signalProfile || !signalProfile.matched_phrases) return pillarSet;
+    for (const match of signalProfile.matched_phrases) {
+        const key = match.phrase.replace(' (url)', '').replace('[url]', '').trim().toLowerCase();
+        const pillars = SIGNAL_TO_PILLAR[key];
+        if (pillars) pillars.forEach(p => pillarSet.add(p));
+    }
+    return pillarSet;
+}
+
+/**
+ * Returns the tier-appropriate evidence language for use in the prompt.
+ * Prevents binary "no evidence" language when signals are present.
+ */
+function getInterpretationFrame(signalProfile) {
+    if (!signalProfile) return null;
+    const h = signalProfile.high_signals || 0;
+    const m = signalProfile.medium_signals || 0;
+    const total = h + m;
+
+    if (h >= 3) {
+        return {
+            evidence_language: 'Strong governance signals identified',
+            pillar_baseline:   'Foundational governance signals are present, but coverage is uneven across pillars.',
+            forbidden_phrases: ['no evidence found', 'limited across all areas', 'no governance', 'absence of governance'],
+            executive_frame:   'Governance signals are present and meaningful. The evaluation reflects incomplete evidence visibility, not the absence of governance practices.',
+        };
+    }
+    if (h >= 1 || m >= 2) {
+        return {
+            evidence_language: 'Partial governance signals identified',
+            pillar_baseline:   'Some governance commitments are visible, but several pillars lack confirmed evidence.',
+            forbidden_phrases: ['no evidence found', 'no governance present'],
+            executive_frame:   'Partial governance signals are visible. The assessment reflects limited evidence coverage, not a complete absence of governance.',
+        };
+    }
+    if (total >= 1) {
+        return {
+            evidence_language: 'Limited visible governance signals',
+            pillar_baseline:   'Minimal governance signals were detected. Coverage across the six pillars is largely unconfirmed.',
+            forbidden_phrases: ['complete absence of governance'],
+            executive_frame:   'Limited governance signals were detected. More visible governance documentation would improve this assessment.',
+        };
+    }
+    return null;
+}
+
+
 
 function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent) {
     if (tier === 0) return { calibrated_score: rawScore, uplift_applied: 0, multi_pillar_bonus: 0, tier };
@@ -492,23 +603,57 @@ function buildUserPrompt(evaluationData, scrapedText, signalProfile) {
     let pillarSummaries = '';
     let totalItems = 0, pillarsWithEvidence = 0;
 
+    // Pillars evidenced by URL signals — these must not be described as "no evidence"
+    // even when rubric item counts are zero (blocked page bodies).
+    const signalEvidencedPillars = getPillarsEvidencedBySignals(signalProfile);
+    const frame = getInterpretationFrame(signalProfile);
+
     for (const [pillarName, criteriaIds] of Object.entries(_PILLAR_CRITERIA)) {
-        pillarSummaries += `\n${pillarName}:\n`;
+        const pillarHasSignal = signalEvidencedPillars.has(pillarName);
+        pillarSummaries += `\n${pillarName}${pillarHasSignal ? ' [SIGNAL PRESENT — do NOT describe as zero evidence]' : ''}:\n`;
         let pillarItems = 0;
         for (const critId of criteriaIds) {
             const crit      = evaluationData[critId];
             const level     = (crit && crit.level) || 1;
             const itemCount = (crit && Array.isArray(crit.items)) ? crit.items.length : 0;
-            pillarSummaries += `  - ${critId}: level=${level} (${LEVEL_LABELS[level] || 'Unknown'}), evidence_items_found=${itemCount}\n`;
+            // If this pillar has a signal but rubric level is 1, show it as baseline Initial
+            // so the AI understands "signal detected but depth unconfirmed" not "absent"
+            const effectiveLevel = (pillarHasSignal && level === 1) ? '1→2 (signal detected, rubric depth unconfirmed)' : `${level} (${LEVEL_LABELS[level] || 'Unknown'})`;
+            pillarSummaries += `  - ${critId}: level=${effectiveLevel}, evidence_items_found=${itemCount}\n`;
             pillarItems += itemCount;
             totalItems  += itemCount;
         }
-        if (pillarItems > 0) pillarsWithEvidence++;
+        if (pillarItems > 0 || pillarHasSignal) pillarsWithEvidence++;
     }
 
+    const evidencedPillarList = signalEvidencedPillars.size > 0
+        ? Array.from(signalEvidencedPillars).join(', ')
+        : 'none confirmed by signals';
+
     const signalCtx = signalProfile
-        ? `High-value signals: ${signalProfile.high_signals}\nMedium-value signals: ${signalProfile.medium_signals}\nLow-value signals: ${signalProfile.low_signals}\nSample matches: ${signalProfile.matched_phrases.slice(0,6).map(m=>`"${m.phrase}"[${m.tier}]`).join(', ') || 'none'}`
+        ? `High-value signals: ${signalProfile.high_signals}
+Medium-value signals: ${signalProfile.medium_signals}
+Low-value signals: ${signalProfile.low_signals}
+Evidence language tier: ${frame ? frame.evidence_language : 'Limited visible governance signals'}
+Pillars evidenced by signals: ${evidencedPillarList}
+Sample matches: ${signalProfile.matched_phrases.slice(0,8).map(m=>`"${m.phrase}"[${m.tier}]`).join(', ') || 'none'}`
         : 'Signal profile unavailable.';
+
+    // Build interpretation constraints for the AI
+    const interpretationSection = frame ? `
+INTERPRETATION FRAME (MANDATORY — follow exactly):
+- Evidence language to use: "${frame.evidence_language}"
+- Pillar baseline statement: "${frame.pillar_baseline}"
+- Executive summary frame: "${frame.executive_frame}"
+- FORBIDDEN phrases (do NOT use any of these): ${frame.forbidden_phrases.map(p => `"${p}"`).join(', ')}
+- Pillars evidenced by signals MUST receive status_label of "Developing" or better, never "Needs Attention" unless no signal exists for that pillar.
+- The executive_summary MUST acknowledge the presence of governance signals, not their absence.
+- The evidence_summary fields MUST use: "${frame.evidence_language}" as their summary.
+` : `
+INTERPRETATION FRAME:
+- Only low-value signals detected. Use "Limited visible governance signals" in evidence_summary.
+- Do not claim complete absence of governance — state that visibility is limited.
+`;
 
     const textPreview = scrapedText
         ? scrapedText.slice(0, 8000) + (scrapedText.length > 8000 ? '\n... [PREVIEW TRUNCATED]' : '')
@@ -516,19 +661,21 @@ function buildUserPrompt(evaluationData, scrapedText, signalProfile) {
 
     return `Below is the HAI evaluation result for a company. Use it to generate the premium report.
 
-DO NOT invent score numbers. DO NOT fill in snapshot fields \u2014 leave them null.
+DO NOT invent score numbers. DO NOT fill in snapshot fields — leave them null.
+FOLLOW the interpretation frame exactly. It overrides raw rubric levels for narrative language.
 
 -------------------------------------
 CRITERION RESULTS BY PILLAR
 -------------------------------------
 ${pillarSummaries}
 SUMMARY: ${totalItems} total evidence items found across ${pillarsWithEvidence} of 6 pillars.
+NOTE: Pillars marked [SIGNAL PRESENT] have governance evidence from URL signals even if rubric item count is 0.
 
 -------------------------------------
 GOVERNANCE SIGNAL PROFILE
 -------------------------------------
 ${signalCtx}
-
+${interpretationSection}
 -------------------------------------
 SCRAPED GOVERNANCE TEXT (PREVIEW)
 -------------------------------------
