@@ -444,7 +444,10 @@ function classifySignalTier(signals, evaluationData) {
 // CALIBRATION (BOUNDED UPLIFT)
 // ---------------------------------------------------------------
 
-const UPLIFT_MIDPOINTS = { 1: 4, 2: 11, 3: 24, 4: 35 };
+// Uplift midpoints by tier — calibrated so strong governance companies
+// (Tier 3-4) land meaningfully above weak companies after uplift.
+// These apply to the frontend's exact claimedScore as the base.
+const UPLIFT_MIDPOINTS = { 1: 5, 2: 15, 3: 30, 4: 42 };
 const SCORE_CAP = 85;
 
 function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent) {
@@ -454,7 +457,7 @@ function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent) {
     if (typeof confPercent === 'number' && confPercent < 50) {
         uplift = Math.round(uplift * 0.8);
     }
-    const multiPillarBonus = pillarsWithEvidence >= 4 ? 5 : 0;
+    const multiPillarBonus = pillarsWithEvidence >= 4 ? 8 : 0;
     const finalScore = Math.min(Math.max(rawScore + uplift + multiPillarBonus, 1), SCORE_CAP);
     return { calibrated_score: Math.round(finalScore * 10) / 10, uplift_applied: uplift, multi_pillar_bonus: multiPillarBonus, tier };
 }
