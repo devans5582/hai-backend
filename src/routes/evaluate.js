@@ -87,7 +87,8 @@ router.post('/', async (req, res) => {
 
     console.log(`[evaluate] Scraping finished — ${Date.now() - scrapeStart}ms — pages: ${scrapeResult.scraped_pages ? scrapeResult.scraped_pages.length : 0} — blocked: ${!!scrapeResult.scraper_blocked}`);
 
-    // Scraper returns scraper_blocked: true when the site was completely unreachable
+    // scraper_blocked: true only fires when URL is invalid or buildFallbackResult
+    // itself failed. In that case there is no text at all — return early.
     if (scrapeResult.scraper_blocked) {
         console.warn(`[evaluate] Returning scraper_blocked result — ${targetUrl}`);
         return res.status(200).json({
@@ -102,6 +103,14 @@ router.post('/', async (req, res) => {
                 message:          scrapeResult.message || 'Evidence could not be automatically obtained from the company website.'
             }
         });
+    }
+
+    // partial_scrape: true means the site was unreachable but FORCED_PATHS stubs
+    // were generated. Signal detection will run on stub URLs. The result is tagged
+    // as partial_evaluation so the report reflects limited evidence.
+    const isPartialScrape = !!scrapeResult.partial_scrape;
+    if (isPartialScrape) {
+        console.log(`[evaluate] Partial scrape — homepage blocked, continuing with URL stubs — ${targetUrl}`);
     }
 
     // ----------------------------------------------------------------
@@ -155,7 +164,8 @@ router.post('/', async (req, res) => {
     try {
         premiumReport = await generatePremiumReport(
             evaluationData,
-            scrapeResult.combined_text
+            scrapeResult.combined_text,
+            { partialScrape: isPartialScrape, limitedAccess: !!scrapeResult.limited_access }
         );
         console.log(`[evaluate] Premium report generation finished — ${Date.now() - reportStart}ms — success: ${premiumReport !== null}`);
     } catch (err) {
@@ -197,6 +207,7 @@ router.post('/', async (req, res) => {
             scraped_pages:        scrapeResult.scraped_pages,
             scraped_text_preview: scrapeResult.combined_text.slice(0, 5000),
             limited_access:       scrapeResult.limited_access,
+            partial_scrape:       isPartialScrape,
             premiumReport:        premiumReport,
             evaluation_state:     evaluationState,
             calibration:          calibration
