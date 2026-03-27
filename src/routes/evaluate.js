@@ -172,6 +172,18 @@ router.post('/', async (req, res) => {
     const totalMs = Date.now() - requestStart;
     console.log(`[evaluate] Request complete — ${totalMs}ms — ${targetUrl}`);
 
+    // evaluation_state and calibration are surfaced at the top level of data{}
+    // so the frontend can read them without conditional premiumReport access.
+    // When premiumReport is an insufficient_evidence object, evaluation_state
+    // is 'insufficient_evidence' and calibration is null.
+    // When premiumReport is null (backend error), both are null.
+    const evaluationState = premiumReport && premiumReport.evaluation_state
+        ? premiumReport.evaluation_state
+        : null;
+    const calibration = premiumReport && premiumReport.calibration
+        ? premiumReport.calibration
+        : null;
+
     return res.status(200).json({
         success: true,
         data: {
@@ -179,7 +191,9 @@ router.post('/', async (req, res) => {
             scraped_pages:        scrapeResult.scraped_pages,
             scraped_text_preview: scrapeResult.combined_text.slice(0, 5000),
             limited_access:       scrapeResult.limited_access,
-            premiumReport:        premiumReport
+            premiumReport:        premiumReport,
+            evaluation_state:     evaluationState,
+            calibration:          calibration
         }
     });
 });
