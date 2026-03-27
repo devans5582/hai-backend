@@ -65,7 +65,14 @@ async function scrapeCompanyPages(targetUrl) {
         const body = resp.data ? String(resp.data) : '';
         if (!body || body.trim().length === 0) {
             console.warn(`[scraper] Homepage returned empty body — ${targetUrl}`);
-            return blocked('Evidence could not be automatically obtained from the company website.');
+            // Return minimal fallback with forced-path stubs rather than hard block.
+            // Signal detection can still classify slugs from FORCED_PATHS.
+            return buildFallbackResult(targetUrl, 'Homepage returned empty body.');
+        }
+        // Check for firewall/captcha on homepage itself
+        if (isBlockedPage(body)) {
+            console.warn(`[scraper] Homepage blocked by firewall — ${targetUrl}`);
+            return buildFallbackResult(targetUrl, 'Homepage blocked by firewall or CAPTCHA.');
         }
         homepageHtml = body;
     } catch (err) {
@@ -74,7 +81,7 @@ async function scrapeCompanyPages(targetUrl) {
         } else {
             console.warn(`[scraper] Homepage fetch failed (${err.code || err.message}) — ${targetUrl}`);
         }
-        return blocked('Evidence could not be automatically obtained from the company website.');
+        return buildFallbackResult(targetUrl, 'Homepage could not be fetched.');
     }
 
     // ----------------------------------------------------------------
@@ -132,14 +139,20 @@ async function scrapeCompanyPages(targetUrl) {
 
             if (BLOCK_STATUS_CODES.includes(statusCode)) {
                 console.log(`[scraper] Skipped HTTP ${statusCode} — ${pageUrl}`);
+                // Add URL stub so signal detection can classify this slug
+                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — HTTP ${statusCode}]\n`;
                 continue;
             }
             if (isBlockedPage(pageHtml)) {
                 console.log(`[scraper] Skipped firewall/captcha — ${pageUrl}`);
+                // Add URL stub so signal detection can classify this slug
+                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — firewall]\n`;
                 continue;
             }
             if (pageHtml.trim().length < 300) {
                 console.log(`[scraper] Skipped body too short — ${pageUrl}`);
+                // Add URL stub — slug may still be meaningful even without body text
+                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page empty]\n`;
                 continue;
             }
 
@@ -149,11 +162,13 @@ async function scrapeCompanyPages(targetUrl) {
             console.log(`[scraper] OK ${pageUrl} (${cleanText.length} chars)`);
 
         } catch (err) {
-            // Per-page errors are logged and skipped — matches WordPress behavior
+            // Per-page errors: still add URL stub for signal detection
             if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
                 console.log(`[scraper] Skipped timeout (10s) — ${pageUrl}`);
+                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — timeout]\n`;
             } else {
                 console.log(`[scraper] Skipped fetch error (${err.code || err.message}) — ${pageUrl}`);
+                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — fetch error]\n`;
             }
         }
     }
@@ -189,6 +204,36 @@ async function scrapeCompanyPages(targetUrl) {
 
 function blocked(message) {
     return { scraper_blocked: true, message };
+}
+
+/**
+ * buildFallbackResult — used when the homepage is unreachable but we can
+ * still generate URL stubs for FORCED_PATHS. Signal detection in
+ * report-generator reads these stubs to classify governance slugs.
+ * Returns scraper_blocked: false with partial_scrape: true so evaluate.js
+ * knows to treat this as a partial evaluation, not a full block.
+ */
+function buildFallbackResult(targetUrl, reason) {
+    let parsedBase;
+    try { parsedBase = new URL(targetUrl); } catch (_) { return blocked(reason); }
+    const baseOrigin = parsedBase.origin;
+
+    // Build stub text for all forced paths — even blocked ones are useful slugs
+    let fallbackText = `[Fallback evaluation — ${reason}]\n`;
+    fallbackText += `[Homepage: ${targetUrl}]\n`;
+    for (const path of FORCED_PATHS) {
+        fallbackText += `\n--- Content from ${baseOrigin + path} ---\n[page not retrieved]\n`;
+    }
+
+    console.log(`[scraper] buildFallbackResult — ${FORCED_PATHS.length} path stubs generated for ${targetUrl}`);
+    return {
+        scraper_blocked: false,
+        partial_scrape:  true,
+        combined_text:   fallbackText,
+        scraped_pages:   [],
+        limited_access:  true,
+        message:         reason
+    };
 }
 
 function isBlockedPage(html) {
