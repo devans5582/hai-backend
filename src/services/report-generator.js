@@ -200,8 +200,10 @@ Before returning:
 // ---------------------------------------------------------------
 // TEXT-BODY patterns — match governance language in page content.
 // Separators are [\s\-_] so "responsible-ai", "responsible ai",
-// and "responsible_ai" all match. Previously \s+ missed hyphens.
+// and "responsible_ai" all match.
 // ---------------------------------------------------------------
+
+// HIGH: AI-specific governance language
 const HIGH_TEXT_PATTERNS = [
     /responsible[\s\-_]ai/i,
     /ai[\s\-_]principles/i,
@@ -218,6 +220,7 @@ const HIGH_TEXT_PATTERNS = [
     /ai[\s\-_]accountability/i,
 ];
 
+// MEDIUM: Structured transparency and AI-adjacent governance language
 const MEDIUM_TEXT_PATTERNS = [
     /trust[\s\-_]cent(?:er|re)/i,
     /transparency[\s\-_]report/i,
@@ -232,6 +235,52 @@ const MEDIUM_TEXT_PATTERNS = [
     /risk[\s\-_]management[\s\-_]framework/i,
 ];
 
+// ENTERPRISE: Non-AI governance signals common in regulated industries.
+// These count toward medium_signals — enough to pass the evaluation gate
+// and earn Tier-1 uplift, but AI-specific signals still earn higher tiers.
+// Rationale: a company with internal controls, audit committees, and risk
+// frameworks has meaningful governance infrastructure even without an
+// explicit AI policy. Enterprise governance should not return "No Score".
+const ENTERPRISE_TEXT_PATTERNS = [
+    // Accountability / oversight
+    /(?:audit|risk|governance)[\s\-_]committee/i,
+    /board[\s\-_](?:oversight|governance|committee)/i,
+    /internal[\s\-_]controls?/i,
+    /operational[\s\-_](?:oversight|resilience|risk)/i,
+    /enterprise[\s\-_](?:risk|governance|compliance)/i,
+    /(?:risk|compliance)[\s\-_](?:framework|program|management)/i,
+    /regulatory[\s\-_]compliance/i,
+    /sox[\s\-_]compliance|sarbanes.oxley/i,
+
+    // Safety and incident prevention
+    /safety[\s\-_]protocols?/i,
+    /incident[\s\-_](?:prevention|management|response)[\s\-_](?:plan|policy|framework)/i,
+    /business[\s\-_]continuity/i,
+    /disaster[\s\-_]recovery/i,
+    /cybersecurity[\s\-_](?:framework|program|policy|resilience)/i,
+    /information[\s\-_]security[\s\-_](?:policy|framework|program)/i,
+
+    // Transparency and reporting
+    /esg[\s\-_](?:report|disclosure|framework|commitment)/i,
+    /sustainability[\s\-_]report/i,
+    /corporate[\s\-_](?:governance|responsibility)[\s\-_]report/i,
+    /annual[\s\-_]report/i,
+    /proxy[\s\-_]statement/i,
+
+    // Purpose and mission alignment
+    /(?:corporate|social)[\s\-_]responsibility/i,
+    /ethical[\s\-_](?:sourcing|conduct|standards?|principles?)/i,
+    /code[\s\-_]of[\s\-_](?:conduct|ethics)/i,
+    /human[\s\-_]rights[\s\-_](?:policy|commitment|statement)/i,
+    /diversity[\s\-_](?:equity|inclusion|and)/i,
+
+    // Impact measurement
+    /measurable[\s\-_]impact/i,
+    /community[\s\-_](?:investment|impact|initiative)/i,
+    /stakeholder[\s\-_]engagement/i,
+    /whistleblower[\s\-_](?:policy|program|hotline)/i,
+];
+
 const LOW_TEXT_PATTERNS = [
     /privacy[\s\-_]policy/i,
     /terms[\s\-_]of[\s\-_](use|service)/i,
@@ -244,8 +293,7 @@ const LOW_TEXT_PATTERNS = [
 // ---------------------------------------------------------------
 // URL-SLUG patterns — classify URLs from section headers.
 // The scraper emits "--- Content from URL ---" headers even when
-// a page body is blocked or empty. These slugs are the strongest
-// signal available when body content cannot be retrieved.
+// a page body is blocked or empty.
 // ---------------------------------------------------------------
 
 const HIGH_URL_SLUGS = [
@@ -269,6 +317,25 @@ const MEDIUM_URL_SLUGS = [
     '/compliance',
 ];
 
+// Enterprise URL slugs — count as medium_signals
+const ENTERPRISE_URL_SLUGS = [
+    '/esg',           'esg-report',     'esg-disclosure',
+    '/sustainability','sustainability-report',
+    '/risk',          'risk-management','enterprise-risk',
+    '/governance',    'corporate-governance',
+    '/audit',         'internal-audit',
+    '/compliance',    'regulatory-compliance',
+    '/cybersecurity', 'information-security',
+    '/csr',           'corporate-responsibility',
+    '/dei',           'diversity-equity',
+    '/ethics',        'code-of-conduct', 'code-of-ethics',
+    '/annual-report', '/proxy',
+    '/investor-relations',
+    '/safety',        'health-and-safety',
+    '/whistleblower', 'speak-up',
+    '/human-rights',
+];
+
 const LOW_URL_SLUGS = [
     '/privacy', '/terms', '/legal', '/cookie', '/disclaimer',
 ];
@@ -287,11 +354,11 @@ const LOW_URL_SLUGS = [
 // ---------------------------------------------------------------
 function detectGovernanceSignals(scrapedText) {
     if (!scrapedText || typeof scrapedText !== 'string') {
-        return { high_signals: 0, medium_signals: 0, low_signals: 0, matched_phrases: [] };
+        return { high_signals: 0, medium_signals: 0, low_signals: 0, enterprise_signals: 0, matched_phrases: [] };
     }
 
     const matched = [];
-    let high = 0, medium = 0, low = 0;
+    let high = 0, medium = 0, low = 0, enterprise = 0;
 
     // ── Pass 1: URL slug classification ──────────────────────────
     const urls = [];
@@ -301,19 +368,19 @@ function detectGovernanceSignals(scrapedText) {
         urls.push(m[1].toLowerCase());
     }
 
-    // Track which conceptual signals have already been found via URL
-    // so text-body pass does not double-count the same concept.
     const urlMatchedConcepts = new Set();
 
     for (const url of urls) {
+        // High: AI-specific slugs
         for (const slug of HIGH_URL_SLUGS) {
             if (url.includes(slug) && !urlMatchedConcepts.has('high:' + slug)) {
                 urlMatchedConcepts.add('high:' + slug);
                 high++;
                 matched.push({ tier: 'high', phrase: slug + ' (url)', source: 'url' });
-                break; // one classification per URL
+                break;
             }
         }
+        // Medium: structured transparency slugs
         for (const slug of MEDIUM_URL_SLUGS) {
             if (url.includes(slug) && !urlMatchedConcepts.has('medium:' + slug)) {
                 urlMatchedConcepts.add('medium:' + slug);
@@ -322,6 +389,17 @@ function detectGovernanceSignals(scrapedText) {
                 break;
             }
         }
+        // Enterprise: non-AI governance slugs (counts toward medium_signals)
+        for (const slug of ENTERPRISE_URL_SLUGS) {
+            if (url.includes(slug) && !urlMatchedConcepts.has('enterprise:' + slug)) {
+                urlMatchedConcepts.add('enterprise:' + slug);
+                enterprise++;
+                medium++;  // enterprise signals count as medium so evaluation gate passes
+                matched.push({ tier: 'enterprise', phrase: slug + ' (url)', source: 'url' });
+                break;
+            }
+        }
+        // Low: generic legal slugs
         for (const slug of LOW_URL_SLUGS) {
             if (url.includes(slug) && !urlMatchedConcepts.has('low:' + slug)) {
                 urlMatchedConcepts.add('low:' + slug);
@@ -337,7 +415,6 @@ function detectGovernanceSignals(scrapedText) {
         const hit = scrapedText.match(p);
         if (hit) {
             const phrase = hit[0].trim().toLowerCase();
-            // Only count if not already captured by a URL slug for the same concept
             const alreadyCounted = matched.some(
                 x => x.tier === 'high' && x.source === 'url' &&
                      phrase.replace(/[\s_]/g, '-').includes(x.phrase.replace(' (url)', ''))
@@ -352,11 +429,32 @@ function detectGovernanceSignals(scrapedText) {
         const hit = scrapedText.match(p);
         if (hit) {
             const phrase = hit[0].trim().toLowerCase();
-            const alreadyCounted = matched.some(x => x.tier === 'medium' && x.source === 'url' &&
+            const alreadyCounted = matched.some(x =>
+                (x.tier === 'medium' || x.tier === 'enterprise') && x.source === 'url' &&
                 phrase.replace(/[\s_]/g, '-').includes(x.phrase.replace(' (url)', '')));
             if (!alreadyCounted) {
                 medium++;
                 matched.push({ tier: 'medium', phrase, source: 'text' });
+            }
+        }
+    }
+    // Enterprise text patterns — each unique match counts as medium
+    const seenEnterprise = new Set();
+    for (const p of ENTERPRISE_TEXT_PATTERNS) {
+        const hit = scrapedText.match(p);
+        if (hit) {
+            const phrase = hit[0].trim().toLowerCase();
+            if (!seenEnterprise.has(phrase)) {
+                seenEnterprise.add(phrase);
+                // Only count if not already captured by URL pass
+                const alreadyCounted = matched.some(x => x.tier === 'enterprise' &&
+                    x.source === 'url' && phrase.replace(/[\s_]/g, '-').includes(
+                        x.phrase.replace(' (url)', '')));
+                if (!alreadyCounted) {
+                    enterprise++;
+                    medium++;  // enterprise signals count as medium
+                    matched.push({ tier: 'enterprise', phrase, source: 'text' });
+                }
             }
         }
     }
@@ -373,7 +471,13 @@ function detectGovernanceSignals(scrapedText) {
         }
     }
 
-    return { high_signals: high, medium_signals: medium, low_signals: low, matched_phrases: matched };
+    return {
+        high_signals:       high,
+        medium_signals:     medium,  // includes enterprise contributions
+        low_signals:        low,
+        enterprise_signals: enterprise,
+        matched_phrases:    matched
+    };
 }
 
 
@@ -522,6 +626,65 @@ const SIGNAL_TO_PILLAR = {
     'transparency report': ['Transparency'],
     'data governance':  ['Transparency', 'Accountability'],
     'impact assessment': ['Impact'],
+
+    // Enterprise governance → pillar mappings
+    // Trust
+    '/security':                ['Trust'],
+    '/cybersecurity':           ['Trust', 'Safety'],
+    'information-security':     ['Trust', 'Safety'],
+    'cybersecurity framework':  ['Trust', 'Safety'],
+    'data protection':          ['Trust', 'Transparency'],
+    // Accountability
+    '/audit':                   ['Accountability'],
+    'internal-audit':           ['Accountability'],
+    'audit committee':          ['Accountability'],
+    'risk committee':           ['Accountability'],
+    'governance committee':     ['Accountability'],
+    'board oversight':          ['Accountability'],
+    'internal controls':        ['Accountability'],
+    'enterprise risk':          ['Accountability', 'Safety'],
+    '/compliance':              ['Accountability'],
+    'regulatory compliance':    ['Accountability'],
+    'sox compliance':           ['Accountability'],
+    '/whistleblower':           ['Accountability'],
+    'speak-up':                 ['Accountability'],
+    // Purpose
+    '/csr':                     ['Purpose'],
+    'corporate responsibility': ['Purpose', 'Impact'],
+    'code of conduct':          ['Purpose', 'Accountability'],
+    'code of ethics':           ['Purpose', 'Accountability', 'Trust'],
+    'ethical sourcing':         ['Purpose'],
+    'ethical conduct':          ['Purpose', 'Accountability'],
+    'human rights policy':      ['Purpose', 'Impact'],
+    '/dei':                     ['Purpose', 'Impact'],
+    'diversity equity':         ['Purpose', 'Impact'],
+    // Safety
+    '/safety':                  ['Safety'],
+    '/risk':                    ['Safety', 'Accountability'],
+    'risk management':          ['Safety', 'Accountability'],
+    'risk-management':          ['Safety', 'Accountability'],
+    'safety protocols':         ['Safety'],
+    'business continuity':      ['Safety'],
+    'disaster recovery':        ['Safety'],
+    'incident prevention':      ['Safety'],
+    // Transparency
+    '/esg':                     ['Transparency', 'Impact'],
+    'esg-report':               ['Transparency', 'Impact'],
+    'esg disclosure':           ['Transparency'],
+    '/sustainability':          ['Transparency', 'Impact'],
+    'sustainability-report':    ['Transparency', 'Impact'],
+    'annual-report':            ['Transparency'],
+    '/proxy':                   ['Transparency', 'Accountability'],
+    '/investor-relations':      ['Transparency'],
+    'corporate governance report': ['Transparency', 'Accountability'],
+    // Impact
+    'community investment':     ['Impact'],
+    'community impact':         ['Impact'],
+    'community-investment':     ['Impact'],
+    'measurable impact':        ['Impact'],
+    'stakeholder engagement':   ['Impact', 'Purpose'],
+    'esg outcomes':             ['Impact'],
+    '/human-rights':            ['Impact', 'Purpose'],
 };
 
 /**
@@ -564,6 +727,16 @@ function getInterpretationFrame(signalProfile) {
             pillar_baseline:   'Some governance commitments are visible, but several pillars lack confirmed evidence.',
             forbidden_phrases: ['no evidence found', 'no governance present'],
             executive_frame:   'Partial governance signals are visible. The assessment reflects limited evidence coverage, not a complete absence of governance.',
+        };
+    }
+    // Enterprise governance only — no AI-specific signals
+    const enterpriseCount = (signalProfile.enterprise_signals || 0);
+    if (enterpriseCount >= 2) {
+        return {
+            evidence_language: 'Enterprise governance signals identified',
+            pillar_baseline:   'Foundational enterprise governance practices are present. AI-specific governance documentation would significantly strengthen this assessment.',
+            forbidden_phrases: ['no governance', 'absence of governance', 'no evidence of any governance'],
+            executive_frame:   'Enterprise governance structures are visible. The assessment reflects the absence of explicit AI governance documentation, not the absence of governance overall.',
         };
     }
     if (total >= 1) {
@@ -668,12 +841,13 @@ function buildUserPrompt(evaluationData, scrapedText, signalProfile) {
         : 'none confirmed by signals';
 
     const signalCtx = signalProfile
-        ? `High-value signals: ${signalProfile.high_signals}
-Medium-value signals: ${signalProfile.medium_signals}
+        ? `High-value AI governance signals: ${signalProfile.high_signals}
+Medium-value governance signals: ${signalProfile.medium_signals}
+Enterprise governance signals: ${signalProfile.enterprise_signals || 0}
 Low-value signals: ${signalProfile.low_signals}
 Evidence language tier: ${frame ? frame.evidence_language : 'Limited visible governance signals'}
 Pillars evidenced by signals: ${evidencedPillarList}
-Sample matches: ${signalProfile.matched_phrases.slice(0,8).map(m=>`"${m.phrase}"[${m.tier}]`).join(', ') || 'none'}`
+Sample matches: ${signalProfile.matched_phrases.slice(0,10).map(m=>`"${m.phrase}"[${m.tier}]`).join(', ') || 'none'}`
         : 'Signal profile unavailable.';
 
     // Build interpretation constraints for the AI
