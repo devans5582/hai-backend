@@ -74,10 +74,13 @@ router.post('/', async (req, res) => {
         return res.status(200).json({
             success: true,
             data: {
-                evaluation:      {},
-                scraped_pages:   [],
-                scraper_blocked: true,
-                message:         'Evidence could not be automatically obtained from the company website.'
+                evaluation:       {},
+                scraped_pages:    [],
+                scraper_blocked:  true,
+                evaluation_state: 'insufficient_evidence',
+                premiumReport:    { evaluation_state: 'insufficient_evidence', reason: 'Evidence could not be automatically obtained from the company website.', signal_profile: { high_signals: 0, medium_signals: 0, low_signals: 0 }, missing_evidence: {}, recommended_next_steps: {} },
+                calibration:      null,
+                message:          'Evidence could not be automatically obtained from the company website.'
             }
         });
     }
@@ -90,10 +93,13 @@ router.post('/', async (req, res) => {
         return res.status(200).json({
             success: true,
             data: {
-                evaluation:      {},
-                scraped_pages:   [],
-                scraper_blocked: true,
-                message:         scrapeResult.message || 'Evidence could not be automatically obtained from the company website.'
+                evaluation:       {},
+                scraped_pages:    [],
+                scraper_blocked:  true,
+                evaluation_state: 'insufficient_evidence',
+                premiumReport:    { evaluation_state: 'insufficient_evidence', reason: scrapeResult.message || 'Evidence could not be automatically obtained from the company website.', signal_profile: { high_signals: 0, medium_signals: 0, low_signals: 0 }, missing_evidence: {}, recommended_next_steps: {} },
+                calibration:      null,
+                message:          scrapeResult.message || 'Evidence could not be automatically obtained from the company website.'
             }
         });
     }
