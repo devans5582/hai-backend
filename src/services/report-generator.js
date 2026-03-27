@@ -484,9 +484,14 @@ function detectGovernanceSignals(scrapedText) {
 // ---------------------------------------------------------------
 // EVALUATION STATE
 // ---------------------------------------------------------------
-function determineEvaluationState(signals) {
+function determineEvaluationState(signals, isPartial) {
     if (signals.high_signals === 0 && signals.medium_signals === 0) {
         return 'insufficient_evidence';
+    }
+    // partial_evaluation: signals detected but scraping was incomplete.
+    // Scoring proceeds but confidence is lowered in the narrative.
+    if (isPartial) {
+        return 'partial_evaluation';
     }
     return 'valid';
 }
@@ -808,7 +813,7 @@ function deriveRawScoreProxy(evaluationData) {
 // ---------------------------------------------------------------
 // buildUserPrompt
 // ---------------------------------------------------------------
-function buildUserPrompt(evaluationData, scrapedText, signalProfile) {
+function buildUserPrompt(evaluationData, scrapedText, signalProfile, isPartial) {
     const LEVEL_LABELS = { 1: 'Not Present', 2: 'Initial', 3: 'Developing', 4: 'Established', 5: 'Advanced' };
     let pillarSummaries = '';
     let totalItems = 0, pillarsWithEvidence = 0;
@@ -851,6 +856,15 @@ Sample matches: ${signalProfile.matched_phrases.slice(0,10).map(m=>`"${m.phrase}
         : 'Signal profile unavailable.';
 
     // Build interpretation constraints for the AI
+    const partialNote = isPartial ? `
+PARTIAL EVALUATION NOTE (MANDATORY):
+- This evaluation is based on limited scraping data. The website blocked most content retrieval.
+- Signals were detected from URL structure only — body content could not be confirmed.
+- The confidence_explanation MUST acknowledge that evidence was partially obtained.
+- Do NOT describe this as a complete assessment. Acknowledge data limitations clearly.
+- Use language like: "Based on available signals, further documentation would strengthen this assessment."
+` : '';
+
     const interpretationSection = frame ? `
 INTERPRETATION FRAME (MANDATORY — follow exactly):
 - Evidence language to use: "${frame.evidence_language}"
@@ -860,11 +874,11 @@ INTERPRETATION FRAME (MANDATORY — follow exactly):
 - Pillars evidenced by signals MUST receive status_label of "Developing" or better, never "Needs Attention" unless no signal exists for that pillar.
 - The executive_summary MUST acknowledge the presence of governance signals, not their absence.
 - The evidence_summary fields MUST use: "${frame.evidence_language}" as their summary.
-` : `
+${partialNote}` : `
 INTERPRETATION FRAME:
 - Only low-value signals detected. Use "Limited visible governance signals" in evidence_summary.
 - Do not claim complete absence of governance — state that visibility is limited.
-`;
+${partialNote}`;
 
     const textPreview = scrapedText
         ? scrapedText.slice(0, 8000) + (scrapedText.length > 8000 ? '\n... [PREVIEW TRUNCATED]' : '')
@@ -901,7 +915,7 @@ Return ONLY the JSON object. No markdown. No explanation.`;
 // ---------------------------------------------------------------
 // generatePremiumReport \u2014 main export
 // ---------------------------------------------------------------
-async function generatePremiumReport(evaluationData, scrapedText) {
+async function generatePremiumReport(evaluationData, scrapedText, scrapeContext) {
 
     if (!evaluationData || typeof evaluationData !== 'object') {
         console.warn('[report-generator] No evaluationData \u2014 skipping premium report');
@@ -909,13 +923,17 @@ async function generatePremiumReport(evaluationData, scrapedText) {
     }
 
     // Step 1: Signal detection
-    const signals   = detectGovernanceSignals(scrapedText);
-    const evalState = determineEvaluationState(signals);
-    console.log(`[report-generator] Signals \u2014 high:${signals.high_signals} medium:${signals.medium_signals} low:${signals.low_signals} state:${evalState}`);
+    const signals        = detectGovernanceSignals(scrapedText);
+    const ctx            = scrapeContext || {};
+    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess);
+    const evalState      = determineEvaluationState(signals, isPartial);
 
-    // Step 2: Insufficient evidence gate
+    console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
+
+    // Step 2: Insufficient evidence gate — only fires when no signals at all,
+    // even after fallback URL stubs are included in scrapedText.
     if (evalState === 'insufficient_evidence') {
-        console.log('[report-generator] insufficient_evidence \u2014 returning structured refusal');
+        console.log('[report-generator] insufficient_evidence — returning structured refusal');
         return buildInsufficientEvidenceResponse(signals);
     }
 
@@ -926,10 +944,10 @@ async function generatePremiumReport(evaluationData, scrapedText) {
     const rawScoreProxy = deriveRawScoreProxy(evaluationData);
     // confPercent not available here; frontend applies its own exact confPercent
     const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null, downgraded);
-    console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} calibratedProxy:${calibration.calibrated_score} uplift:${calibration.uplift_applied}`);
+    console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} calibratedProxy:${calibration.calibrated_score} uplift:${calibration.uplift_applied} partial:${isPartial}`);
 
     // Step 4: Generate narrative report
-    const userPrompt = buildUserPrompt(evaluationData, scrapedText, signals);
+    const userPrompt = buildUserPrompt(evaluationData, scrapedText, signals, isPartial);
 
     let response;
     try {
@@ -977,7 +995,7 @@ async function generatePremiumReport(evaluationData, scrapedText) {
     }
 
     // Step 5: Attach evaluation metadata
-    report.evaluation_state = 'valid';
+    report.evaluation_state = (evalState === 'partial_evaluation') ? 'partial_evaluation' : 'valid';
     report.signal_profile   = {
         high_signals: signals.high_signals, medium_signals: signals.medium_signals,
         low_signals: signals.low_signals, tier,
@@ -985,13 +1003,14 @@ async function generatePremiumReport(evaluationData, scrapedText) {
     };
     report.calibration = {
         tier,
-        uplift_applied:      calibration.uplift_applied,
-        multi_pillar_bonus:  calibration.multi_pillar_bonus,
-        raw_score_proxy:     rawScoreProxy,
-        score_cap:           SCORE_CAP,
+        uplift_applied:         calibration.uplift_applied,
+        multi_pillar_bonus:     calibration.multi_pillar_bonus,
+        raw_score_proxy:        rawScoreProxy,
+        score_cap:              SCORE_CAP,
         evidence_cap_threshold: EVIDENCE_CAP_THRESHOLD,
         evidence_cap_value:     EVIDENCE_CAP_VALUE,
-        downgraded:          calibration.downgraded
+        downgraded:             calibration.downgraded,
+        partial_evaluation:     isPartial
     };
 
     return report;
