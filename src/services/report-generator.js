@@ -484,12 +484,40 @@ function detectGovernanceSignals(scrapedText) {
 // ---------------------------------------------------------------
 // EVALUATION STATE
 // ---------------------------------------------------------------
+/**
+ * Returns true when combined_text contains [page restricted] stubs for
+ * HIGH-value governance URLs. This catches the common case where a company's
+ * homepage loads but all governance subpages return 403/firewall — the
+ * scraper adds stubs so signal detection works, but actual body content is
+ * absent. We treat this as partial_evaluation regardless of scrapeContext flags.
+ */
+function hasRestrictedGovernancePages(scrapedText) {
+    if (!scrapedText || typeof scrapedText !== 'string') return false;
+    const HIGH_GOVERNANCE_SLUGS = [
+        'responsible-ai', 'ai-policy', 'ai-principles', 'ai-ethics',
+        '/ethics', 'ai-governance', '/governance', 'ai-safety',
+        '/responsible', 'human-alignment',
+    ];
+    // Match "--- Content from URL ---" immediately followed by [page restricted...]
+    const restrictedRe = /---\s*Content from\s+(https?:\/\/\S+?)\s*---\s*\n\[page restricted/gi;
+    let m;
+    let restrictedGovCount = 0;
+    while ((m = restrictedRe.exec(scrapedText)) !== null) {
+        const url = m[1].toLowerCase();
+        for (const slug of HIGH_GOVERNANCE_SLUGS) {
+            if (url.includes(slug)) { restrictedGovCount++; break; }
+        }
+    }
+    // Two or more restricted governance pages → treat as partial
+    return restrictedGovCount >= 2;
+}
+
 function determineEvaluationState(signals, isPartial) {
     if (signals.high_signals === 0 && signals.medium_signals === 0) {
         return 'insufficient_evidence';
     }
     // partial_evaluation: signals detected but scraping was incomplete.
-    // Scoring proceeds but confidence is lowered in the narrative.
+    // Scoring proceeds but confidence reflects limited evidence depth.
     if (isPartial) {
         return 'partial_evaluation';
     }
@@ -925,7 +953,14 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     // Step 1: Signal detection
     const signals        = detectGovernanceSignals(scrapedText);
     const ctx            = scrapeContext || {};
-    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess);
+    // isPartial: true when scraping was fundamentally incomplete.
+    // Covers three cases:
+    //   a) Homepage itself was blocked (partialScrape from scraper)
+    //   b) Total content under threshold (limitedAccess from scraper)
+    //   c) Governance subpages are blocked even though homepage loaded
+    //      (the most common case for large corps like GE, NASA, Caterpillar)
+    const _govPagesRestricted = hasRestrictedGovernancePages(scrapedText);
+    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess || _govPagesRestricted);
     const evalState      = determineEvaluationState(signals, isPartial);
 
     console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
