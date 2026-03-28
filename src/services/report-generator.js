@@ -997,8 +997,11 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     // Step 5: Attach evaluation metadata
     report.evaluation_state = (evalState === 'partial_evaluation') ? 'partial_evaluation' : 'valid';
     report.signal_profile   = {
-        high_signals: signals.high_signals, medium_signals: signals.medium_signals,
-        low_signals: signals.low_signals, tier,
+        high_signals:       signals.high_signals,
+        medium_signals:     signals.medium_signals,
+        enterprise_signals: signals.enterprise_signals || 0,
+        low_signals:        signals.low_signals,
+        tier,
         matched_phrases: signals.matched_phrases.slice(0, 10)
     };
     report.calibration = {
