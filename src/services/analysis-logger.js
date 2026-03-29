@@ -1,16 +1,17 @@
 'use strict';
 
 // ---------------------------------------------------------------
-// analysis-logger.js  —  Phase 1
+// analysis-logger.js  —  Phase 1 + Phase 2
 // Humaital HAI Platform — Analysis Log Service
 //
-// Single responsibility: insert ONE flat row into Supabase
-// (hai_analysis_logs) after each evaluation completes.
+// Exports:
+//   generateAnalysisId()              — UUID v4, called at /evaluate start
+//   writeLog({ ... })                 — Phase 1: INSERT initial row (fire-and-forget)
+//   patchLog(analysisId, fields)      — Phase 2: PATCH row with frontend-computed values
 //
 // Design rules:
 //   - Never throws to caller
-//   - Non-blocking (caller does not await)
-//   - No retries, no chaining, no side effects
+//   - writeLog is fire-and-forget (caller must not await)
 //   - All fields are scalars — no nested JSON
 //
 // Required env vars:
@@ -20,12 +21,25 @@
 
 const axios = require('axios');
 
+// ── Shared Supabase headers ──────────────────────────────────────
+
+function supabaseHeaders() {
+    return {
+        'apikey':        process.env.SUPABASE_SERVICE_KEY,
+        'Authorization': 'Bearer ' + process.env.SUPABASE_SERVICE_KEY,
+        'Content-Type':  'application/json',
+        'Prefer':        'return=minimal'
+    };
+}
+
+const TABLE_URL = () => `${process.env.SUPABASE_URL}/rest/v1/hai_analysis_logs`;
+
 // ── UUID v4 generator — no external dependency ───────────────────
+
 function generateAnalysisId() {
     try {
         return require('crypto').randomUUID();
     } catch (_) {
-        // Fallback for older Node versions
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
             const r = (Math.random() * 16) | 0;
             return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
@@ -33,22 +47,8 @@ function generateAnalysisId() {
     }
 }
 
-// ── Supabase REST insert ─────────────────────────────────────────
-async function insertLog(row) {
-    const url = `${process.env.SUPABASE_URL}/rest/v1/hai_analysis_logs`;
-    await axios.post(url, row, {
-        timeout: 8000,
-        headers: {
-            'apikey':        process.env.SUPABASE_SERVICE_KEY,
-            'Authorization': 'Bearer ' + process.env.SUPABASE_SERVICE_KEY,
-            'Content-Type':  'application/json',
-            'Prefer':        'return=minimal'
-        },
-        validateStatus: () => true   // never throw on HTTP error status
-    });
-}
-
 // ── Scrape status helper ─────────────────────────────────────────
+
 function deriveScrapeStatus(scrapeResult) {
     if (!scrapeResult || scrapeResult.scraper_blocked) return 'blocked';
     if (scrapeResult.partial_scrape)                   return 'partial';
@@ -56,18 +56,14 @@ function deriveScrapeStatus(scrapeResult) {
     return 'ok';
 }
 
-// ── Main export ──────────────────────────────────────────────────
+// ── Phase 1: INSERT initial log row ─────────────────────────────
+//
+// Called inside /evaluate immediately before the response is returned.
+// Frontend-computed fields (final_score, confidence_score, etc.) are
+// NULL at this point — filled by patchLog() in Phase 2.
+//
+// Caller must NOT await: writeLog(...).catch(() => {});
 
-/**
- * writeLog — fire-and-forget. Caller must NOT await this.
- *
- * Usage in evaluate.js:
- *   writeLog({ analysisId, targetUrl, reqBody, scrapeResult, premiumReport }).catch(() => {});
- *
- * Fields that the backend cannot compute (final_score, confidence_score,
- * certification_status, benchmark_average, benchmark_position) are stored
- * as NULL. Phase 2 can add a PATCH endpoint to fill them from the frontend.
- */
 async function writeLog({ analysisId, targetUrl, reqBody, scrapeResult, premiumReport }) {
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
         console.warn('[analysis-logger] Supabase env vars missing — log skipped');
@@ -75,7 +71,6 @@ async function writeLog({ analysisId, targetUrl, reqBody, scrapeResult, premiumR
     }
 
     try {
-        // Signal profile — safe defaults when premiumReport is null
         const sp  = (premiumReport && premiumReport.signal_profile)  || {};
         const cal = (premiumReport && premiumReport.calibration)      || {};
         const ev  = (premiumReport && premiumReport.evidence_summary) || {};
@@ -84,82 +79,134 @@ async function writeLog({ analysisId, targetUrl, reqBody, scrapeResult, premiumR
             analysis_id:        analysisId,
             timestamp:          new Date().toISOString(),
 
-            // Company metadata — from form body
-            company_name:       (reqBody && reqBody.company)  || null,
-            company_url:        targetUrl                      || null,
-            industry:           (reqBody && reqBody.industry) || null,
-            stage:              (reqBody && reqBody.stage)    || null,
-            size:               (reqBody && reqBody.size)     || null,
+            // Company metadata from form body
+            // company_name comes from the frontend form, not req.body in /evaluate.
+            // It is patched in Phase 2 along with industry/stage/size when those
+            // fields are not present in the original request body.
+            company_name:        (reqBody && reqBody.company)  || null,
+            company_url:         targetUrl                      || null,
+            industry:            (reqBody && reqBody.industry) || null,
+            stage:               (reqBody && reqBody.stage)    || null,
+            size:                (reqBody && reqBody.size)     || null,
 
             // Scrape outcome
             scrape_status:       deriveScrapeStatus(scrapeResult),
             limited_access_flag: !!(scrapeResult && scrapeResult.limited_access),
 
             // Evaluation state
-            evaluation_state:   (premiumReport && premiumReport.evaluation_state) || 'unknown',
+            evaluation_state:    (premiumReport && premiumReport.evaluation_state) || 'unknown',
 
             // Signal counts
-            high_signals:       typeof sp.high_signals   === 'number' ? sp.high_signals   : 0,
-            medium_signals:     typeof sp.medium_signals === 'number' ? sp.medium_signals : 0,
-            low_signals:        typeof sp.low_signals    === 'number' ? sp.low_signals    : 0,
+            high_signals:        typeof sp.high_signals   === 'number' ? sp.high_signals   : 0,
+            medium_signals:      typeof sp.medium_signals === 'number' ? sp.medium_signals : 0,
+            low_signals:         typeof sp.low_signals    === 'number' ? sp.low_signals    : 0,
 
-            // Backend-computable scores (proxy values from calibration object)
-            raw_score:          typeof cal.raw_score_proxy  === 'number' ? cal.raw_score_proxy  : null,
-            calibrated_score:   typeof cal.calibrated_score === 'number' ? cal.calibrated_score : null,
+            // Backend-computable score proxies from calibration object
+            raw_score:           typeof cal.raw_score_proxy  === 'number' ? cal.raw_score_proxy  : null,
+            calibrated_score:    typeof cal.calibrated_score === 'number' ? cal.calibrated_score : null,
 
-            // Frontend-computed fields — NULL in Phase 1, filled by Phase 2 PATCH
+            // Phase 2 fields — NULL until patchLog() is called by frontend
             final_score:          null,
             evidence_strength:    ev.summary || null,
             confidence_score:     null,
             certification_status: null,
             benchmark_average:    null,
-            benchmark_position:   null
+            benchmark_position:   null,
+            pdf_generated_status: null,
+            email_delivery_status: null
         };
 
-        await insertLog(row);
+        await axios.post(TABLE_URL(), row, {
+            timeout: 8000,
+            headers: supabaseHeaders(),
+            validateStatus: () => true
+        });
         console.log(`[analysis-logger] Log written — ${analysisId}`);
 
     } catch (err) {
-        // Swallow all errors — logging must never affect the evaluation response
         console.error('[analysis-logger] writeLog failed (non-critical):', err.message);
     }
 }
 
-module.exports = { generateAnalysisId, writeLog };
+// ── Phase 2: PATCH log row with frontend-computed values ─────────
+//
+// Called by PATCH /log/:analysisId (routes/log-patch.js).
+// Matches the row by analysis_id and updates only the supplied fields.
+// Returns { ok: true } on success, { ok: false } on any failure.
+// Never throws.
+
+async function patchLog(analysisId, fields) {
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY) {
+        console.warn('[analysis-logger] Supabase env vars missing — patch skipped');
+        return { ok: false };
+    }
+
+    try {
+        const url = TABLE_URL() + `?analysis_id=eq.${encodeURIComponent(analysisId)}`;
+
+        const resp = await axios.patch(url, fields, {
+            timeout: 8000,
+            headers: supabaseHeaders(),
+            validateStatus: () => true
+        });
+
+        if (resp.status >= 200 && resp.status < 300) {
+            console.log(`[analysis-logger] Patch OK — ${analysisId}`);
+            return { ok: true };
+        }
+
+        console.warn(`[analysis-logger] Patch HTTP ${resp.status} — ${analysisId}`);
+        return { ok: false };
+
+    } catch (err) {
+        console.error('[analysis-logger] patchLog failed:', err.message);
+        return { ok: false };
+    }
+}
+
+module.exports = { generateAnalysisId, writeLog, patchLog };
 
 
 // ═══════════════════════════════════════════════════════════════════
-// TABLE DDL — run once in the Supabase SQL Editor
+// TABLE DDL — run once in Supabase SQL Editor
+// Phase 2 adds pdf_generated_status and email_delivery_status columns.
+// If upgrading from Phase 1, run the two ALTER TABLE lines only.
 // ═══════════════════════════════════════════════════════════════════
 //
+// -- Full schema (fresh install):
+//
 // CREATE TABLE hai_analysis_logs (
-//   id                   BIGSERIAL    PRIMARY KEY,
-//   analysis_id          UUID         NOT NULL UNIQUE,
-//   timestamp            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-//   company_name         TEXT,
-//   company_url          TEXT,
-//   industry             TEXT,
-//   stage                TEXT,
-//   size                 TEXT,
-//   scrape_status        TEXT,        -- 'ok' | 'partial' | 'limited' | 'blocked'
-//   limited_access_flag  BOOLEAN,
-//   evaluation_state     TEXT,        -- 'valid' | 'partial_evaluation' | 'insufficient_evidence' | 'unknown'
-//   high_signals         INTEGER,
-//   medium_signals       INTEGER,
-//   low_signals          INTEGER,
-//   raw_score            NUMERIC(5,1),
-//   calibrated_score     NUMERIC(5,1),
-//   final_score          NUMERIC(5,1),   -- NULL in Phase 1
-//   evidence_strength    TEXT,           -- NULL in Phase 1
-//   confidence_score     INTEGER,        -- NULL in Phase 1
-//   certification_status TEXT,           -- NULL in Phase 1
-//   benchmark_average    NUMERIC(5,1),   -- NULL in Phase 1
-//   benchmark_position   TEXT            -- NULL in Phase 1
+//   id                    BIGSERIAL    PRIMARY KEY,
+//   analysis_id           UUID         NOT NULL UNIQUE,
+//   timestamp             TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+//   company_name          TEXT,
+//   company_url           TEXT,
+//   industry              TEXT,
+//   stage                 TEXT,
+//   size                  TEXT,
+//   scrape_status         TEXT,         -- 'ok' | 'partial' | 'limited' | 'blocked'
+//   limited_access_flag   BOOLEAN,
+//   evaluation_state      TEXT,         -- 'valid' | 'partial_evaluation' | 'insufficient_evidence' | 'unknown'
+//   high_signals          INTEGER,
+//   medium_signals        INTEGER,
+//   low_signals           INTEGER,
+//   raw_score             NUMERIC(5,1),
+//   calibrated_score      NUMERIC(5,1),
+//   final_score           NUMERIC(5,1),  -- from Phase 2 PATCH
+//   evidence_strength     TEXT,          -- from Phase 2 PATCH
+//   confidence_score      INTEGER,       -- from Phase 2 PATCH
+//   certification_status  TEXT,          -- from Phase 2 PATCH
+//   benchmark_average     NUMERIC(5,1),  -- from Phase 2 PATCH
+//   benchmark_position    TEXT,          -- from Phase 2 PATCH
+//   pdf_generated_status  BOOLEAN,       -- from Phase 2 PATCH (new in Phase 2)
+//   email_delivery_status BOOLEAN        -- from Phase 2 PATCH (new in Phase 2)
 // );
 //
 // CREATE INDEX ON hai_analysis_logs (timestamp DESC);
 // CREATE INDEX ON hai_analysis_logs (analysis_id);
 //
-// -- RLS: service-role key bypasses automatically.
-// -- Anon key has no access unless you explicitly grant it.
 // ALTER TABLE hai_analysis_logs ENABLE ROW LEVEL SECURITY;
+//
+// -- Upgrading from Phase 1 only (skip if fresh install):
+// ALTER TABLE hai_analysis_logs ADD COLUMN pdf_generated_status  BOOLEAN;
+// ALTER TABLE hai_analysis_logs ADD COLUMN email_delivery_status BOOLEAN;
