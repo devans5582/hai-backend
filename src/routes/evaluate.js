@@ -35,10 +35,8 @@ const { generateAnalysisId, writeLog } = require('../services/analysis-logger');
 router.post('/', async (req, res) => {
 
     const requestStart = Date.now();
-
-    // Generate analysis_id once per request — returned in response
-    // and used to key the log row in Supabase.
     const analysisId = generateAnalysisId();
+    console.log(`[evaluate] analysis_id: ${analysisId}`);
 
     // ----------------------------------------------------------------
     // 1. Validate input
@@ -205,16 +203,8 @@ router.post('/', async (req, res) => {
         ? premiumReport.calibration
         : null;
 
-    // ----------------------------------------------------------------
-    // 6. Write analysis log — fire-and-forget, never blocks response.
-    // ----------------------------------------------------------------
-    writeLog({
-        analysisId,
-        targetUrl,
-        reqBody:      req.body,
-        scrapeResult,
-        premiumReport
-    }).catch(() => {});
+    // Write analysis log — fire-and-forget, never blocks response
+    writeLog({ analysisId, targetUrl, reqBody: req.body, scrapeResult, premiumReport }).catch(() => {});
 
     return res.status(200).json({
         success: true,
