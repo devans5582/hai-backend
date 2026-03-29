@@ -6,6 +6,7 @@ const router = Router();
 const { scrapeCompanyPages }    = require('../services/scraper');
 const { callOpenAI }             = require('../services/openai');
 const { generatePremiumReport } = require('../services/report-generator');
+const { generateAnalysisId, writeLog } = require('../services/analysis-logger');
 
 // POST /evaluate
 //
@@ -34,6 +35,10 @@ const { generatePremiumReport } = require('../services/report-generator');
 router.post('/', async (req, res) => {
 
     const requestStart = Date.now();
+
+    // Generate analysis_id once per request — returned in response
+    // and used to key the log row in Supabase.
+    const analysisId = generateAnalysisId();
 
     // ----------------------------------------------------------------
     // 1. Validate input
@@ -200,9 +205,21 @@ router.post('/', async (req, res) => {
         ? premiumReport.calibration
         : null;
 
+    // ----------------------------------------------------------------
+    // 6. Write analysis log — fire-and-forget, never blocks response.
+    // ----------------------------------------------------------------
+    writeLog({
+        analysisId,
+        targetUrl,
+        reqBody:      req.body,
+        scrapeResult,
+        premiumReport
+    }).catch(() => {});
+
     return res.status(200).json({
         success: true,
         data: {
+            analysis_id:          analysisId,
             evaluation:           evaluationData,
             scraped_pages:        scrapeResult.scraped_pages,
             scraped_text_preview: scrapeResult.combined_text.slice(0, 5000),
