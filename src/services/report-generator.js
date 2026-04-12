@@ -166,16 +166,19 @@ AVOID:
 - "leverage"
 - "synergies"
 - "suboptimal"
-- "no evidence found" (when signals are present — use tier-based language instead)
-- "limited across all areas" (when high signals >= 3 — acknowledge presence, describe gaps)
-- "no governance" or "absence of governance" (when signal evidence exists)
+- "no evidence found" (say what WAS found instead)
+- "limited across all areas" (describe specific gaps instead)
+- "no governance" or "absence of governance" (when any evidence exists)
+- "governance signals" or "strong signals" or "high-value signals" (use evidence-based language)
+- "signals are present" or "signals identified" or "signals detected" (say what the evidence shows)
+- "signals indicate" (say "publicly available documentation supports" or "evidence shows" instead)
 
-SIGNAL-AWARE NARRATIVE RULES (MANDATORY):
-- If the user prompt says high-value signals >= 3: the executive_summary MUST acknowledge governance signals are present. It must describe gaps, not absence.
-- If the user prompt marks a pillar as [SIGNAL PRESENT]: that pillar's status_label must be "Developing" or better.
-- evidence_summary.summary must use the exact evidence language tier from the interpretation frame in the user prompt.
-- The certification_statement must reflect the actual evidence tier, not assume no evidence exists.
-- Never contradict the signal profile in the narrative. If signals are high, the narrative must reflect that.
+EVIDENCE-QUALITY NARRATIVE RULES (MANDATORY):
+- The executive_summary MUST describe what evidence was found and what it supports — not how many signals were detected.
+- Use evidence-quality language: "publicly available evidence supports foundational governance practices" not "governance signals are present."
+- evidence_summary.summary must use the evidence tier language from the interpretation frame in the user prompt. Do NOT use "signals identified" phrasing — use "evidence found" or "documentation available."
+- The certification_statement must reflect actual evidence tier and credibility, not signal counts.
+- Never use the word "signals" in executive_summary, confidence_explanation, or certification_statement.
 
 -------------------------------------
 FINAL VALIDATION (MANDATORY)
@@ -189,8 +192,9 @@ Before returning:
 - Ensure every improvement area has what_to_do_next
 - Ensure every pillar has a next_step
 - Ensure language is simple and clear
-- Ensure narrative language matches signal tier (no "no evidence" when high signals >= 3)
-- Ensure pillars marked [SIGNAL PRESENT] have status_label of "Developing" or better`;
+- Ensure narrative language reflects evidence quality, not signal counts
+- Ensure pillars marked [SIGNAL PRESENT] have status_label of "Developing" or better
+- Ensure executive_summary, confidence_explanation, and certification_statement do NOT use the word "signals"`;
 
 
 // ---------------------------------------------------------------
@@ -484,40 +488,12 @@ function detectGovernanceSignals(scrapedText) {
 // ---------------------------------------------------------------
 // EVALUATION STATE
 // ---------------------------------------------------------------
-/**
- * Returns true when combined_text contains [page restricted] stubs for
- * HIGH-value governance URLs. This catches the common case where a company's
- * homepage loads but all governance subpages return 403/firewall — the
- * scraper adds stubs so signal detection works, but actual body content is
- * absent. We treat this as partial_evaluation regardless of scrapeContext flags.
- */
-function hasRestrictedGovernancePages(scrapedText) {
-    if (!scrapedText || typeof scrapedText !== 'string') return false;
-    const HIGH_GOVERNANCE_SLUGS = [
-        'responsible-ai', 'ai-policy', 'ai-principles', 'ai-ethics',
-        '/ethics', 'ai-governance', '/governance', 'ai-safety',
-        '/responsible', 'human-alignment',
-    ];
-    // Match "--- Content from URL ---" immediately followed by [page restricted...]
-    const restrictedRe = /---\s*Content from\s+(https?:\/\/\S+?)\s*---\s*\n\[page restricted/gi;
-    let m;
-    let restrictedGovCount = 0;
-    while ((m = restrictedRe.exec(scrapedText)) !== null) {
-        const url = m[1].toLowerCase();
-        for (const slug of HIGH_GOVERNANCE_SLUGS) {
-            if (url.includes(slug)) { restrictedGovCount++; break; }
-        }
-    }
-    // Two or more restricted governance pages → treat as partial
-    return restrictedGovCount >= 2;
-}
-
 function determineEvaluationState(signals, isPartial) {
     if (signals.high_signals === 0 && signals.medium_signals === 0) {
         return 'insufficient_evidence';
     }
     // partial_evaluation: signals detected but scraping was incomplete.
-    // Scoring proceeds but confidence reflects limited evidence depth.
+    // Scoring proceeds but confidence is lowered in the narrative.
     if (isPartial) {
         return 'partial_evaluation';
     }
@@ -541,7 +517,7 @@ const PILLAR_MISSING_EVIDENCE = {
 function buildInsufficientEvidenceResponse(signals) {
     return {
         evaluation_state: 'insufficient_evidence',
-        reason: 'Limited visible governance signals detected. The assessment cannot produce a verified HAI Score without meaningful evidence of AI governance practices.',
+        reason: 'Insufficient publicly available governance documentation was found to produce a verified HAI Score. Publishing governance policies, AI principles, or responsibility frameworks would enable a full assessment.',
         signal_profile: { high_signals: signals.high_signals, medium_signals: signals.medium_signals, low_signals: signals.low_signals },
         missing_evidence: PILLAR_MISSING_EVIDENCE,
         recommended_next_steps: {
@@ -748,36 +724,36 @@ function getInterpretationFrame(signalProfile) {
 
     if (h >= 3) {
         return {
-            evidence_language: 'Strong governance signals identified',
-            pillar_baseline:   'Foundational governance signals are present, but coverage is uneven across pillars.',
-            forbidden_phrases: ['no evidence found', 'limited across all areas', 'no governance', 'absence of governance'],
-            executive_frame:   'Governance signals are present and meaningful. The evaluation reflects incomplete evidence visibility, not the absence of governance practices.',
+            evidence_language: 'Publicly available governance evidence identified',
+            pillar_baseline:   'Publicly available governance documentation supports foundational practices, but coverage varies across pillars.',
+            forbidden_phrases: ['no evidence found', 'limited across all areas', 'no governance', 'absence of governance', 'governance signals', 'signals identified', 'signals are present', 'signals detected'],
+            executive_frame:   'Publicly available evidence supports foundational governance practices. The assessment reflects the scope of documentation accessible at the time of evaluation.',
         };
     }
     if (h >= 1 || m >= 2) {
         return {
-            evidence_language: 'Partial governance signals identified',
-            pillar_baseline:   'Some governance commitments are visible, but several pillars lack confirmed evidence.',
-            forbidden_phrases: ['no evidence found', 'no governance present'],
-            executive_frame:   'Partial governance signals are visible. The assessment reflects limited evidence coverage, not a complete absence of governance.',
+            evidence_language: 'Partial governance documentation identified',
+            pillar_baseline:   'Some governance documentation is publicly available, but several pillars lack confirmed evidence.',
+            forbidden_phrases: ['no evidence found', 'no governance present', 'governance signals', 'signals identified', 'signals detected'],
+            executive_frame:   'Partial governance documentation is publicly available. The assessment reflects the scope of evidence accessible, not the totality of governance practices in place.',
         };
     }
     // Enterprise governance only — no AI-specific signals
     const enterpriseCount = (signalProfile.enterprise_signals || 0);
     if (enterpriseCount >= 2) {
         return {
-            evidence_language: 'Enterprise governance signals identified',
-            pillar_baseline:   'Foundational enterprise governance practices are present. AI-specific governance documentation would significantly strengthen this assessment.',
-            forbidden_phrases: ['no governance', 'absence of governance', 'no evidence of any governance'],
-            executive_frame:   'Enterprise governance structures are visible. The assessment reflects the absence of explicit AI governance documentation, not the absence of governance overall.',
+            evidence_language: 'Enterprise governance documentation identified',
+            pillar_baseline:   'Foundational enterprise governance documentation is publicly available. AI-specific governance documentation would significantly strengthen this assessment.',
+            forbidden_phrases: ['no governance', 'absence of governance', 'no evidence of any governance', 'governance signals', 'signals identified'],
+            executive_frame:   'Enterprise governance documentation is publicly available. The assessment reflects the absence of explicit AI-specific documentation, not the absence of governance overall.',
         };
     }
     if (total >= 1) {
         return {
-            evidence_language: 'Limited visible governance signals',
-            pillar_baseline:   'Minimal governance signals were detected. Coverage across the six pillars is largely unconfirmed.',
-            forbidden_phrases: ['complete absence of governance'],
-            executive_frame:   'Limited governance signals were detected. More visible governance documentation would improve this assessment.',
+            evidence_language: 'Limited publicly available governance documentation',
+            pillar_baseline:   'Minimal governance documentation was identified. Evidence coverage across the six pillars is largely unconfirmed.',
+            forbidden_phrases: ['complete absence of governance', 'governance signals', 'signals detected', 'signals identified'],
+            executive_frame:   'Limited governance documentation was publicly available at the time of assessment. Publishing additional governance materials would strengthen this evaluation.',
         };
     }
     return null;
@@ -874,14 +850,14 @@ function buildUserPrompt(evaluationData, scrapedText, signalProfile, isPartial) 
         : 'none confirmed by signals';
 
     const signalCtx = signalProfile
-        ? `High-value AI governance signals: ${signalProfile.high_signals}
-Medium-value governance signals: ${signalProfile.medium_signals}
-Enterprise governance signals: ${signalProfile.enterprise_signals || 0}
-Low-value signals: ${signalProfile.low_signals}
-Evidence language tier: ${frame ? frame.evidence_language : 'Limited visible governance signals'}
-Pillars evidenced by signals: ${evidencedPillarList}
-Sample matches: ${signalProfile.matched_phrases.slice(0,10).map(m=>`"${m.phrase}"[${m.tier}]`).join(', ') || 'none'}`
-        : 'Signal profile unavailable.';
+        ? `High-specificity governance evidence items: ${signalProfile.high_signals}
+Medium-specificity governance evidence items: ${signalProfile.medium_signals}
+Enterprise governance documentation items: ${signalProfile.enterprise_signals || 0}
+Low-specificity items: ${signalProfile.low_signals}
+Evidence quality description: ${frame ? frame.evidence_language : 'Limited publicly available governance documentation'}
+Pillars with available evidence: ${evidencedPillarList}
+Sample evidence matches: ${signalProfile.matched_phrases.slice(0,10).map(m=>`"${m.phrase}"[${m.tier}]`).join(', ') || 'none'}`
+        : 'Evidence profile unavailable.';
 
     // Build interpretation constraints for the AI
     const partialNote = isPartial ? `
@@ -899,13 +875,14 @@ INTERPRETATION FRAME (MANDATORY — follow exactly):
 - Pillar baseline statement: "${frame.pillar_baseline}"
 - Executive summary frame: "${frame.executive_frame}"
 - FORBIDDEN phrases (do NOT use any of these): ${frame.forbidden_phrases.map(p => `"${p}"`).join(', ')}
-- Pillars evidenced by signals MUST receive status_label of "Developing" or better, never "Needs Attention" unless no signal exists for that pillar.
-- The executive_summary MUST acknowledge the presence of governance signals, not their absence.
-- The evidence_summary fields MUST use: "${frame.evidence_language}" as their summary.
+- Pillars with available evidence MUST receive status_label of "Developing" or better.
+- The executive_summary MUST describe what the evidence supports — NOT how many signals were found.
+- The evidence_summary.summary MUST use evidence-based language (e.g. "publicly available evidence supports...") — NOT "signals identified".
+- Do NOT use the word "signals" in executive_summary, confidence_explanation, or certification_statement.
 ${partialNote}` : `
 INTERPRETATION FRAME:
-- Only low-value signals detected. Use "Limited visible governance signals" in evidence_summary.
-- Do not claim complete absence of governance — state that visibility is limited.
+- Limited publicly available governance documentation was found. Use "Limited publicly available governance documentation" in evidence_summary.
+- Do not claim complete absence of governance — state that public documentation is limited.
 ${partialNote}`;
 
     const textPreview = scrapedText
@@ -953,14 +930,7 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     // Step 1: Signal detection
     const signals        = detectGovernanceSignals(scrapedText);
     const ctx            = scrapeContext || {};
-    // isPartial: true when scraping was fundamentally incomplete.
-    // Covers three cases:
-    //   a) Homepage itself was blocked (partialScrape from scraper)
-    //   b) Total content under threshold (limitedAccess from scraper)
-    //   c) Governance subpages are blocked even though homepage loaded
-    //      (the most common case for large corps like GE, NASA, Caterpillar)
-    const _govPagesRestricted = hasRestrictedGovernancePages(scrapedText);
-    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess || _govPagesRestricted);
+    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess);
     const evalState      = determineEvaluationState(signals, isPartial);
 
     console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
@@ -1032,11 +1002,8 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     // Step 5: Attach evaluation metadata
     report.evaluation_state = (evalState === 'partial_evaluation') ? 'partial_evaluation' : 'valid';
     report.signal_profile   = {
-        high_signals:       signals.high_signals,
-        medium_signals:     signals.medium_signals,
-        enterprise_signals: signals.enterprise_signals || 0,
-        low_signals:        signals.low_signals,
-        tier,
+        high_signals: signals.high_signals, medium_signals: signals.medium_signals,
+        low_signals: signals.low_signals, tier,
         matched_phrases: signals.matched_phrases.slice(0, 10)
     };
     report.calibration = {
