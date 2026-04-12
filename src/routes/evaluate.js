@@ -3,10 +3,11 @@
 const { Router } = require('express');
 const router = Router();
 
-const { scrapeCompanyPages }    = require('../services/scraper');
-const { callOpenAI }             = require('../services/openai');
-const { generatePremiumReport } = require('../services/report-generator');
+const { scrapeCompanyPages }          = require('../services/scraper');
+const { callOpenAI }                  = require('../services/openai');
+const { generatePremiumReport }       = require('../services/report-generator');
 const { generateAnalysisId, writeLog } = require('../services/analysis-logger');
+const { fetchSupplementarySignals }   = require('../services/supplementary-evidence');
 
 // POST /evaluate
 //
@@ -117,6 +118,36 @@ router.post('/', async (req, res) => {
     }
 
     // ----------------------------------------------------------------
+    // 2B. Supplementary evidence fetch (new scoring model)
+    //
+    // Runs when scrape is partial/limited to surface signals from
+    // SEC EDGAR, Wayback Machine, OECD, GitHub, and Semantic Scholar.
+    // Results are passed to the frontend via supplementary_signals field.
+    // ----------------------------------------------------------------
+    let supplementarySignals = null;
+    const needsSupplementary = isPartialScrape || !!scrapeResult.limited_access;
+
+    if (needsSupplementary) {
+        console.log(`[evaluate] Supplementary evidence fetch started — ${targetUrl}`);
+        const supStart = Date.now();
+        try {
+            const companyName = (req.body && req.body.company) || '';
+            supplementarySignals = await fetchSupplementarySignals(
+                companyName,
+                targetUrl,
+                {
+                    githubToken: process.env.GITHUB_TOKEN || null,
+                    skipWayback: false,
+                }
+            );
+            console.log(`[evaluate] Supplementary fetch complete (${Date.now() - supStart}ms) — signals: ${supplementarySignals.totalSignals}`);
+        } catch (err) {
+            console.warn(`[evaluate] Supplementary fetch failed (non-fatal): ${err.message}`);
+            supplementarySignals = null;
+        }
+    }
+
+    // ----------------------------------------------------------------
     // 3. Guard: OpenAI key must be configured
     // ----------------------------------------------------------------
     if (!process.env.OPENAI_API_KEY) {
@@ -214,10 +245,11 @@ router.post('/', async (req, res) => {
             scraped_pages:        scrapeResult.scraped_pages,
             scraped_text_preview: scrapeResult.combined_text.slice(0, 5000),
             limited_access:       scrapeResult.limited_access,
-            partial_scrape:       isPartialScrape,
-            premiumReport:        premiumReport,
-            evaluation_state:     evaluationState,
-            calibration:          calibration
+            partial_scrape:          isPartialScrape,
+            supplementary_signals:   supplementarySignals,
+            premiumReport:           premiumReport,
+            evaluation_state:        evaluationState,
+            calibration:             calibration
         }
     });
 });
