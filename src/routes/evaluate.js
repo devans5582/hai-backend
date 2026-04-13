@@ -7,7 +7,8 @@ const { scrapeCompanyPages }          = require('../services/scraper');
 const { callOpenAI }                  = require('../services/openai');
 const { generatePremiumReport }       = require('../services/report-generator');
 const { generateAnalysisId, writeLog } = require('../services/analysis-logger');
-const { fetchSupplementarySignals }   = require('../services/supplementary-evidence');
+// NOTE: supplementary-evidence is loaded lazily inside the request handler (section 2B)
+// so a missing module file does not crash the server at startup.
 
 // POST /evaluate
 //
@@ -131,6 +132,9 @@ router.post('/', async (req, res) => {
         console.log(`[evaluate] Supplementary evidence fetch started — ${targetUrl}`);
         const supStart = Date.now();
         try {
+            // Lazy require — if the module is missing the catch below handles it
+            // gracefully so the server never crashes at startup or request time.
+            const { fetchSupplementarySignals } = require('../services/supplementary-evidence');
             const companyName = (req.body && req.body.company) || '';
             supplementarySignals = await fetchSupplementarySignals(
                 companyName,
@@ -142,7 +146,11 @@ router.post('/', async (req, res) => {
             );
             console.log(`[evaluate] Supplementary fetch complete (${Date.now() - supStart}ms) — signals: ${supplementarySignals.totalSignals}`);
         } catch (err) {
-            console.warn(`[evaluate] Supplementary fetch failed (non-fatal): ${err.message}`);
+            if (err.code === 'MODULE_NOT_FOUND') {
+                console.warn(`[evaluate] Supplementary evidence module unavailable (non-fatal) — skipping: ${err.message}`);
+            } else {
+                console.warn(`[evaluate] Supplementary fetch failed (non-fatal): ${err.message}`);
+            }
             supplementarySignals = null;
         }
     }
