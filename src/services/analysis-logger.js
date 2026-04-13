@@ -142,9 +142,41 @@ async function patchLog(analysisId, fields) {
     }
 
     try {
+        // ── Build sanitized payload ──────────────────────────────────────────
+        // Only scalar values for explicitly allowed columns are sent.
+        // Nested objects/arrays and undefined values are dropped to
+        // prevent Supabase returning HTTP 400 on unrecognised columns
+        // or non-scalar values.
+        const ALLOWED_PATCH_FIELDS = [
+            'company_name',
+            'industry',
+            'stage',
+            'size',
+            'final_score',
+            'evidence_strength',
+            'confidence_score',
+            'certification_status',
+            'benchmark_average',
+            'benchmark_position',
+            'pdf_generated_status',
+            'email_delivery_status'
+        ];
+
+        const sanitizedFields = {};
+        for (const key of ALLOWED_PATCH_FIELDS) {
+            if (!(key in fields)) continue;           // key absent — skip
+            const val = fields[key];
+            if (val === undefined) continue;          // undefined — skip
+            if (val !== null && typeof val === 'object') continue; // object/array — skip
+            sanitizedFields[key] = val;               // null | string | number | boolean — keep
+        }
+
         const url = TABLE_URL() + `?analysis_id=eq.${encodeURIComponent(analysisId)}`;
 
-        const resp = await axios.patch(url, fields, {
+        console.log(`[analysis-logger] PATCH URL — ${url}`);
+        console.log(`[analysis-logger] PATCH payload — ${JSON.stringify(sanitizedFields)}`);
+
+        const resp = await axios.patch(url, sanitizedFields, {
             timeout: 8000,
             headers: supabaseHeaders(),
             validateStatus: () => true
@@ -155,7 +187,7 @@ async function patchLog(analysisId, fields) {
             return { ok: true };
         }
 
-        console.warn(`[analysis-logger] Patch HTTP ${resp.status} — ${analysisId}`);
+        console.warn(`[analysis-logger] Patch HTTP ${resp.status} — ${analysisId} — ${JSON.stringify(resp.data)}`);
         return { ok: false };
 
     } catch (err) {
