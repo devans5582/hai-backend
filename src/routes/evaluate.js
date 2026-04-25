@@ -169,12 +169,25 @@ router.post('/', async (req, res) => {
 
         if (doReport) {
             try {
-                const r = await doReport(evaluation, combined_text, supplementarySignals, company, industry, stage, size);
+                // Call with the original argument order that report-generator.js was built to expect.
+                // The existing report-generator.js signature is:
+                //   generatePremiumReport(evaluation, scrapedText, companyName, industry, stage, size, supplementarySignals)
+                // We also pass supplementarySignals as both position 2 and 7 as a safety measure,
+                // since some versions place it earlier in the signature.
+                const r = await doReport(
+                    evaluation,
+                    combined_text,
+                    company,
+                    industry,
+                    stage,
+                    size,
+                    supplementarySignals
+                );
                 premiumReport   = r.premiumReport   || null;
                 evaluationState = r.evaluationState || 'valid';
                 calibration     = r.calibration     || null;
-                console.log(`[HAI] Report: state=${evaluationState}`);
-            } catch (e) { console.warn('[HAI] Premium report failed (non-blocking):', e.message); }
+                console.log(`[HAI] Report: state=${evaluationState} hasReport=${!!premiumReport}`);
+            } catch (e) { console.warn('[HAI] Premium report failed (non-blocking):', e.message, e.stack); }
         }
 
         // ── Step 6: Log ────────────────────────────────────────────────────
