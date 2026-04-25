@@ -1,265 +1,244 @@
 'use strict';
 
-const { Router } = require('express');
-const router = Router();
+// src/routes/evaluate.js
+// POST /evaluate — main evaluation endpoint
+// Phase 6: entity resolution (Step 0) + Phase 4 supplementary evidence
 
-const { scrapeCompanyPages }          = require('../services/scraper');
-const { callOpenAI }                  = require('../services/openai');
-const { generatePremiumReport }       = require('../services/report-generator');
-const { generateAnalysisId, writeLog } = require('../services/analysis-logger');
-// NOTE: supplementary-evidence is loaded lazily inside the request handler (section 2B)
-// so a missing module file does not crash the server at startup.
+const express               = require('express');
+const router                = express.Router();
+const { v4: uuidv4 }        = require('uuid');
 
-// POST /evaluate
-//
-// Accepts: application/x-www-form-urlencoded  { url: "https://example.com" }
-//          application/json                   { "url": "https://example.com" }
-//
-// The frontend (main.js) also sends an "action" field in the form body
-// (e.g. action=humaital_auto_evaluate_api) — this is a WordPress AJAX
-// convention. It is silently ignored here; Express parses it into req.body
-// but we never read it.
-//
-// Returns the same JSON shape as the WordPress snippet so main.js
-// handleSuccess requires zero changes:
-//
-//   Success:
-//     { success: true, data: { evaluation: {...}, scraped_pages: [...],
-//                              scraped_text_preview: "...", limited_access: false } }
-//
-//   Soft failure (site blocked):
-//     { success: true, data: { evaluation: {}, scraped_pages: [],
-//                              scraper_blocked: true, message: "..." } }
-//
-//   Hard failure:
-//     { success: false, data: "Error message string" }
+const scraper               = require('../services/scraper');
+const { callOpenAI }        = require('../services/openai');
+const { generatePremiumReport } = require('../services/report-generator');
+const { fetchSupplementaryEvidence } = require('../services/supplementary-evidence');
+const { writeLog }          = require('../services/analysis-logger');
+const { resolveEntity }     = require('../services/entity-resolver');
 
+// ── Input validation helper ─────────────────────────────────────────────────
+function isValidUrl(str) {
+    try {
+        const u = new URL(str.startsWith('http') ? str : 'https://' + str);
+        return u.hostname.includes('.');
+    } catch {
+        return false;
+    }
+}
+
+function normaliseUrl(str) {
+    if (!str) return null;
+    const s = str.trim();
+    return s.startsWith('http') ? s : 'https://' + s;
+}
+
+// ── Route handler ───────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
+    const startTime = Date.now();
 
-    const requestStart = Date.now();
-    const analysisId = generateAnalysisId();
-    console.log(`[evaluate] analysis_id: ${analysisId}`);
+    // ── Parse and validate inputs ──────────────────────────────────────────
+    const rawUrl    = (req.body.url     || '').trim();
+    const company   = (req.body.company || '').trim();
+    const industry  = (req.body.industry || 'Technology').trim();
+    const stage     = (req.body.stage   || 'startup').trim();
+    const size      = (req.body.size    || '1-10').trim();
 
-    // ----------------------------------------------------------------
-    // 1. Validate input
-    // ----------------------------------------------------------------
-
-    // "action" field from the WordPress AJAX convention is present in req.body
-    // but deliberately not read. No special handling needed — it is ignored.
-    const rawUrl = (req.body && (req.body.url || req.body.URL)) || '';
-
-    if (!rawUrl || !rawUrl.trim()) {
-        console.warn('[evaluate] Request rejected: missing URL field');
-        return res.status(200).json({
-            success: false,
-            data: 'URL is required.'
-        });
+    if (!rawUrl) {
+        return res.status(400).json({ success: false, error: 'URL is required.' });
+    }
+    if (!isValidUrl(rawUrl)) {
+        return res.status(400).json({ success: false, error: 'Invalid URL provided.' });
+    }
+    if (!company) {
+        return res.status(400).json({ success: false, error: 'Company name is required.' });
     }
 
-    // Ensure URL has a scheme — matches WordPress snippet behavior
-    let targetUrl = rawUrl.trim();
-    if (!/^https?:\/\//i.test(targetUrl)) {
-        targetUrl = 'https://' + targetUrl;
-    }
+    const url = normaliseUrl(rawUrl);
+    const analysisId = uuidv4();
 
-    console.log(`[evaluate] Request received — target: ${targetUrl}`);
+    console.log(`[HAI /evaluate] id=${analysisId} company="${company}" url=${url} industry=${industry} stage=${stage} size=${size}`);
 
-    // ----------------------------------------------------------------
-    // 2. Scrape the company's public pages
-    // ----------------------------------------------------------------
-    console.log(`[evaluate] Scraping started — ${targetUrl}`);
-    const scrapeStart = Date.now();
-
-    let scrapeResult;
     try {
-        scrapeResult = await scrapeCompanyPages(targetUrl);
-    } catch (err) {
-        // scrapeCompanyPages is designed not to throw — this is a last-resort catch
-        console.error(`[evaluate] Scraper threw unexpectedly (${Date.now() - scrapeStart}ms): ${err.message}`);
-        return res.status(200).json({
-            success: true,
-            data: {
-                evaluation:       {},
-                scraped_pages:    [],
-                scraper_blocked:  true,
-                evaluation_state: 'insufficient_evidence',
-                premiumReport:    { evaluation_state: 'insufficient_evidence', reason: 'Evidence could not be automatically obtained from the company website.', signal_profile: { high_signals: 0, medium_signals: 0, low_signals: 0 }, missing_evidence: {}, recommended_next_steps: {} },
-                calibration:      null,
-                message:          'Evidence could not be automatically obtained from the company website.'
-            }
-        });
-    }
 
-    console.log(`[evaluate] Scraping finished — ${Date.now() - scrapeStart}ms — pages: ${scrapeResult.scraped_pages ? scrapeResult.scraped_pages.length : 0} — blocked: ${!!scrapeResult.scraper_blocked}`);
+        // ── Step 0: Entity resolution (Phase 6) ───────────────────────────
+        // Runs before the scraper. Determines the canonical company name and
+        // CIK used for all downstream evidence queries.
+        // Non-blocking — if resolution fails entirely the assessment continues
+        // with the submitted name and URL.
+        let entityProfile = null;
+        let queryName     = company;  // default: use submitted name
 
-    // scraper_blocked: true only fires when URL is invalid or buildFallbackResult
-    // itself failed. In that case there is no text at all — return early.
-    if (scrapeResult.scraper_blocked) {
-        console.warn(`[evaluate] Returning scraper_blocked result — ${targetUrl}`);
-        return res.status(200).json({
-            success: true,
-            data: {
-                evaluation:       {},
-                scraped_pages:    [],
-                scraper_blocked:  true,
-                evaluation_state: 'insufficient_evidence',
-                premiumReport:    { evaluation_state: 'insufficient_evidence', reason: scrapeResult.message || 'Evidence could not be automatically obtained from the company website.', signal_profile: { high_signals: 0, medium_signals: 0, low_signals: 0 }, missing_evidence: {}, recommended_next_steps: {} },
-                calibration:      null,
-                message:          scrapeResult.message || 'Evidence could not be automatically obtained from the company website.'
-            }
-        });
-    }
-
-    // partial_scrape: true means the site was unreachable but FORCED_PATHS stubs
-    // were generated. Signal detection will run on stub URLs. The result is tagged
-    // as partial_evaluation so the report reflects limited evidence.
-    const isPartialScrape = !!scrapeResult.partial_scrape;
-    if (isPartialScrape) {
-        console.log(`[evaluate] Partial scrape — homepage blocked, continuing with URL stubs — ${targetUrl}`);
-    }
-
-    // ----------------------------------------------------------------
-    // 2B. Supplementary evidence fetch (new scoring model)
-    //
-    // Runs when scrape is partial/limited to surface signals from
-    // SEC EDGAR, Wayback Machine, OECD, GitHub, and Semantic Scholar.
-    // Results are passed to the frontend via supplementary_signals field.
-    // ----------------------------------------------------------------
-    let supplementarySignals = null;
-    const needsSupplementary = isPartialScrape || !!scrapeResult.limited_access;
-
-    if (needsSupplementary) {
-        console.log(`[evaluate] Supplementary evidence fetch started — ${targetUrl}`);
-        const supStart = Date.now();
         try {
-            // Lazy require — if the module is missing the catch below handles it
-            // gracefully so the server never crashes at startup or request time.
-            const { fetchSupplementarySignals } = require('../services/supplementary-evidence');
-            const companyName = (req.body && req.body.company) || '';
-            supplementarySignals = await fetchSupplementarySignals(
-                companyName,
-                targetUrl,
-                {
-                    githubToken: process.env.GITHUB_TOKEN || null,
-                    skipWayback: false,
+            entityProfile = await resolveEntity(company, url);
+            queryName     = entityProfile.resolvedName;
+            console.log(`[HAI] Entity resolved: "${queryName}" | confidence=${entityProfile.overallConfidence.toFixed(2)} | public=${entityProfile.isPublicCompany} | warnings=${entityProfile.warnings.length}`);
+        } catch (entityErr) {
+            console.warn('[HAI] Entity resolution failed (non-blocking):', entityErr.message);
+            entityProfile = {
+                inputName:    company,
+                inputUrl:     url,
+                resolvedName: company,
+                resolvedDomain: null,
+                wikidataId:   null,
+                lei:          null,
+                cik:          null,
+                isPublicCompany: false,
+                resolvedIndustry: null,
+                nameMatchScore: 0,
+                domainVerified: null,
+                domainMatchConfidence: 0,
+                edgarCrossCheckFound: false,
+                overallConfidence: 0,
+                warnings: ['Entity resolution unavailable — assessment uses submitted name and URL.'],
+                wikidataIsOneSignal: true,
+                resolvedAt: new Date().toISOString()
+            };
+        }
+
+        // ── Step 1: Scrape website ─────────────────────────────────────────
+        console.log(`[HAI] Scraping: ${url}`);
+        const scrapeResult = await scraper.scrape(url);
+        const {
+            combined_text    = '',
+            scraped_pages    = [],
+            scrape_status    = 'blocked',
+            limited_access   = false,
+            partial_scrape   = false
+        } = scrapeResult;
+
+        console.log(`[HAI] Scrape status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length}`);
+
+        // ── Step 2: Supplementary evidence (Phase 4+6) ────────────────────
+        // Triggered when scrape is partial or limited.
+        // Uses queryName (entity-resolved) for more accurate evidence queries.
+        let supplementarySignals = null;
+
+        if (partial_scrape || limited_access || scrape_status === 'partial' || scrape_status === 'limited') {
+            console.log('[HAI] Triggering supplementary evidence fetch...');
+            try {
+                supplementarySignals = await fetchSupplementaryEvidence(
+                    queryName,
+                    url,
+                    industry,
+                    { entityProfile, combinedText: combined_text }
+                );
+                const sc = supplementarySignals;
+                console.log(`[HAI] Supplementary: edgar=${sc.edgarSignals} oecd=${sc.oecdSignals} academic=${sc.academicSignals} github=${sc.githubSignals} wayback=${sc.waybackSignals} total=${sc.totalSignals}`);
+                if (sc.impact && sc.impact.negativeOverrides && sc.impact.negativeOverrides.length > 0) {
+                    console.log(`[HAI] Negative overrides applied: ${sc.impact.negativeOverrides.length} criteria affected. Worst severity: ${sc.impact.worstSeverity}`);
                 }
-            );
-            console.log(`[evaluate] Supplementary fetch complete (${Date.now() - supStart}ms) — signals: ${supplementarySignals.totalSignals}`);
-        } catch (err) {
-            if (err.code === 'MODULE_NOT_FOUND') {
-                console.warn(`[evaluate] Supplementary evidence module unavailable (non-fatal) — skipping: ${err.message}`);
-            } else {
-                console.warn(`[evaluate] Supplementary fetch failed (non-fatal): ${err.message}`);
+            } catch (suppErr) {
+                console.warn('[HAI] Supplementary evidence fetch failed (non-blocking):', suppErr.message);
+                supplementarySignals = null;
             }
-            supplementarySignals = null;
         }
-    }
 
-    // ----------------------------------------------------------------
-    // 3. Guard: OpenAI key must be configured
-    // ----------------------------------------------------------------
-    if (!process.env.OPENAI_API_KEY) {
-        console.error('[evaluate] OPENAI_API_KEY is not set — cannot call OpenAI');
-        return res.status(200).json({
-            success: false,
-            data: 'API Key not configured in backend.'
-        });
-    }
+        // ── Step 3: Guard — OpenAI API key ────────────────────────────────
+        if (!process.env.OPENAI_API_KEY) {
+            console.error('[HAI] OPENAI_API_KEY is not set');
+            return res.status(500).json({ success: false, error: 'Evaluation service is not configured. Please contact support.' });
+        }
 
-    // ----------------------------------------------------------------
-    // 4. Call OpenAI with the scraped text
-    // ----------------------------------------------------------------
-    console.log(`[evaluate] OpenAI call started — text length: ${scrapeResult.combined_text.length} chars`);
-    const aiStart = Date.now();
+        // ── Step 4: OpenAI rubric evaluation ──────────────────────────────
+        console.log('[HAI] Calling OpenAI for rubric evaluation...');
+        let evaluation = null;
+        try {
+            evaluation = await callOpenAI(combined_text, company, industry);
+            console.log('[HAI] OpenAI evaluation complete. Criteria evaluated:', Object.keys(evaluation || {}).length);
+        } catch (aiErr) {
+            console.error('[HAI] OpenAI evaluation failed:', aiErr.message);
+            return res.status(500).json({ success: false, error: 'Evaluation could not be completed. Please try again.' });
+        }
 
-    let evaluationData;
-    try {
-        evaluationData = await callOpenAI(scrapeResult.combined_text);
-    } catch (err) {
-        console.error(`[evaluate] OpenAI call failed (${Date.now() - aiStart}ms): ${err.message}`);
-        return res.status(200).json({
-            success: false,
-            data: 'Failed to connect to OpenAI API: ' + err.message
-        });
-    }
+        // ── Step 5: Premium report generation ─────────────────────────────
+        console.log('[HAI] Generating premium report...');
+        let premiumReport    = null;
+        let evaluationState  = 'valid';
+        let calibration      = null;
 
-    console.log(`[evaluate] OpenAI call finished — ${Date.now() - aiStart}ms`);
+        try {
+            const reportResult = await generatePremiumReport(
+                evaluation,
+                combined_text,
+                supplementarySignals,
+                company,
+                industry,
+                stage,
+                size
+            );
+            premiumReport   = reportResult.premiumReport   || null;
+            evaluationState = reportResult.evaluationState || 'valid';
+            calibration     = reportResult.calibration     || null;
+            console.log(`[HAI] Premium report: state=${evaluationState}`);
+        } catch (reportErr) {
+            console.warn('[HAI] Premium report generation failed (non-blocking):', reportErr.message);
+            evaluationState = 'valid';
+        }
 
-    // ----------------------------------------------------------------
-    // 5A. Generate premium report narrative (Phase 3)
-    //
-    // Runs AFTER evaluationData is populated. Uses evaluationData and
-    // scraped text only — does NOT compute scores, confidence, or
-    // certification status (those belong to the frontend).
-    //
-    // snapshot fields (alignment_level, evidence_strength,
-    // certification_status, benchmark_position) are returned as null
-    // and populated by the frontend after exact score calculations.
-    //
-    // Fail-safe: any failure sets premiumReport to null without
-    // affecting the evaluation response or downstream PDF/email flow.
-    // ----------------------------------------------------------------
-    console.log(`[evaluate] Premium report generation started`);
-    const reportStart = Date.now();
-    let premiumReport = null;
-
-    try {
-        premiumReport = await generatePremiumReport(
-            evaluationData,
-            scrapeResult.combined_text,
-            { partialScrape: isPartialScrape, limitedAccess: !!scrapeResult.limited_access }
-        );
-        console.log(`[evaluate] Premium report generation finished — ${Date.now() - reportStart}ms — success: ${premiumReport !== null}`);
-    } catch (err) {
-        // generatePremiumReport is designed not to throw — this is a last-resort catch
-        console.warn(`[evaluate] Premium report threw unexpectedly (${Date.now() - reportStart}ms):`, err.message);
-        premiumReport = null;
-    }
-
-    // ----------------------------------------------------------------
-    // 5B. Return — all original fields preserved, premiumReport added
-    //
-    // main.js reads:
-    //   resData.data.evaluation      → applied to assessmentState by criterion key
-    //   resData.data.scraped_pages   → stored as window.currentScrapedPages
-    //   resData.data.scraper_blocked → stored as window.scraperBlocked
-    //   resData.data.message         → shown in warning when scraper_blocked
-    //   resData.data.premiumReport   → NEW: stored as window.currentPremiumReport
-    //   (scraped_text_preview and limited_access are returned but not consumed)
-    // ----------------------------------------------------------------
-    const totalMs = Date.now() - requestStart;
-    console.log(`[evaluate] Request complete — ${totalMs}ms — ${targetUrl}`);
-
-    // evaluation_state and calibration are surfaced at the top level of data{}
-    // so the frontend can read them without conditional premiumReport access.
-    // When premiumReport is an insufficient_evidence object, evaluation_state
-    // is 'insufficient_evidence' and calibration is null.
-    // When premiumReport is null (backend error), both are null.
-    const evaluationState = premiumReport && premiumReport.evaluation_state
-        ? premiumReport.evaluation_state
-        : null;
-    const calibration = premiumReport && premiumReport.calibration
-        ? premiumReport.calibration
-        : null;
-
-    // Write analysis log — fire-and-forget, never blocks response
-    writeLog({ analysisId, targetUrl, reqBody: req.body, scrapeResult, premiumReport }).catch(() => {});
-
-    return res.status(200).json({
-        success: true,
-        data: {
+        // ── Step 6: Phase 1 log (fire-and-forget) ─────────────────────────
+        const logPayload = {
             analysis_id:          analysisId,
-            evaluation:           evaluationData,
-            scraped_pages:        scrapeResult.scraped_pages,
-            scraped_text_preview: scrapeResult.combined_text.slice(0, 5000),
-            limited_access:       scrapeResult.limited_access,
-            partial_scrape:          isPartialScrape,
-            supplementary_signals:   supplementarySignals,
-            premiumReport:           premiumReport,
-            evaluation_state:        evaluationState,
-            calibration:             calibration
-        }
-    });
+            company_name:         company,
+            company_url:          url,
+            industry,
+            stage,
+            size,
+            scrape_status,
+            limited_access_flag:  limited_access || false,
+            evaluation_state:     evaluationState,
+            // Supplementary signal counts for logging
+            edgar_signals:        supplementarySignals?.edgarSignals    ?? 0,
+            wayback_signals:      supplementarySignals?.waybackSignals  ?? 0,
+            oecd_signals:         supplementarySignals?.oecdSignals     ?? 0,
+            github_signals:       supplementarySignals?.githubSignals   ?? 0,
+            academic_signals:     supplementarySignals?.academicSignals ?? 0,
+            supplementary_total:  supplementarySignals?.totalSignals    ?? 0,
+            // Phase 6: entity resolution fields
+            entity_resolved_name: entityProfile?.resolvedName          ?? '',
+            entity_wikidata_id:   entityProfile?.wikidataId            ?? '',
+            entity_is_public:     entityProfile?.isPublicCompany       ?? false,
+            entity_confidence:    entityProfile?.overallConfidence      ?? 0,
+            entity_domain_match:  entityProfile?.domainVerified        ?? null,
+            // Phase 6: override fields
+            has_overrides:        supplementarySignals?.impact?.hasOverrides    ?? false,
+            override_count:       supplementarySignals?.impact?.negativeOverrides?.length ?? 0,
+            worst_override:       supplementarySignals?.impact?.worstSeverity   ?? '',
+            // Phase 6: freshness
+            avg_evidence_freshness: supplementarySignals?.impact?.avgFreshness  ?? null,
+            // Phase 6: execution
+            execution_gap_count:    supplementarySignals?.impact?.executionGapCount    ?? 0,
+            verified_execution_count: supplementarySignals?.impact?.verifiedExecutionCount ?? 0,
+        };
+
+        writeLog(logPayload).catch(logErr =>
+            console.warn('[HAI] Phase 1 log write failed (non-blocking):', logErr.message)
+        );
+
+        // ── Step 7: Build and return response ─────────────────────────────
+        const elapsed = Date.now() - startTime;
+        console.log(`[HAI /evaluate] Complete in ${elapsed}ms`);
+
+        return res.json({
+            success:               true,
+            analysis_id:           analysisId,
+            evaluation:            evaluation        || {},
+            scraped_pages:         scraped_pages,
+            limited_access:        limited_access    || false,
+            partial_scrape:        partial_scrape    || false,
+            premiumReport:         premiumReport,
+            evaluation_state:      evaluationState,
+            calibration:           calibration,
+            supplementary_signals: supplementarySignals,
+            // Phase 6: entity profile returned to frontend for entity card display
+            entityProfile:         entityProfile,
+        });
+
+    } catch (err) {
+        console.error('[HAI /evaluate] Unhandled error:', err);
+        return res.status(500).json({
+            success: false,
+            error:   'An unexpected error occurred. Please try again.',
+        });
+    }
 });
 
 module.exports = router;
