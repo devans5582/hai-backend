@@ -1,587 +1,670 @@
 'use strict';
 
-// ---------------------------------------------------------------
-// supplementary-evidence.js  —  HAI Supplementary Evidence Service
-// Phase 4 (revised): Evidence-quality model
+// src/services/supplementary-evidence.js
+// Phase 4 evidence-quality fetch service — Phase 6 enhanced
 //
-// ARCHITECTURE (unchanged):
-//   Fetch pipeline → evaluate.js calls fetchSupplementarySignals
-//   when scrape is partial/limited. Results travel as
-//   supplementary_signals in the /evaluate response.
+// Triggered by evaluate.js when website scrape returns partial or limited access.
+// Queries five public sources, maps evidence to rubric criteria, applies
+// materiality weighting, time decay, execution detection, and negative overrides.
 //
-// WHAT CHANGED vs the original:
-//   OLD: signal counts → directly boosted confidence and score
-//   NEW: evidence items → mapped to specific rubric criteria →
-//        weighted by source quality tier → validated for specificity →
-//        used to gate maturity levels and derive criterion confidence
-//
-// CORE RULE:
-//   Score  = evidence quality   (not signal volume)
-//   Confidence = evidence credibility  (not source count)
-// ---------------------------------------------------------------
+// Core principle: evidence must map to specific rubric criteria.
+// Source quality determines what that evidence can support.
+// Signal volume does not affect score.
 
 const axios = require('axios');
 
-const REQUEST_DELAY_MS = 800;
-const TIMEOUT_MS       = 8000;
+// ── Phase 6 service imports ─────────────────────────────────────────────────
+const { annotateWithExecutionScore, executionBonus } = require('./proof-of-execution');
+const { annotateWithTimeDecay }                       = require('./time-decay');
+const {
+    computeWeightedContribution,
+    CRITERION_MATERIALITY,
+    getMaterialityWeight,
+}                                                     = require('./evidence-weighting');
+const { applyNegativeOverrides, classifyNegativeSignal } = require('./negative-signal-overrides');
 
-// ================================================================
-// SOURCE QUALITY TIERS
-// ================================================================
-const SOURCE_TIER = {
-    EDGAR:    'high',
-    OECD:     'medium',
-    ACADEMIC: 'medium',
-    GITHUB:   'low',
-    WAYBACK:  'low',
+// ── Rubric definition (criteria per pillar) ────────────────────────────────
+const RUBRIC_DEF = {
+    pillars: [
+        {
+            id: 'trust',
+            criteria: [
+                { id: 'trust_user_confidence',          label: 'User Confidence' },
+                { id: 'trust_consistency_of_behavior',  label: 'Consistency of Behavior' },
+                { id: 'trust_ethical_intent',           label: 'Ethical Intent' },
+                { id: 'trust_absence_of_manipulation',  label: 'Absence of Manipulation' },
+            ]
+        },
+        {
+            id: 'accountability',
+            criteria: [
+                { id: 'accountability_ownership_of_outcomes',    label: 'Ownership of Outcomes' },
+                { id: 'accountability_corrective_action',        label: 'Corrective Action' },
+                { id: 'accountability_governance_and_oversight', label: 'Governance and Oversight' },
+            ]
+        },
+        {
+            id: 'purpose',
+            criteria: [
+                { id: 'purpose_mission_clarity',         label: 'Mission Clarity' },
+                { id: 'purpose_human_centered_intent',   label: 'Human-Centered Intent' },
+                { id: 'purpose_alignment_words_actions', label: 'Alignment: Words & Actions' },
+            ]
+        },
+        {
+            id: 'safety',
+            criteria: [
+                { id: 'safety_risk_mitigation',              label: 'Risk Mitigation' },
+                { id: 'safety_user_protection_mechanisms',   label: 'User Protection Mechanisms' },
+                { id: 'safety_long_term_societal_safety',    label: 'Long-Term Societal Safety' },
+            ]
+        },
+        {
+            id: 'transparency',
+            criteria: [
+                { id: 'transparency_explainability',         label: 'Explainability' },
+                { id: 'transparency_data_disclosure',        label: 'Data Disclosure' },
+                { id: 'transparency_communication_honesty',  label: 'Communication Honesty' },
+            ]
+        },
+        {
+            id: 'impact',
+            criteria: [
+                { id: 'impact_positive_human_outcomes',  label: 'Positive Human Outcomes' },
+                { id: 'impact_shared_human_benefit',     label: 'Shared Human Benefit' },
+                { id: 'impact_measurability_of_impact',  label: 'Measurability of Impact' },
+                { id: 'impact_durability_of_impact',     label: 'Durability of Impact' },
+            ]
+        },
+    ]
 };
 
-const TIER_WEIGHT = { high: 1.0, medium: 0.6, low: 0.25 };
-
-// ================================================================
-// CRITERION-TO-PILLAR MAP
-// ================================================================
-const PILLAR_CRITERIA = {
-    trust:          ['trust_user_confidence','trust_consistency_of_behavior','trust_ethical_intent','trust_absence_of_manipulation'],
-    accountability: ['accountability_ownership_of_outcomes','accountability_corrective_action','accountability_governance_and_oversight'],
-    purpose:        ['purpose_mission_clarity','purpose_human_centered_intent','purpose_alignment_words_actions'],
-    safety:         ['safety_risk_mitigation','safety_user_protection_mechanisms','safety_long_term_societal_safety'],
-    transparency:   ['transparency_explainability','transparency_data_disclosure','transparency_communication_honesty'],
-    impact:         ['impact_positive_human_outcomes','impact_shared_human_benefit','impact_measurability_of_impact','impact_durability_of_impact'],
-};
-
-// ================================================================
-// SOURCE → PILLAR RELEVANCE MAP
-//
-// Evidence from a source can ONLY influence criteria in these pillars.
-// Generic signals cannot affect unrelated criteria.
-// ================================================================
-const SOURCE_PILLAR_RELEVANCE = {
+// ── Source → Pillar relevance mapping ──────────────────────────────────────
+const SOURCE_PILLAR_MAP = {
     EDGAR:    ['accountability', 'transparency', 'trust'],
+    ISO_42001: ['safety', 'accountability', 'trust'],
+    NIST_RMF: ['safety', 'accountability', 'purpose'],
+    GOVINFO:  ['accountability', 'transparency', 'purpose'],
     OECD:     ['trust', 'purpose', 'impact'],
     ACADEMIC: ['safety', 'impact'],
+    NEWS:     ['trust', 'safety'],
+    NEWS_NEGATIVE: ['trust', 'safety', 'accountability'],
     GITHUB:   ['transparency', 'safety'],
-    WAYBACK:  ['trust', 'transparency', 'accountability', 'purpose', 'safety', 'impact'],
+    WAYBACK:  ['trust', 'accountability', 'purpose', 'safety', 'transparency', 'impact'],
 };
 
-// ================================================================
-// CRITERION-SPECIFIC TERMS
-// Used to determine whether evidence is criterion-specific or generic.
-// ================================================================
-const CRITERION_TERMS = {
-    accountability_governance_and_oversight: ['governance', 'oversight', 'board', 'committee', 'charter', 'audit'],
-    accountability_ownership_of_outcomes:    ['responsibility', 'accountab', 'ownership', 'incident'],
-    accountability_corrective_action:        ['remediation', 'corrective', 'incident response', 'postmortem'],
-    transparency_data_disclosure:            ['data disclosure', 'privacy', 'data governance', 'data policy'],
-    transparency_explainability:             ['explainab', 'model card', 'system card', 'interpretab'],
-    transparency_communication_honesty:      ['transparency report', 'disclosure', 'changelog'],
-    trust_ethical_intent:                    ['ethics', 'ethical', 'principles', 'responsible ai', 'ai policy'],
-    trust_user_confidence:                   ['user trust', 'trust center', 'feedback', 'support'],
-    safety_risk_mitigation:                  ['risk', 'safety', 'red team', 'testing', 'assessment'],
-    safety_long_term_societal_safety:        ['societal', 'long-term', 'impact', 'scenario'],
-    purpose_mission_clarity:                 ['mission', 'purpose', 'strategy', 'vision'],
-    purpose_human_centered_intent:           ['human', 'people', 'stakeholder', 'accessibility'],
-    impact_measurability_of_impact:          ['metric', 'measur', 'outcome', 'impact report'],
-    impact_positive_human_outcomes:          ['benefit', 'outcome', 'community', 'positive impact'],
+// Source tier weights
+const SOURCE_TIER = {
+    EDGAR:    { tier: 'high',   weight: 1.0 },
+    ISO_42001: { tier: 'high',  weight: 1.0 },
+    NIST_RMF: { tier: 'high',   weight: 1.0 },
+    GOVINFO:  { tier: 'high',   weight: 1.0 },
+    OECD:     { tier: 'medium', weight: 0.6 },
+    ACADEMIC: { tier: 'medium', weight: 0.6 },
+    NEWS:     { tier: 'medium', weight: 0.6 },
+    NEWS_NEGATIVE: { tier: 'medium', weight: 0.6 },
+    GITHUB:   { tier: 'low',    weight: 0.25 },
+    WAYBACK:  { tier: 'low',    weight: 0.25 },
 };
 
-// ================================================================
-// MATURITY GATING TABLE
-//
-// Minimum evidence quality required to SUPPORT each maturity level.
-// Low-trust sources alone cannot justify Level 3+.
-// Levels 4-5 require high-trust criterion-specific evidence.
-// ================================================================
-const MATURITY_GATES = {
-    5: { minTier: 'high',   requiresCriterionSpecific: true,  requiresCorroboration: true  },
-    4: { minTier: 'high',   requiresCriterionSpecific: true,  requiresCorroboration: false },
-    3: { minTier: 'medium', requiresCriterionSpecific: false, requiresCorroboration: false },
-    2: { minTier: 'low',    requiresCriterionSpecific: false, requiresCorroboration: false },
-    1: { minTier: null,     requiresCriterionSpecific: false, requiresCorroboration: false },
+// Keyword patterns mapping evidence text to specific criterion IDs
+const CRITERION_KEYWORD_MAP = {
+    trust_user_confidence:                  ['user trust', 'user confidence', 'trust center', 'ai trust statement', 'feedback channel', 'user expectations', 'ai transparency', 'incident log'],
+    trust_consistency_of_behavior:          ['model consistency', 'testing plan', 'qa process', 'change log', 'release log', 'drift monitoring', 'model versioning'],
+    trust_ethical_intent:                   ['ethical ai', 'ai ethics', 'ethics policy', 'ethical principles', 'responsible ai', 'ai principles'],
+    trust_absence_of_manipulation:          ['dark patterns', 'manipulation', 'deceptive design', 'user autonomy', 'consent', 'no manipulation'],
+    accountability_ownership_of_outcomes:   ['ai owner', 'responsible person', 'accountable', 'named owner', 'ai governance owner', 'chief ai', 'ai officer'],
+    accountability_corrective_action:       ['corrective action', 'incident response', 'remediation', 'error correction', 'ai incident', 'model failure'],
+    accountability_governance_and_oversight:['governance committee', 'oversight', 'ai board', 'governance framework', 'ai governance', 'board oversight'],
+    purpose_mission_clarity:                ['mission', 'purpose statement', 'ai purpose', 'why we use ai', 'strategic ai', 'ai mission'],
+    purpose_human_centered_intent:          ['human-centered', 'human-centric', 'people first', 'human benefit', 'serving humans', 'human need'],
+    purpose_alignment_words_actions:        ['policy alignment', 'practice alignment', 'words and actions', 'commitment', 'following through'],
+    safety_risk_mitigation:                 ['risk assessment', 'risk mitigation', 'ai risk', 'risk management', 'risk framework', 'hazard', 'failure mode'],
+    safety_user_protection_mechanisms:      ['safeguard', 'user protection', 'safety mechanism', 'harm prevention', 'safety protocol', 'content filter'],
+    safety_long_term_societal_safety:       ['societal safety', 'long-term safety', 'systemic risk', 'societal impact', 'existential', 'broader safety'],
+    transparency_explainability:            ['explainability', 'explainable ai', 'how ai works', 'decision explanation', 'xai', 'interpretability'],
+    transparency_data_disclosure:           ['data disclosure', 'data practices', 'data handling', 'privacy policy', 'data use', 'data transparency', 'gdpr'],
+    transparency_communication_honesty:     ['honest communication', 'ai disclosure', 'telling users', 'labelling ai', 'ai identification'],
+    impact_positive_human_outcomes:         ['human outcomes', 'positive impact', 'user benefit', 'lives improved', 'impact report', 'social good'],
+    impact_shared_human_benefit:            ['shared benefit', 'societal benefit', 'community benefit', 'public good', 'equitable'],
+    impact_measurability_of_impact:         ['impact metrics', 'measuring impact', 'impact measurement', 'kpi', 'outcomes tracked', 'results published'],
+    impact_durability_of_impact:            ['sustained impact', 'long-term impact', 'durable benefit', 'lasting change'],
 };
 
-// ================================================================
-// HELPERS
-// ================================================================
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-async function safeGet(url, params = {}) {
-    try {
-        const resp = await axios.get(url, {
-            params, timeout: TIMEOUT_MS,
-            headers: { 'User-Agent': 'HAI-Index/2.0 (humanalignmentindex.com)' },
-            validateStatus: () => true,
-        });
-        return resp.status === 200 ? resp.data : null;
-    } catch (_) { return null; }
-}
-
-function isCriterionSpecific(text, criterionId) {
-    const terms = CRITERION_TERMS[criterionId];
-    if (!terms || !text) return false;
-    const lower = text.toLowerCase();
-    return terms.some(t => lower.includes(t));
-}
-
-// Every piece of evidence carries full traceability fields.
-function makeEvidenceItem({ source, sourceTier, text, url, relevantPillars, criterionSpecificFor, evidenceType }) {
-    return {
-        source,
-        sourceTier,
-        tierWeight:           TIER_WEIGHT[sourceTier],
-        text:                 text || '',
-        url:                  url  || '',
-        relevantPillars:      relevantPillars || [],
-        criterionSpecificFor: criterionSpecificFor || [],
-        evidenceType,
-        role: null,  // 'justifies' | 'supports' — assigned in mapEvidenceToCriteria
-    };
-}
-
-// ================================================================
-// SOURCE FETCHERS (fetch pipeline unchanged; return shape updated)
-// ================================================================
+// ── Source fetch functions ──────────────────────────────────────────────────
 
 async function fetchEdgar(companyName) {
-    const items = [];
-    const TERMS = ['responsible AI', 'AI governance', 'AI ethics', 'artificial intelligence policy', 'AI risk'];
-    for (const term of TERMS.slice(0, 3)) {
-        const data = await safeGet('https://efts.sec.gov/LATEST/search-index', {
-            q: `"${companyName}" "${term}"`, dateRange: 'custom',
-            startdt: '2022-01-01', forms: '10-K,DEF 14A',
+    const results = [];
+    try {
+        const query = encodeURIComponent(`"${companyName}" artificial intelligence governance responsible`);
+        const url   = `https://efts.sec.gov/LATEST/search-index?q=${query}&dateRange=custom&startdt=2020-01-01&forms=10-K,DEF+14A`;
+        const res   = await axios.get(url, {
+            timeout: 8000,
+            headers: { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' }
         });
-        await sleep(REQUEST_DELAY_MS);
-        const hits = data && data.hits && data.hits.total ? data.hits.total.value : 0;
-        if (hits > 0) {
-            const criterionSpecific = Object.keys(CRITERION_TERMS).filter(c => isCriterionSpecific(term, c));
-            items.push(makeEvidenceItem({
-                source: 'EDGAR', sourceTier: SOURCE_TIER.EDGAR,
-                text: 'SEC filing mentions "' + term + '" (' + hits + ' hit' + (hits > 1 ? 's' : '') + ')',
-                url:  'https://efts.sec.gov/LATEST/search-index?q=' + encodeURIComponent('"'+companyName+'" "'+term+'"') + '&forms=10-K',
-                relevantPillars: SOURCE_PILLAR_RELEVANCE.EDGAR,
-                criterionSpecificFor: criterionSpecific,
-                evidenceType: 'governance',
-            }));
-        }
-    }
-    return items;
-}
+        const hits  = res.data?.hits?.hits || [];
 
-async function fetchWayback(companyUrl) {
-    const items = [];
-    let origin;
-    try { origin = new URL(companyUrl).origin; } catch (_) { return []; }
-    // Only governance-specific paths — /privacy and /terms are generic, excluded
-    const PATHS = ['/ai-policy', '/responsible-ai', '/ethics', '/governance', '/ai-principles', '/trust'];
-    for (const path of PATHS) {
-        const data = await safeGet('https://archive.org/wayback/available', { url: origin + path });
-        await sleep(400);
-        const snap = data && data.archived_snapshots && data.archived_snapshots.closest;
-        if (snap && snap.available && snap.status === '200') {
-            const criterionSpecific = Object.keys(CRITERION_TERMS).filter(c => isCriterionSpecific(path, c));
-            items.push(makeEvidenceItem({
-                source: 'WAYBACK', sourceTier: SOURCE_TIER.WAYBACK,
-                text: 'Archived governance page: ' + path + ' (cached ' + snap.timestamp + ')',
-                url:  snap.url,
-                relevantPillars: SOURCE_PILLAR_RELEVANCE.WAYBACK,
-                criterionSpecificFor: criterionSpecific,
-                evidenceType: 'governance',  // page existence only — low-trust
-            }));
-        }
+        hits.slice(0, 3).forEach(hit => {
+            const src = hit._source || {};
+            const text = [src.period_of_report, src.display_names?.[0], src.form_type].filter(Boolean).join(' — ');
+            results.push({
+                source:           'EDGAR',
+                sourceTier:       'high',
+                tierWeight:       1.0,
+                text:             `SEC ${src.form_type || '10-K'} filing: ${src.display_names?.[0] || companyName}. ${src.period_of_report ? 'Period: ' + src.period_of_report : ''}`,
+                url:              src.file_date ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${encodeURIComponent(companyName)}&type=10-K&dateb=&owner=include&count=5` : null,
+                dateIssued:       src.file_date  || null,
+                relevantPillars:  SOURCE_PILLAR_MAP.EDGAR,
+                criterionSpecificFor: mapTextToCriteria(text, SOURCE_PILLAR_MAP.EDGAR),
+                evidenceType:     'external',
+                role:             'justifies',
+            });
+        });
+    } catch (err) {
+        console.log('[HAI] EDGAR fetch failed:', err.message);
     }
-    return items;
+    return results;
 }
 
 async function fetchOecd(companyName) {
-    const items = [];
-    const data = await safeGet('https://oecd.ai/en/wonk/api/search', { q: companyName, type: 'private_sector', lang: 'en' });
-    await sleep(REQUEST_DELAY_MS);
-    if (data && data.results) {
-        for (const r of data.results.slice(0, 3)) {
-            if (!JSON.stringify(r).toLowerCase().includes(companyName.toLowerCase())) continue;
-            const title = r.title || '';
-            const criterionSpecific = Object.keys(CRITERION_TERMS).filter(c => isCriterionSpecific(title, c));
-            items.push(makeEvidenceItem({
-                source: 'OECD', sourceTier: SOURCE_TIER.OECD,
-                text: title || 'OECD AI Policy Observatory listing',
-                url:  r.url || '',
-                relevantPillars: SOURCE_PILLAR_RELEVANCE.OECD,
-                criterionSpecificFor: criterionSpecific,
-                evidenceType: 'external',
-            }));
-        }
-    }
-    return items;
-}
+    const results = [];
+    try {
+        const query = encodeURIComponent(companyName);
+        const url   = `https://oecd.ai/en/wonk/api/search?q=${query}&type=private_sector&limit=3`;
+        const res   = await axios.get(url, {
+            timeout: 7000,
+            headers: { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' }
+        });
+        const items = res.data?.results || res.data?.items || [];
 
-async function fetchGithub(companyName, githubToken) {
-    const items = [];
-    const headers = githubToken
-        ? { 'Authorization': 'token ' + githubToken, 'User-Agent': 'HAI-Index/2.0' }
-        : { 'User-Agent': 'HAI-Index/2.0' };
-    const orgSlug = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-    const KEYWORDS = ['responsible-ai', 'ai-ethics', 'model-card', 'ai-safety', 'ai-principles'];
-    for (const kw of KEYWORDS.slice(0, 3)) {
-        try {
-            const resp = await axios.get('https://api.github.com/search/repositories', {
-                params: { q: 'org:' + orgSlug + ' ' + kw, per_page: 3 },
-                timeout: TIMEOUT_MS, headers, validateStatus: () => true,
+        items.slice(0, 2).forEach(item => {
+            const text = item.title || item.name || item.description || '';
+            results.push({
+                source:           'OECD',
+                sourceTier:       'medium',
+                tierWeight:       0.6,
+                text:             `OECD AI Observatory: ${text.slice(0, 200)}`,
+                url:              item.url || 'https://oecd.ai/en/wonk',
+                dateIssued:       item.date || item.published_date || null,
+                relevantPillars:  SOURCE_PILLAR_MAP.OECD,
+                criterionSpecificFor: mapTextToCriteria(text, SOURCE_PILLAR_MAP.OECD),
+                evidenceType:     'governance',
+                role:             'supports',
             });
-            await sleep(REQUEST_DELAY_MS);
-            if (resp.status !== 200 || !resp.data || !resp.data.total_count) continue;
-            for (const repo of (resp.data.items || []).slice(0, 2)) {
-                const repoText = repo.full_name + ' ' + (repo.description || '');
-                const criterionSpecific = Object.keys(CRITERION_TERMS).filter(c => isCriterionSpecific(repoText, c));
-                items.push(makeEvidenceItem({
-                    source: 'GITHUB', sourceTier: SOURCE_TIER.GITHUB,
-                    text: 'Public repo: ' + repo.full_name + (repo.description ? ' — ' + repo.description : ''),
-                    url:  repo.html_url,
-                    relevantPillars: SOURCE_PILLAR_RELEVANCE.GITHUB,
-                    criterionSpecificFor: criterionSpecific,
-                    evidenceType: 'operational',
-                }));
-            }
-        } catch (_) {}
+        });
+    } catch (err) {
+        console.log('[HAI] OECD fetch failed:', err.message);
     }
-    return items;
+    return results;
 }
 
 async function fetchAcademic(companyName) {
-    const items = [];
-    for (const term of ['responsible AI', 'AI safety', 'AI ethics']) {
-        const data = await safeGet('https://api.semanticscholar.org/graph/v1/paper/search', {
-            query: companyName + ' ' + term, fields: 'title,year,authors', limit: 5,
+    const results = [];
+    try {
+        const query = encodeURIComponent(`${companyName} responsible AI governance`);
+        const url   = `https://api.semanticscholar.org/graph/v1/paper/search?query=${query}&limit=3&fields=title,year,authors,externalIds`;
+        const res   = await axios.get(url, {
+            timeout: 7000,
+            headers: { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' }
         });
-        await sleep(REQUEST_DELAY_MS);
-        if (!data || !data.data || !data.data.length) continue;
-        for (const paper of data.data.slice(0, 2)) {
-            if (!paper.title) continue;
-            const criterionSpecific = Object.keys(CRITERION_TERMS).filter(c => isCriterionSpecific(paper.title, c));
-            items.push(makeEvidenceItem({
-                source: 'ACADEMIC', sourceTier: SOURCE_TIER.ACADEMIC,
-                text: paper.title + (paper.year ? ' (' + paper.year + ')' : ''),
-                url:  '',
-                relevantPillars: SOURCE_PILLAR_RELEVANCE.ACADEMIC,
-                criterionSpecificFor: criterionSpecific,
-                evidenceType: 'external',
-            }));
-        }
-        if (items.length >= 3) break;
+        const papers = res.data?.data || [];
+
+        papers.slice(0, 2).forEach(paper => {
+            const title   = paper.title || '';
+            const authors = (paper.authors || []).map(a => a.name).join(', ').slice(0, 100);
+            const doi     = paper.externalIds?.DOI;
+            results.push({
+                source:           'ACADEMIC',
+                sourceTier:       'medium',
+                tierWeight:       0.6,
+                text:             `Academic paper: "${title}" (${paper.year || 'undated'}). Authors: ${authors || 'unknown'}.`,
+                url:              doi ? `https://doi.org/${doi}` : 'https://www.semanticscholar.org/',
+                dateIssued:       paper.year ? String(paper.year) : null,
+                relevantPillars:  SOURCE_PILLAR_MAP.ACADEMIC,
+                criterionSpecificFor: mapTextToCriteria(title, SOURCE_PILLAR_MAP.ACADEMIC),
+                evidenceType:     'external',
+                role:             'supports',
+            });
+        });
+    } catch (err) {
+        console.log('[HAI] Academic fetch failed:', err.message);
     }
-    return items;
+    return results;
+}
+
+async function fetchWayback(companyUrl) {
+    const results = [];
+    const GOVERNANCE_PATHS = [
+        '/responsible-ai', '/ai-governance', '/ai-ethics', '/ai-principles',
+        '/trust', '/trust-center', '/ethics', '/privacy', '/governance',
+        '/transparency', '/responsible-technology', '/how-we-use-ai',
+        '/sustainability', '/impact', '/about/ai',
+    ];
+
+    // Test a sample of paths — not all, to stay within rate limits
+    const pathsToCheck = GOVERNANCE_PATHS.slice(0, 5);
+    const baseUrl = companyUrl.replace(/\/$/, '');
+
+    for (const path of pathsToCheck) {
+        try {
+            const archiveUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(baseUrl + path)}`;
+            const res = await axios.get(archiveUrl, {
+                timeout: 5000,
+                headers: { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' }
+            });
+            const snap = res.data?.archived_snapshots?.closest;
+            if (snap && snap.available && snap.status === '200') {
+                results.push({
+                    source:           'WAYBACK',
+                    sourceTier:       'low',
+                    tierWeight:       0.25,
+                    text:             `Archived governance page found: ${baseUrl}${path} (snapshot: ${snap.timestamp?.slice(0,8) || 'unknown date'})`,
+                    url:              snap.url || null,
+                    dateIssued:       snap.timestamp ? snap.timestamp.slice(0,4) + '-' + snap.timestamp.slice(4,6) + '-' + snap.timestamp.slice(6,8) : null,
+                    relevantPillars:  SOURCE_PILLAR_MAP.WAYBACK,
+                    criterionSpecificFor: mapTextToCriteria(path, SOURCE_PILLAR_MAP.WAYBACK),
+                    evidenceType:     'governance',
+                    role:             'supports',  // Wayback can never justify — corroboration only
+                });
+            }
+        } catch (err) {
+            // Individual path failures are non-blocking
+        }
+        // Respect Wayback rate limits
+        await new Promise(r => setTimeout(r, 300));
+    }
+    return results;
+}
+
+async function fetchGithub(companyName) {
+    const results = [];
+    try {
+        const headers = { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' };
+        if (process.env.GITHUB_TOKEN) {
+            headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`;
+        }
+        const slug  = companyName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+        const query = encodeURIComponent(`org:${slug} responsible-ai OR ai-ethics OR ai-governance`);
+        const url   = `https://api.github.com/search/repositories?q=${query}&per_page=3`;
+        const res   = await axios.get(url, { timeout: 6000, headers });
+        const repos = res.data?.items || [];
+
+        repos.slice(0, 2).forEach(repo => {
+            results.push({
+                source:           'GITHUB',
+                sourceTier:       'low',
+                tierWeight:       0.25,
+                text:             `GitHub repository: ${repo.full_name} — "${repo.description || 'no description'}". Stars: ${repo.stargazers_count || 0}.`,
+                url:              repo.html_url || null,
+                dateIssued:       repo.updated_at ? repo.updated_at.slice(0, 10) : null,
+                relevantPillars:  SOURCE_PILLAR_MAP.GITHUB,
+                criterionSpecificFor: mapTextToCriteria((repo.name + ' ' + (repo.description || '')), SOURCE_PILLAR_MAP.GITHUB),
+                evidenceType:     'operational',
+                role:             'supports',
+            });
+        });
+    } catch (err) {
+        console.log('[HAI] GitHub fetch failed:', err.message);
+    }
+    return results;
 }
 
 async function fetchWikipediaMeta(companyName) {
-    const data = await safeGet('https://en.wikipedia.org/w/api.php', {
-        action: 'query', titles: companyName, prop: 'categories', format: 'json', redirects: 1,
+    // Metadata only — not scored. Used to determine isPublicCompany.
+    try {
+        const query = encodeURIComponent(companyName);
+        const url   = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${query}&srlimit=1&format=json&origin=*`;
+        const res   = await axios.get(url, {
+            timeout: 5000,
+            headers: { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' }
+        });
+        const result = res.data?.query?.search?.[0];
+        if (!result) return { isPublicCompany: false };
+
+        // Heuristic: if the snippet mentions stock symbols, NYSE, NASDAQ, LSE it's likely public
+        const snippet = (result.snippet || '').toLowerCase();
+        const isPublic = /nasdaq|nyse|lse|stock exchange|publicly traded|ticker symbol|shares listed/.test(snippet);
+        return { isPublicCompany: isPublic, wikipediaTitle: result.title };
+    } catch (err) {
+        return { isPublicCompany: false };
+    }
+}
+
+async function fetchNewsSignals(companyName) {
+    // Google News RSS — medium trust, detects both positive governance news
+    // and negative signals (regulatory actions, incidents).
+    const results = [];
+    try {
+        const query    = encodeURIComponent(`"${companyName}" AI governance`);
+        const rssUrl   = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
+        const res      = await axios.get(rssUrl, {
+            timeout: 6000,
+            headers: { 'Accept': 'application/rss+xml, text/xml', 'User-Agent': 'HAI-Assessment-Bot/1.0' }
+        });
+        const xml    = (res.data || '').toString();
+        const titles = [...xml.matchAll(/<title><!\[CDATA\[([^\]]+)\]\]><\/title>/g)]
+            .map(m => m[1])
+            .filter(t => !t.includes('Google News'))
+            .slice(0, 4);
+
+        const NEGATIVE_PATTERNS = [
+            'enforcement action', 'ftc', 'gdpr fine', 'ico penalty', 'court order',
+            'regulatory order', 'class action', 'lawsuit filed', 'under investigation',
+            'regulatory inquiry', 'ai incident', 'ai harm', 'data breach confirmed',
+            'ai failure', 'ai bias documented', 'policy not followed', 'contradicts stated policy'
+        ];
+
+        titles.forEach(title => {
+            const _lower   = title.toLowerCase();
+            const isNegative = NEGATIVE_PATTERNS.some(p => _lower.includes(p));
+            const signal   = classifyNegativeSignal(isNegative ? {
+                source: 'NEWS_NEGATIVE', role: 'contradicts', isNegativeSignal: true, text: title
+            } : null);
+
+            results.push({
+                source:           isNegative ? 'NEWS_NEGATIVE' : 'NEWS',
+                sourceTier:       'medium',
+                tierWeight:       0.6,
+                text:             title,
+                url:              rssUrl,
+                dateIssued:       new Date().toISOString().slice(0, 10),
+                relevantPillars:  isNegative ? SOURCE_PILLAR_MAP.NEWS_NEGATIVE : SOURCE_PILLAR_MAP.NEWS,
+                criterionSpecificFor: [],
+                evidenceType:     'external',
+                role:             isNegative ? 'contradicts' : 'supports',
+                isNegativeSignal: isNegative,
+                negativeTier:     signal ? signal.severity : null,
+                flagForReview:    isNegative,
+            });
+        });
+    } catch (err) {
+        console.log('[HAI] News signal fetch failed:', err.message);
+    }
+    return results;
+}
+
+// ── Criterion keyword mapper ────────────────────────────────────────────────
+// Returns an array of criterion IDs that match keywords in the given text,
+// constrained to criteria within the allowed pillars.
+function mapTextToCriteria(text, allowedPillars) {
+    if (!text) return [];
+    const _lower  = text.toLowerCase();
+    const matched = [];
+
+    Object.entries(CRITERION_KEYWORD_MAP).forEach(([critId, keywords]) => {
+        // Only consider criteria in the allowed pillars
+        const pillarId = critId.split('_')[0];
+        if (!allowedPillars.includes(pillarId)) return;
+
+        const hasMatch = keywords.some(kw => _lower.includes(kw.toLowerCase()));
+        if (hasMatch) matched.push(critId);
     });
-    if (!data) return { isPublic: false };
-    const pages = (data.query && data.query.pages) || {};
-    for (const [id, page] of Object.entries(pages)) {
-        if (id === '-1') continue;
-        const cats = (page.categories || []).map(c => c.title.toLowerCase());
-        return {
-            isPublic: cats.some(c => c.includes('publicly traded') || c.includes('nasdaq') || c.includes('nyse')),
-            categories: cats.slice(0, 8),
-        };
-    }
-    return { isPublic: false };
+
+    return matched;
 }
 
-// ================================================================
-// EVIDENCE → CRITERIA MAPPING
-//
-// Produces: criterionId → [evidenceItem, ...]
-//
-// An item reaches a criterion only if:
-//   1. Its relevantPillars includes the criterion's pillar, AND
-//   2. It is criterion-specific OR high-trust
-//
-// Low-trust non-specific evidence is excluded entirely.
-// ================================================================
-function mapEvidenceToCriteria(evidenceItems) {
-    const pillarToCriteria = {};
-    for (const [pillar, criteria] of Object.entries(PILLAR_CRITERIA)) {
-        pillarToCriteria[pillar] = criteria;
+// ── Admissibility check ─────────────────────────────────────────────────────
+// Returns whether an evidence item is admissible for a specific criterion,
+// and what role it should have (justifies vs supports).
+function checkAdmissibility(item, criterionId) {
+    const pillarId  = criterionId.split('_')[0];
+    const tier      = (item.sourceTier || '').toLowerCase();
+    const isSpecific = (item.criterionSpecificFor || []).includes(criterionId);
+    const inPillar  = (item.relevantPillars || []).includes(pillarId);
+
+    if (!inPillar) return { admitted: false };
+
+    if (tier === 'high') {
+        // High trust: admitted ONLY if criterion-specific. Role = Justifies.
+        if (!isSpecific) return { admitted: false };
+        return { admitted: true, role: 'justifies' };
     }
 
-    const criterionEvidence = {};
-    for (const criteria of Object.values(PILLAR_CRITERIA)) {
-        for (const critId of criteria) {
-            criterionEvidence[critId] = [];
-        }
+    if (tier === 'medium') {
+        // Medium trust: admitted if criterion-specific (justifies) OR pillar-level (supports)
+        const role = isSpecific ? 'justifies' : 'supports';
+        return { admitted: true, role };
     }
 
-    for (const item of evidenceItems) {
-        for (const pillar of (item.relevantPillars || [])) {
-            const criteria = pillarToCriteria[pillar] || [];
-            for (const critId of criteria) {
-                const isSpecific = item.criterionSpecificFor.includes(critId);
+    if (tier === 'low') {
+        // Low trust: admitted ONLY if criterion-specific. Role always = Supports.
+        // Wayback exception: always supports, never justifies
+        if (!isSpecific && item.source !== 'WAYBACK') return { admitted: false };
+        return { admitted: true, role: 'supports' };
+    }
 
-                // ADMISSIBILITY RULES (no pillar spillover):
-                //
-                // HIGH trust: admitted ONLY if criterion-specific.
-                //   Rationale: a 10-K mention of "AI governance" is specific to
-                //   accountability_governance_and_oversight, not to every criterion in
-                //   the accountability pillar. Source quality doesn't override specificity.
-                //
-                // MEDIUM trust: admitted if criterion-specific (justifies) OR as
-                //   broad corroboration within the pillar (supports). Medium sources
-                //   are credible enough to contribute supporting context even without
-                //   an exact criterion match, but cannot independently justify a level.
-                //
-                // LOW trust: admitted ONLY if criterion-specific.
-                //   Low-trust non-specific evidence is excluded entirely.
-                //   Rationale: a cached /ai-policy URL or GitHub keyword repo is too
-                //   weak and indirect to influence criteria it doesn't directly address.
+    return { admitted: false };
+}
 
-                if (item.sourceTier === 'high') {
-                    if (!isSpecific) continue;          // high-trust requires criterion match
-                    criterionEvidence[critId].push(Object.assign({}, item, { role: 'justifies' }));
+// ── Maturity gate rules ─────────────────────────────────────────────────────
+function computeMaturityGate(criterionId, admittedItems) {
+    if (!admittedItems || admittedItems.length === 0) {
+        return { maxSupportableLevel: 1, gateReason: 'No admissible evidence', evidenceUsed: [] };
+    }
 
-                } else if (item.sourceTier === 'medium') {
-                    // Medium: specific = justifies, non-specific = supports (corroboration)
-                    criterionEvidence[critId].push(Object.assign({}, item, {
-                        role: isSpecific ? 'justifies' : 'supports',
-                    }));
+    const highItems   = admittedItems.filter(i => i.sourceTier === 'high' && i.role === 'justifies');
+    const medItems    = admittedItems.filter(i => i.sourceTier === 'medium');
+    const corroborated = new Set(admittedItems.map(i => i.source)).size >= 2;
 
-                } else {
-                    // LOW trust: criterion-specific only
-                    if (!isSpecific) continue;
-                    criterionEvidence[critId].push(Object.assign({}, item, { role: 'supports' }));
-                    // Note: low-trust is always 'supports' even when specific —
-                    // it can corroborate but never independently justify a level.
+    // Level 5: HIGH trust + criterion-specific + corroborated (2+ independent sources)
+    if (highItems.length > 0 && corroborated) {
+        return { maxSupportableLevel: 5, gateReason: 'High-trust criterion-specific evidence, corroborated', evidenceUsed: admittedItems };
+    }
+    // Level 4: HIGH trust + criterion-specific (no corroboration required)
+    if (highItems.length > 0) {
+        return { maxSupportableLevel: 4, gateReason: 'High-trust criterion-specific evidence', evidenceUsed: highItems };
+    }
+    // Level 3: MEDIUM trust OR (criterion-specific + corroborated)
+    if (medItems.length > 0 || corroborated) {
+        return { maxSupportableLevel: 3, gateReason: 'Medium-trust evidence or corroborated criterion-specific evidence', evidenceUsed: admittedItems };
+    }
+    // Level 2: any single admissible evidence item
+    return { maxSupportableLevel: 2, gateReason: 'Single admissible evidence item', evidenceUsed: admittedItems };
+}
+
+// ── Phase 6 confidence formula ─────────────────────────────────────────────
+// Replaces Phase 4 flat formula with materiality × evidence type × time decay.
+function computeCriterionConfidence(criterionId, evidenceItems) {
+    if (!evidenceItems || evidenceItems.length === 0) return 0;
+
+    let totalContribution = 0;
+    evidenceItems.forEach(item => {
+        if (item.role === 'contradicts') return;
+        totalContribution += computeWeightedContribution(item, criterionId);
+    });
+
+    // Corroboration bonus — scaled by materiality
+    const uniqueSources = new Set(evidenceItems.map(i => i.source)).size;
+    let corrobBonus = 0;
+    if (uniqueSources >= 3)      corrobBonus = 15;
+    else if (uniqueSources >= 2) corrobBonus = 8;
+
+    const mat         = getMaterialityWeight(criterionId);
+    const scaledBonus = Math.round(corrobBonus * mat);
+
+    // Execution bonus from FIX-12
+    const execLevel = evidenceItems[0]?.executionLevel || 'none';
+    const execBon   = executionBonus(execLevel);
+
+    return Math.min(100, Math.max(0, Math.round(totalContribution + scaledBonus + execBon)));
+}
+
+// ── Main export: fetchSupplementaryEvidence ─────────────────────────────────
+async function fetchSupplementaryEvidence(companyName, companyUrl, industry, options) {
+    options = options || {};
+    const combinedText  = options.combinedText  || '';
+    const entityProfile = options.entityProfile  || null;
+
+    // ── Fetch all sources in parallel (where safe) ────────────────────────
+    console.log('[HAI:supp] Fetching supplementary evidence for:', companyName);
+
+    const [edgarResults, oecdResults, academicResults, wikiMeta, newsResults] = await Promise.all([
+        fetchEdgar(companyName).catch(e => { console.log('[HAI:supp] EDGAR error:', e.message); return []; }),
+        fetchOecd(companyName).catch(e  => { console.log('[HAI:supp] OECD error:', e.message);  return []; }),
+        fetchAcademic(companyName).catch(e => { console.log('[HAI:supp] Academic error:', e.message); return []; }),
+        fetchWikipediaMeta(companyName).catch(() => ({ isPublicCompany: false })),
+        fetchNewsSignals(companyName).catch(e => { console.log('[HAI:supp] News error:', e.message); return []; }),
+    ]);
+
+    // Sequential sources (rate-limit sensitive)
+    let waybackResults = [];
+    let githubResults  = [];
+
+    try { waybackResults = await fetchWayback(companyUrl); }
+    catch (e) { console.log('[HAI:supp] Wayback error:', e.message); }
+
+    try { githubResults  = await fetchGithub(companyName); }
+    catch (e) { console.log('[HAI:supp] GitHub error:', e.message); }
+
+    // ── Assemble all evidence ─────────────────────────────────────────────
+    let allEvidence = [
+        ...edgarResults,
+        ...oecdResults,
+        ...academicResults,
+        ...newsResults,
+        ...waybackResults,
+        ...githubResults,
+    ];
+
+    // ── Phase 6: annotate with time decay and execution detection ─────────
+    allEvidence = annotateWithTimeDecay(allEvidence);
+    allEvidence = annotateWithExecutionScore(allEvidence, combinedText);
+
+    console.log(`[HAI:supp] Total evidence items after annotation: ${allEvidence.length}`);
+
+    // ── Build criterion evidence map ──────────────────────────────────────
+    const criterionEvidence  = {};  // criterionId → [admitted items with role]
+    const maturityGates      = {};  // criterionId → gate object
+    const criterionConfidence = {};  // criterionId → 0–100
+
+    RUBRIC_DEF.pillars.forEach(pillar => {
+        pillar.criteria.forEach(criterion => {
+            const critId = criterion.id;
+            const admittedItems = [];
+
+            allEvidence.forEach(item => {
+                const { admitted, role } = checkAdmissibility(item, critId);
+                if (admitted) {
+                    admittedItems.push({ ...item, role });
                 }
+            });
+
+            criterionEvidence[critId]   = admittedItems;
+            maturityGates[critId]       = computeMaturityGate(critId, admittedItems);
+            criterionConfidence[critId] = computeCriterionConfidence(critId, admittedItems);
+        });
+    });
+
+    // ── Determine overall tier ────────────────────────────────────────────
+    const hasHighTrust   = allEvidence.some(i => i.sourceTier === 'high');
+    const hasMediumTrust = allEvidence.some(i => i.sourceTier === 'medium');
+    const overallTier    = hasHighTrust ? 'high' : hasMediumTrust ? 'medium' : (allEvidence.length > 0 ? 'low' : 'none');
+
+    // ── Identify criteria capped by maturity gates ────────────────────────
+    const cappedCriteria = [];
+    // (Actual capping happens frontend-side in Step 2a of updateDashboard)
+
+    // ── Phase 6: Apply negative signal overrides ──────────────────────────
+    // Negative override logic operates on the evidence to produce override instructions
+    // for the frontend. The override log is returned in impact so the frontend can
+    // apply the level reductions in Step 2b of updateDashboard.
+    const negativeItems = allEvidence.filter(i => i.role === 'contradicts' || i.isNegativeSignal);
+    let overrideLog   = [];
+    let hasOverrides  = false;
+    let worstSeverity = null;
+
+    if (negativeItems.length > 0) {
+        // Build a proxy assessmentState for override calculation
+        // (uses maturity gate maxSupportableLevel as proxy for current level)
+        const proxyState = {};
+        RUBRIC_DEF.pillars.forEach(pillar => {
+            pillar.criteria.forEach(c => {
+                proxyState[c.id] = { level: maturityGates[c.id]?.maxSupportableLevel || 1, items: [] };
+            });
+        });
+
+        try {
+            const overrideResult = applyNegativeOverrides(proxyState, allEvidence, RUBRIC_DEF);
+            overrideLog   = overrideResult.overrideLog   || [];
+            hasOverrides  = overrideResult.hasOverrides  || false;
+            worstSeverity = overrideResult.worstSeverity || null;
+            if (overrideLog.length > 0) {
+                console.log(`[HAI:supp] Override adjustments computed: ${overrideLog.length} criteria. Worst severity: ${worstSeverity}`);
             }
+        } catch (overrideErr) {
+            console.warn('[HAI:supp] Override calculation failed (non-blocking):', overrideErr.message);
         }
     }
 
-    return criterionEvidence;
-}
+    // ── Compute freshness metrics ─────────────────────────────────────────
+    const decayedItems = allEvidence.filter(i => i.timeDecayMultiplier !== undefined);
+    const avgFreshness = decayedItems.length > 0
+        ? Math.round(decayedItems.reduce((s, i) => s + i.timeDecayMultiplier, 0) / decayedItems.length * 100)
+        : null;
+    const staleCount   = decayedItems.filter(i => i.timeDecayMultiplier < 0.4).length;
+    const currentCount = decayedItems.filter(i => i.timeDecayMultiplier >= 0.8).length;
+    const activeCertCount = allEvidence.filter(i => i.isCertActive).length;
 
-// ================================================================
-// MATURITY GATE CHECK
-//
-// Returns the maximum maturity level that supplementary evidence
-// can SUPPORT for a criterion. Used to cap over-inflation from
-// OpenAI when scrape was partial.
-// ================================================================
-function checkMaturityGate(criterionId, evidenceForCriterion) {
-    if (!evidenceForCriterion || evidenceForCriterion.length === 0) {
-        return { maxSupportableLevel: 1, gateReason: 'no_supplementary_evidence', evidenceUsed: [] };
-    }
+    // ── Execution gap metrics ─────────────────────────────────────────────
+    const verifiedExecCount = allEvidence.filter(i => i.executionLevel === 'verified').length;
+    const execGapCriteria   = [];
+    RUBRIC_DEF.pillars.forEach(pillar => {
+        pillar.criteria.forEach(c => {
+            const items = criterionEvidence[c.id] || [];
+            const hasPolicy    = items.some(i => i.evidenceType === 'governance');
+            const hasExecution = items.some(i => i.executionLevel === 'verified' || i.executionLevel === 'partial');
+            if (hasPolicy && !hasExecution) execGapCriteria.push(c.id);
+        });
+    });
 
-    const highTrust    = evidenceForCriterion.filter(e => e.sourceTier === 'high');
-    const mediumTrust  = evidenceForCriterion.filter(e => e.sourceTier === 'medium');
-    const justifying   = evidenceForCriterion.filter(e => e.role === 'justifies');
-    const corroborated = evidenceForCriterion.length >= 2;
-
-    // Level 5: HIGH trust + criterion-specific + corroborated by second independent source
-    if (highTrust.length > 0 && justifying.length > 0 && corroborated) {
-        return { maxSupportableLevel: 5, gateReason: 'high_trust_specific_corroborated', evidenceUsed: evidenceForCriterion };
-    }
-    // Level 4: HIGH trust + criterion-specific (corroboration not required)
-    if (highTrust.length > 0 && justifying.length > 0) {
-        return { maxSupportableLevel: 4, gateReason: 'high_trust_specific', evidenceUsed: highTrust };
-    }
-    // Level 3: requires MEDIUM trust, OR strong criterion-specific evidence that is
-    //   corroborated by a second source. Weak corroboration alone (2+ low-trust
-    //   non-specific items) is NOT sufficient — removed per methodology revision.
-    const hasSpecificEvidence = evidenceForCriterion.some(e => e.role === 'justifies');
-    const corroboratedSpecific = corroborated && hasSpecificEvidence;
-    if (mediumTrust.length > 0 || corroboratedSpecific) {
-        return { maxSupportableLevel: 3, gateReason: mediumTrust.length > 0 ? 'medium_trust' : 'specific_corroborated', evidenceUsed: evidenceForCriterion };
-    }
-    // Level 2: any single admissible evidence item (low-trust specific, medium-trust generic)
-    return { maxSupportableLevel: 2, gateReason: 'weak_evidence_corroboration_only', evidenceUsed: evidenceForCriterion };
-}
-
-// ================================================================
-// CRITERION CONFIDENCE
-//
-// OLD: confidence += signalCount * constant
-// NEW: confidence = f(source tier, specificity, corroboration)
-// ================================================================
-function computeCriterionConfidence(evidenceForCriterion) {
-    if (!evidenceForCriterion || evidenceForCriterion.length === 0) return 0;
-
-    let score = 0;
-    for (const item of evidenceForCriterion) {
-        const tierWeight     = TIER_WEIGHT[item.sourceTier] || 0;
-        const specificityMul = item.role === 'justifies' ? 1.0 : 0.5;
-        score += tierWeight * specificityMul * 30;  // max 30 per high-trust specific item
-    }
-
-    // Corroboration bonus: multiple independent sources
-    const uniqueSources = new Set(evidenceForCriterion.map(e => e.source)).size;
-    if (uniqueSources >= 2) score += 10;
-    if (uniqueSources >= 3) score += 5;
-
-    return Math.min(Math.round(score), 100);
-}
-
-// ================================================================
-// EVALUATE SUPPLEMENTARY IMPACT
-//
-// Produces the structured assessment returned to the frontend.
-// Contains per-criterion evidence maps and quality assessments —
-// NOT raw signal counts.
-// ================================================================
-function evaluateSupplementaryImpact(evidenceItems) {
-    const criterionEvidence   = mapEvidenceToCriteria(evidenceItems);
-    const maturityGates       = {};
-    const criterionConfidence = {};
-
-    for (const critId of Object.keys(criterionEvidence)) {
-        const items         = criterionEvidence[critId];
-        maturityGates[critId]       = checkMaturityGate(critId, items);
-        criterionConfidence[critId] = computeCriterionConfidence(items);
-    }
-
-    const hasHigh              = evidenceItems.some(e => e.sourceTier === 'high');
-    const hasMedium            = evidenceItems.some(e => e.sourceTier === 'medium');
-    const hasCriterionSpecific = evidenceItems.some(e => e.criterionSpecificFor.length > 0);
-
-    let overallTier = 'none';
-    if (hasHigh && hasCriterionSpecific)  overallTier = 'high';
-    else if (hasHigh || hasMedium)        overallTier = 'medium';
-    else if (evidenceItems.length > 0)    overallTier = 'low';
-
-    return {
+    // ── Assemble impact object ────────────────────────────────────────────
+    const impact = {
         criterionEvidence,
         maturityGates,
         criterionConfidence,
         overallTier,
-        hasHighTrustEvidence: hasHigh,
-        cappedCriteria:  [],   // populated by applySupplementaryToScoring
-        traceability:    evidenceItems,
+        hasHighTrustEvidence: hasHighTrust,
+        cappedCriteria,
+        traceability:         allEvidence,
         sourceCounts: {
-            edgar:    evidenceItems.filter(e => e.source === 'EDGAR').length,
-            oecd:     evidenceItems.filter(e => e.source === 'OECD').length,
-            github:   evidenceItems.filter(e => e.source === 'GITHUB').length,
-            wayback:  evidenceItems.filter(e => e.source === 'WAYBACK').length,
-            academic: evidenceItems.filter(e => e.source === 'ACADEMIC').length,
+            EDGAR:    edgarResults.length,
+            OECD:     oecdResults.length,
+            ACADEMIC: academicResults.length,
+            NEWS:     newsResults.filter(i => !i.isNegativeSignal).length,
+            NEWS_NEGATIVE: newsResults.filter(i => i.isNegativeSignal).length,
+            GITHUB:   githubResults.length,
+            WAYBACK:  waybackResults.length,
         },
-        totalItems: evidenceItems.length,
+        // Phase 6: override instructions for frontend Step 2b
+        negativeOverrides:  overrideLog,
+        hasOverrides,
+        worstSeverity,
+        // Phase 6: freshness
+        avgFreshness,
+        staleEvidenceCount:   staleCount,
+        currentEvidenceCount: currentCount,
+        activeCertCount,
+        // Phase 6: execution
+        executionGapCount:        execGapCriteria.length,
+        verifiedExecutionCount:   verifiedExecCount,
+        executionGapCriteria,
     };
-}
 
-// ================================================================
-// MAIN EXPORT
-// ================================================================
-async function fetchSupplementarySignals(companyName, companyUrl, options) {
-    options = options || {};
-    console.log('[supplementary] Fetching for: ' + companyName);
-
-    const [edgarItems, oecdItems, academicItems, wikiMeta] = await Promise.all([
-        fetchEdgar(companyName).catch(() => []),
-        fetchOecd(companyName).catch(() => []),
-        fetchAcademic(companyName).catch(() => []),
-        fetchWikipediaMeta(companyName).catch(() => ({ isPublic: false })),
-    ]);
-
-    const waybackItems = options.skipWayback ? [] :
-        await fetchWayback(companyUrl).catch(() => []);
-    const githubItems  = await fetchGithub(companyName, options.githubToken).catch(() => []);
-
-    const allItems = [].concat(edgarItems, oecdItems, academicItems, waybackItems, githubItems);
-    const impact   = evaluateSupplementaryImpact(allItems);
-
-    console.log(
-        '[supplementary] ' + companyName +
-        ' — items: ' + allItems.length +
-        ' tier: ' + impact.overallTier +
-        ' edgar: ' + impact.sourceCounts.edgar +
-        ' oecd: '  + impact.sourceCounts.oecd +
-        ' github: ' + impact.sourceCounts.github +
-        ' wayback: ' + impact.sourceCounts.wayback +
-        ' academic: ' + impact.sourceCounts.academic
-    );
-
+    // ── Return supplementary_signals shape (matches frontend expectations) ─
     return {
-        // Structured evidence assessment — used by scoring
         impact,
-
-        // Source counts — for logging ONLY, NOT for direct scoring
-        edgarSignals:    impact.sourceCounts.edgar,
-        waybackSignals:  impact.sourceCounts.wayback,
-        oecdSignals:     impact.sourceCounts.oecd,
-        githubSignals:   impact.sourceCounts.github,
-        academicSignals: impact.sourceCounts.academic,
-        totalSignals:    allItems.length,   // kept for log compatibility
-
-        isPublicCompany: wikiMeta.isPublic || false,
-        evidence:        allItems,
+        edgarSignals:    edgarResults.length,
+        waybackSignals:  waybackResults.length,
+        oecdSignals:     oecdResults.length,
+        githubSignals:   githubResults.length,
+        academicSignals: academicResults.length,
+        newsSignals:     newsResults.filter(i => !i.isNegativeSignal).length,
+        negativeSignals: newsResults.filter(i => i.isNegativeSignal).length,
+        totalSignals:    allEvidence.length,
+        isPublicCompany: wikiMeta.isPublicCompany || entityProfile?.isPublicCompany || false,
+        evidence:        allEvidence,
         sourceBreakdown: impact.sourceCounts,
     };
 }
 
-// ================================================================
-// SCORING INTEGRATION HELPER
-//
-// Called by bundle.js updateDashboard when supplementary data is
-// available. Takes the impact assessment and current rubric state.
-//
-// KEY RULES:
-//   - Can CORROBORATE existing levels → modest confidence boost
-//   - Can CAP levels during partial_evaluation (OpenAI had limited data)
-//   - NEVER inflates score
-//   - NEVER boosts confidence from zero to high on its own
-// ================================================================
-function applySupplementaryToScoring(supplementaryResult, rubricState) {
-    const empty = { adjustedState: rubricState, confidenceAdjustments: {}, cappedCriteria: [], scoringLog: [] };
-    if (!supplementaryResult || !supplementaryResult.impact) return empty;
-
-    const impact         = supplementaryResult.impact;
-    const adjustedState  = Object.assign({}, rubricState);
-    const confidenceAdj  = {};
-    const cappedCriteria = [];
-    const scoringLog     = [];
-
-    for (const critId of Object.keys(rubricState)) {
-        const currentLevel = (rubricState[critId] && rubricState[critId].level) || 1;
-        const gate         = impact.maturityGates[critId];
-        const critConf     = impact.criterionConfidence[critId] || 0;
-
-        if (!gate) continue;
-
-        // Log when OpenAI level exceeds what supplementary evidence supports.
-        // Actual capping is applied in bundle.js only during partial_evaluation.
-        if (currentLevel > gate.maxSupportableLevel) {
-            scoringLog.push(
-                critId + ': OpenAI level ' + currentLevel +
-                ' exceeds gate ' + gate.maxSupportableLevel +
-                ' (' + gate.gateReason + ')'
-            );
-        }
-
-        // Confidence boost: supplementary evidence corroborates existing level.
-        // Max 15 pts for high-trust specific, less for lower tiers.
-        // Never bootstraps from 0 to high confidence.
-        if (critConf > 0) {
-            const maxBoost = impact.hasHighTrustEvidence ? 15 : 8;
-            const boost    = Math.min(critConf * 0.15, maxBoost);
-            if (boost > 0) {
-                confidenceAdj[critId] = Math.round(boost);
-                scoringLog.push(critId + ': confidence +' + Math.round(boost) + ' (' + gate.gateReason + ')');
-            }
-        }
-    }
-
-    impact.cappedCriteria = cappedCriteria;
-    return { adjustedState, confidenceAdjustments: confidenceAdj, cappedCriteria, scoringLog };
-}
-
-module.exports = {
-    fetchSupplementarySignals,
-    applySupplementaryToScoring,
-    // Exported for testing
-    mapEvidenceToCriteria,
-    checkMaturityGate,
-    computeCriterionConfidence,
-    evaluateSupplementaryImpact,
-    SOURCE_TIER,
-    TIER_WEIGHT,
-    MATURITY_GATES,
-};
+module.exports = { fetchSupplementaryEvidence };
