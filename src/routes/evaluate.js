@@ -108,11 +108,21 @@ router.post('/', async (req, res) => {
         console.log(`[HAI] Scrape status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length}`);
 
         // ── Step 2: Supplementary evidence (Phase 4+6) ────────────────────
-        // Triggered when scrape is partial or limited.
-        // Uses queryName (entity-resolved) for more accurate evidence queries.
+        // Triggered when scrape is partial, limited, OR blocked.
+        // A blocked scrape has zero page text — supplementary evidence is the
+        // only signal source available. It must always run when scrape fails.
         let supplementarySignals = null;
 
-        if (partial_scrape || limited_access || scrape_status === 'partial' || scrape_status === 'limited') {
+        const needsSupplementary = (
+            partial_scrape ||
+            limited_access ||
+            scrape_status === 'partial' ||
+            scrape_status === 'limited' ||
+            scrape_status === 'blocked' ||
+            combined_text.length < 500     // very thin scrape = treat as partial
+        );
+
+        if (needsSupplementary) {
             console.log('[HAI] Triggering supplementary evidence fetch...');
             try {
                 supplementarySignals = await fetchSupplementaryEvidence(
@@ -135,7 +145,7 @@ router.post('/', async (req, res) => {
         // ── Step 3: Guard — OpenAI API key ────────────────────────────────
         if (!process.env.OPENAI_API_KEY) {
             console.error('[HAI] OPENAI_API_KEY is not set');
-            return res.status(500).json({ success: false, error: 'Evaluation service is not configured. Please contact support.' });
+            return res.status(500).json({ success: false, data: 'Evaluation service is not configured. Please contact support.' });
         }
 
         // ── Step 4: OpenAI rubric evaluation ──────────────────────────────
@@ -146,7 +156,7 @@ router.post('/', async (req, res) => {
             console.log('[HAI] OpenAI evaluation complete. Criteria evaluated:', Object.keys(evaluation || {}).length);
         } catch (aiErr) {
             console.error('[HAI] OpenAI evaluation failed:', aiErr.message);
-            return res.status(500).json({ success: false, error: 'Evaluation could not be completed. Please try again.' });
+            return res.status(500).json({ success: false, data: 'Evaluation could not be completed. Please try again.' });
         }
 
         // ── Step 5: Premium report generation ─────────────────────────────
@@ -217,26 +227,29 @@ router.post('/', async (req, res) => {
         const elapsed = Date.now() - startTime;
         console.log(`[HAI /evaluate] Complete in ${elapsed}ms`);
 
-        return res.json({
-            success:               true,
+        // Response wrapped in {success, data} envelope — frontend reads resData.data
+        const responsePayload = {
             analysis_id:           analysisId,
             evaluation:            evaluation        || {},
             scraped_pages:         scraped_pages,
             limited_access:        limited_access    || false,
             partial_scrape:        partial_scrape    || false,
+            scraper_blocked:       scrape_status === 'blocked',
+            scrape_status:         scrape_status,
             premiumReport:         premiumReport,
             evaluation_state:      evaluationState,
             calibration:           calibration,
             supplementary_signals: supplementarySignals,
-            // Phase 6: entity profile returned to frontend for entity card display
             entityProfile:         entityProfile,
-        });
+        };
+
+        return res.json({ success: true, data: responsePayload });
 
     } catch (err) {
         console.error('[HAI /evaluate] Unhandled error:', err);
         return res.status(500).json({
             success: false,
-            error:   'An unexpected error occurred. Please try again.',
+            data:    'An unexpected error occurred. Please try again.',
         });
     }
 });
