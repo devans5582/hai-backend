@@ -169,11 +169,7 @@ router.post('/', async (req, res) => {
 
         if (doReport) {
             try {
-                // Call with the original argument order that report-generator.js was built to expect.
-                // The existing report-generator.js signature is:
-                //   generatePremiumReport(evaluation, scrapedText, companyName, industry, stage, size, supplementarySignals)
-                // We also pass supplementarySignals as both position 2 and 7 as a safety measure,
-                // since some versions place it earlier in the signature.
+                console.log('[HAI] Calling generatePremiumReport...');
                 const r = await doReport(
                     evaluation,
                     combined_text,
@@ -183,11 +179,34 @@ router.post('/', async (req, res) => {
                     size,
                     supplementarySignals
                 );
-                premiumReport   = r.premiumReport   || null;
-                evaluationState = r.evaluationState || 'valid';
-                calibration     = r.calibration     || null;
-                console.log(`[HAI] Report: state=${evaluationState} hasReport=${!!premiumReport}`);
-            } catch (e) { console.warn('[HAI] Premium report failed (non-blocking):', e.message, e.stack); }
+                console.log('[HAI] Report raw return type:', typeof r, '| keys:', r ? Object.keys(r).join(',') : 'null');
+
+                // Handle both possible return shapes:
+                // Shape A: { premiumReport: {...}, evaluationState: '...', calibration: {...} }
+                // Shape B: the premiumReport object directly (has 'snapshot', 'pillars', etc.)
+                if (r && r.premiumReport) {
+                    // Shape A — wrapped
+                    premiumReport   = r.premiumReport;
+                    evaluationState = r.evaluationState || r.evaluation_state || 'valid';
+                    calibration     = r.calibration || null;
+                } else if (r && (r.snapshot || r.pillars || r.executive_summary || r.signal_profile)) {
+                    // Shape B — premiumReport IS the return value
+                    premiumReport   = r;
+                    evaluationState = r.evaluation_state || 'valid';
+                    calibration     = r.calibration || null;
+                } else if (r) {
+                    // Unknown shape — log all keys so Railway logs show us what we got
+                    console.warn('[HAI] Unexpected report shape. Keys:', Object.keys(r).join(', '));
+                    premiumReport = null;
+                }
+
+                console.log(`[HAI] Report resolved: state=${evaluationState} hasReport=${!!premiumReport} reportKeys=${premiumReport ? Object.keys(premiumReport).join(',') : 'none'}`);
+            } catch (e) {
+                console.error('[HAI] Premium report FAILED:', e.message);
+                console.error('[HAI] Report stack:', e.stack);
+            }
+        } else {
+            console.warn('[HAI] doReport is null — report-generator.js export not resolved');
         }
 
         // ── Step 6: Log ────────────────────────────────────────────────────
