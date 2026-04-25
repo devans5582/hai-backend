@@ -65,6 +65,21 @@ app.use((req, res, next) => {
 app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 app.use(express.json({ limit: '2mb' }));
 
+// ── Optional secret token guard ──────────────────────────────────────────────
+// When HAI_SECRET is set as a Railway environment variable, every request to
+// /evaluate, /benchmark, and /log must include it as the X-HAI-Secret header.
+// The WordPress proxy snippet sends this header; the browser never sees the value.
+// Leave HAI_SECRET unset to disable this check during development.
+const HAI_SECRET = process.env.HAI_SECRET || null;
+
+function secretGuard(req, res, next) {
+    if (!HAI_SECRET) return next();  // not configured — open access
+    const provided = req.headers['x-hai-secret'] || req.body['hai_secret'] || '';
+    if (provided === HAI_SECRET) return next();
+    console.warn(`[HAI] Secret mismatch from ${req.headers.origin || 'unknown'}`);
+    return res.status(403).json({ success: false, data: 'Forbidden.' });
+}
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 const evaluateRoute    = require('./src/routes/evaluate');
 const benchmarkRoute   = require('./src/routes/benchmark');
@@ -72,10 +87,10 @@ const sendReportRoute  = require('./src/routes/send-report');
 const logPatchRoute    = require('./src/routes/log-patch');
 const healthRoute      = require('./src/routes/health');
 
-app.use('/evaluate',    evaluateRoute);
-app.use('/benchmark',   benchmarkRoute);
+app.use('/evaluate',    secretGuard, evaluateRoute);
+app.use('/benchmark',   secretGuard, benchmarkRoute);
 app.use('/send-report', sendReportRoute);
-app.use('/log',         logPatchRoute);
+app.use('/log',         secretGuard, logPatchRoute);
 app.use('/health',      healthRoute);
 
 // ── Warmup endpoint ──────────────────────────────────────────────────────────
