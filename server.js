@@ -1,73 +1,105 @@
 'use strict';
 
-// Load .env in local development only.
-if (process.env.NODE_ENV !== 'production') {
-    try {
-        require('fs').accessSync('.env');
-        require('child_process').execSync('node -e "require(\'dotenv\').config()"', { stdio: 'ignore' });
-        const fs = require('fs');
-        const lines = fs.readFileSync('.env', 'utf8').split('\n');
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) continue;
-            const eq = trimmed.indexOf('=');
-            if (eq === -1) continue;
-            const key = trimmed.slice(0, eq).trim();
-            const val = trimmed.slice(eq + 1).trim();
-            if (!process.env[key]) process.env[key] = val;
-        }
-    } catch (_) {}
-}
+// server.js — Express application entry point
+// Registers all routes, CORS, body-parser, and health probe.
+// Deployed on Railway at https://hai-backend-production.up.railway.app
 
 const express = require('express');
-const cors    = require('cors');
+const app     = express();
+const PORT    = process.env.PORT || 3000;
 
-const healthRouter     = require('./src/routes/health');
-const evaluateRouter   = require('./src/routes/evaluate');
-const benchmarkRouter  = require('./src/routes/benchmark');
-const sendReportRouter = require('./src/routes/send-report');
+// ── Allowed origins ─────────────────────────────────────────────────────────
+// Add every domain that will call this API.
+// HostGator hosts app.html and bundle.js on these origins.
+const ALLOWED_ORIGINS = [
+    'https://www.humaital.com',
+    'https://humaital.com',
+    'https://humanalignmentindex.com',
+    'https://www.humanalignmentindex.com',
+    'http://localhost',
+    'http://localhost:3000',
+    'http://localhost:5500',
+    'http://127.0.0.1',
+    'http://127.0.0.1:5500',
+];
 
-const app  = express();
-const PORT = process.env.PORT || 3000;
+// ── CORS middleware ──────────────────────────────────────────────────────────
+// Must be registered BEFORE all routes so preflight OPTIONS is handled.
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
 
-// Middleware
-app.use(cors());
-app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
+    // Allow any listed origin, or any Railway/HostGator subdomain
+    const allowed =
+        ALLOWED_ORIGINS.includes(origin) ||
+        (origin && (
+            origin.endsWith('.humaital.com') ||
+            origin.endsWith('.humanalignmentindex.com') ||
+            origin.endsWith('.railway.app') ||
+            origin.endsWith('.hostgator.com')
+        ));
 
-// Routes
-app.use('/health',      healthRouter);
-app.use('/evaluate',    evaluateRouter);
-app.use('/benchmark',   benchmarkRouter);
-app.use('/send-report', sendReportRouter);
+    if (allowed) {
+        res.setHeader('Access-Control-Allow-Origin',  origin);
+        res.setHeader('Vary', 'Origin');
+    } else {
+        // Permit requests with no Origin header (server-to-server, health checks)
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    }
 
-// NEW PATCH ROUTE
-app.use('/log', require('./src/routes/log-patch'));
+    res.setHeader('Access-Control-Allow-Methods',  'GET, POST, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers',  'Content-Type, Authorization, X-Requested-With');
+    res.setHeader('Access-Control-Max-Age',        '86400');   // cache preflight 24h
+    res.setHeader('Access-Control-Allow-Credentials', 'false');
 
-// Catch-all
+    // Respond immediately to preflight OPTIONS — do not forward to route handlers
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(204);
+    }
+
+    next();
+});
+
+// ── Body parsers ─────────────────────────────────────────────────────────────
+// urlencoded: parses application/x-www-form-urlencoded (what bundle.js sends)
+// json: parses application/json (used by log-patch and future endpoints)
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+app.use(express.json({ limit: '2mb' }));
+
+// ── Routes ───────────────────────────────────────────────────────────────────
+const evaluateRoute    = require('./src/routes/evaluate');
+const benchmarkRoute   = require('./src/routes/benchmark');
+const sendReportRoute  = require('./src/routes/send-report');
+const logPatchRoute    = require('./src/routes/log-patch');
+const healthRoute      = require('./src/routes/health');
+
+app.use('/evaluate',    evaluateRoute);
+app.use('/benchmark',   benchmarkRoute);
+app.use('/send-report', sendReportRoute);
+app.use('/log',         logPatchRoute);
+app.use('/health',      healthRoute);
+
+// ── Warmup endpoint ──────────────────────────────────────────────────────────
+// Called by bundle.js before the main evaluate request to wake Railway
+// out of its cold-start sleep. Returns immediately with no processing.
+app.get('/warmup', (req, res) => {
+    res.json({ ok: true, ts: Date.now() });
+});
+
+// ── 404 fallback ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
-    res.status(404).json({ success: false, data: 'Route not found.' });
+    res.status(404).json({ success: false, data: 'Endpoint not found.' });
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-    console.error('[server] Unhandled error:', err.message || err);
-    res.status(500).json({ success: false, data: 'Internal server error.' });
+// ── Global error handler ──────────────────────────────────────────────────────
+app.use((err, req, res, _next) => {
+    console.error('[HAI] Unhandled express error:', err);
+    res.status(500).json({ success: false, data: 'An unexpected server error occurred.' });
 });
 
-// Start server
+// ── Start ────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-    console.log(`[server] HAI backend running on port ${PORT}`);
-
-    if (!process.env.OPENAI_API_KEY) {
-        console.warn('[server] WARNING: OPENAI_API_KEY not set.');
-    }
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        console.warn('[server] WARNING: SUPABASE vars not set.');
-    }
-    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-        console.warn('[server] WARNING: SMTP not set.');
-    }
+    console.log(`[HAI] Server running on port ${PORT}`);
+    console.log(`[HAI] Allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
 });
 
 module.exports = app;
