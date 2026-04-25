@@ -1,266 +1,218 @@
 'use strict';
 
 // src/routes/evaluate.js
-// POST /evaluate — main evaluation endpoint
-// Phase 6: entity resolution (Step 0) + Phase 4 supplementary evidence
+// POST /evaluate — Phase 6
 
-const express               = require('express');
-const router                = express.Router();
-const { v4: uuidv4 }        = require('uuid');
+const express    = require('express');
+const router     = express.Router();
+const { v4: uuidv4 } = require('uuid');
 
-// ── Service imports with defensive handling ────────────────────────────────
-// Each service may export differently — handle both patterns safely.
-const scraperModule         = require('../services/scraper');
-const openaiModule          = require('../services/openai');
-const reportModule          = require('../services/report-generator');
-const suppModule            = require('../services/supplementary-evidence');
-const loggerModule          = require('../services/analysis-logger');
-const entityModule          = require('../services/entity-resolver');
+const scraper    = require('../services/scraper');
+const openai     = require('../services/openai');
+const reporter   = require('../services/report-generator');
+const supp       = require('../services/supplementary-evidence');
+const logger     = require('../services/analysis-logger');
+const entity     = require('../services/entity-resolver');
 
-// Resolve the actual functions regardless of export pattern
-// Pattern A: module.exports = { scrape: async fn }  → scraperModule.scrape
-// Pattern B: module.exports = async fn              → scraperModule directly
-const scrape            = typeof scraperModule.scrape === 'function'
-                            ? scraperModule.scrape.bind(scraperModule)
-                            : typeof scraperModule === 'function'
-                                ? scraperModule
-                                : null;
+// ── Resolve function regardless of how each service exports it ─────────────
+// Handles: module.exports = fn  OR  module.exports = { methodName: fn }
+function resolve(mod, ...names) {
+    if (typeof mod === 'function') return mod;
+    for (const name of names) {
+        if (mod && typeof mod[name] === 'function') return mod[name].bind(mod);
+    }
+    // Last resort: find any exported function
+    if (mod && typeof mod === 'object') {
+        const fn = Object.values(mod).find(v => typeof v === 'function');
+        if (fn) return fn;
+    }
+    return null;
+}
 
-const callOpenAI        = typeof openaiModule.callOpenAI === 'function'
-                            ? openaiModule.callOpenAI.bind(openaiModule)
-                            : typeof openaiModule === 'function'
-                                ? openaiModule
-                                : null;
+const doScrape         = resolve(scraper,  'scrape', 'scrapeUrl', 'fetchPages', 'run');
+const doCallOpenAI     = resolve(openai,   'callOpenAI', 'evaluate', 'run', 'call');
+const doReport         = resolve(reporter, 'generatePremiumReport', 'generate', 'run');
+const doSupplementary  = resolve(supp,     'fetchSupplementaryEvidence', 'fetch', 'run');
+const doWriteLog       = resolve(logger,   'writeLog', 'log', 'write', 'insert');
+const doResolveEntity  = resolve(entity,   'resolveEntity', 'resolve', 'lookup');
 
-const generatePremiumReport = typeof reportModule.generatePremiumReport === 'function'
-                            ? reportModule.generatePremiumReport.bind(reportModule)
-                            : typeof reportModule === 'function'
-                                ? reportModule
-                                : null;
+// Log what was found at startup so Railway logs show the export shapes
+console.log('[HAI] Service exports resolved:',
+    'scraper=' + (doScrape ? 'OK' : 'NULL'),
+    'openai='  + (doCallOpenAI ? 'OK' : 'NULL'),
+    'report='  + (doReport ? 'OK' : 'NULL'),
+    'supp='    + (doSupplementary ? 'OK' : 'NULL'),
+    'logger='  + (doWriteLog ? 'OK' : 'NULL'),
+    'entity='  + (doResolveEntity ? 'OK' : 'NULL')
+);
 
-const fetchSupplementaryEvidence = typeof suppModule.fetchSupplementaryEvidence === 'function'
-                            ? suppModule.fetchSupplementaryEvidence.bind(suppModule)
-                            : typeof suppModule === 'function'
-                                ? suppModule
-                                : null;
-
-const writeLog          = typeof loggerModule.writeLog === 'function'
-                            ? loggerModule.writeLog.bind(loggerModule)
-                            : typeof loggerModule === 'function'
-                                ? loggerModule
-                                : async () => {};   // safe no-op fallback
-
-const resolveEntity     = typeof entityModule.resolveEntity === 'function'
-                            ? entityModule.resolveEntity.bind(entityModule)
-                            : typeof entityModule === 'function'
-                                ? entityModule
-                                : null;
-
-// ── Input validation ────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 function isValidUrl(str) {
-    try {
-        const u = new URL(str.startsWith('http') ? str : 'https://' + str);
-        return u.hostname.includes('.');
-    } catch { return false; }
+    try { return new URL(str.startsWith('http') ? str : 'https://' + str).hostname.includes('.'); }
+    catch { return false; }
 }
 
 function normaliseUrl(str) {
-    if (!str) return null;
-    const s = str.trim();
+    const s = (str || '').trim();
     return s.startsWith('http') ? s : 'https://' + s;
 }
 
-// ── Safely call writeLog without crashing if it doesn't return a Promise ───
-function safeWriteLog(payload) {
+function safeLog(payload) {
+    if (!doWriteLog) return;
     try {
-        const result = writeLog(payload);
-        if (result && typeof result.catch === 'function') {
-            result.catch(err => console.warn('[HAI] Log write failed:', err.message));
-        }
-    } catch (err) {
-        console.warn('[HAI] Log write threw:', err.message);
-    }
+        const r = doWriteLog(payload);
+        if (r && typeof r.catch === 'function') r.catch(e => console.warn('[HAI] Log failed:', e.message));
+    } catch (e) { console.warn('[HAI] Log threw:', e.message); }
 }
 
-// ── Route handler ───────────────────────────────────────────────────────────
+// ── Route ────────────────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-    const startTime = Date.now();
+    const t0 = Date.now();
 
-    const rawUrl    = (req.body.url      || '').trim();
-    const company   = (req.body.company  || '').trim();
-    const industry  = (req.body.industry || 'Technology').trim();
-    const stage     = (req.body.stage    || 'startup').trim();
-    const size      = (req.body.size     || '1-10').trim();
+    const rawUrl   = (req.body.url      || '').trim();
+    const company  = (req.body.company  || '').trim();
+    const industry = (req.body.industry || 'Technology').trim();
+    const stage    = (req.body.stage    || 'startup').trim();
+    const size     = (req.body.size     || '1-10').trim();
 
-    if (!rawUrl)            return res.status(400).json({ success: false, data: 'URL is required.' });
-    if (!isValidUrl(rawUrl)) return res.status(400).json({ success: false, data: 'Invalid URL provided.' });
-    if (!company)           return res.status(400).json({ success: false, data: 'Company name is required.' });
-    if (!scrape)            return res.status(500).json({ success: false, data: 'Scraper service not available.' });
-    if (!callOpenAI)        return res.status(500).json({ success: false, data: 'Evaluation service not available.' });
+    if (!rawUrl || !isValidUrl(rawUrl))
+        return res.status(400).json({ success: false, data: 'A valid URL is required.' });
+    if (!company)
+        return res.status(400).json({ success: false, data: 'Company name is required.' });
 
     const url        = normaliseUrl(rawUrl);
     const analysisId = uuidv4();
-
-    console.log(`[HAI /evaluate] id=${analysisId} company="${company}" url=${url}`);
+    console.log(`[HAI] START id=${analysisId} company="${company}" url=${url}`);
 
     try {
 
-        // ── Step 0: Entity resolution ──────────────────────────────────────
-        let entityProfile = null;
-        let queryName     = company;
+        // ── Step 0: Entity resolution (non-blocking) ───────────────────────
+        let entityProfile = { inputName: company, inputUrl: url, resolvedName: company,
+            resolvedDomain: null, wikidataId: null, lei: null, cik: null,
+            isPublicCompany: false, resolvedIndustry: null, nameMatchScore: 0,
+            domainVerified: null, domainMatchConfidence: 0, edgarCrossCheckFound: false,
+            overallConfidence: 0, warnings: [], wikidataIsOneSignal: true,
+            resolvedAt: new Date().toISOString() };
+        let queryName = company;
 
-        if (resolveEntity) {
+        if (doResolveEntity) {
             try {
-                entityProfile = await resolveEntity(company, url);
-                queryName     = entityProfile.resolvedName || company;
-                console.log(`[HAI] Entity resolved: "${queryName}" confidence=${entityProfile.overallConfidence}`);
-            } catch (entityErr) {
-                console.warn('[HAI] Entity resolution failed (non-blocking):', entityErr.message);
-            }
-        }
-
-        if (!entityProfile) {
-            entityProfile = {
-                inputName: company, inputUrl: url, resolvedName: company,
-                resolvedDomain: null, wikidataId: null, lei: null, cik: null,
-                isPublicCompany: false, resolvedIndustry: null,
-                nameMatchScore: 0, domainVerified: null,
-                domainMatchConfidence: 0, edgarCrossCheckFound: false,
-                overallConfidence: 0,
-                warnings: [],
-                wikidataIsOneSignal: true,
-                resolvedAt: new Date().toISOString()
-            };
+                entityProfile = await doResolveEntity(company, url);
+                queryName = entityProfile.resolvedName || company;
+                console.log(`[HAI] Entity: "${queryName}" conf=${entityProfile.overallConfidence}`);
+            } catch (e) { console.warn('[HAI] Entity resolution failed (non-blocking):', e.message); }
         }
 
         // ── Step 1: Scrape ─────────────────────────────────────────────────
-        console.log(`[HAI] Scraping: ${url}`);
-        let scrapeResult = {};
-        try {
-            scrapeResult = await scrape(url) || {};
-        } catch (scrapeErr) {
-            console.warn('[HAI] Scraper threw (treating as blocked):', scrapeErr.message);
-            scrapeResult = { combined_text: '', scraped_pages: [], scrape_status: 'blocked', limited_access: false, partial_scrape: false };
+        let combined_text = '', scraped_pages = [], scrape_status = 'blocked';
+        let limited_access = false, partial_scrape = false;
+
+        if (doScrape) {
+            try {
+                console.log(`[HAI] Scraping ${url}`);
+                const r = await doScrape(url) || {};
+                combined_text  = r.combined_text  || '';
+                scraped_pages  = r.scraped_pages  || [];
+                scrape_status  = r.scrape_status  || (combined_text.length > 100 ? 'ok' : 'blocked');
+                limited_access = r.limited_access || false;
+                partial_scrape = r.partial_scrape || false;
+                console.log(`[HAI] Scrape: status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length}`);
+            } catch (e) {
+                console.warn('[HAI] Scraper failed (treating as blocked):', e.message);
+                scrape_status = 'blocked';
+            }
+        } else {
+            console.warn('[HAI] Scraper not available — proceeding with supplementary only');
         }
-
-        const combined_text  = scrapeResult.combined_text  || '';
-        const scraped_pages  = scrapeResult.scraped_pages  || [];
-        const scrape_status  = scrapeResult.scrape_status  || 'blocked';
-        const limited_access = scrapeResult.limited_access || false;
-        const partial_scrape = scrapeResult.partial_scrape || false;
-
-        console.log(`[HAI] Scrape status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length}`);
 
         // ── Step 2: Supplementary evidence ────────────────────────────────
         let supplementarySignals = null;
-        const needsSupplementary = partial_scrape || limited_access ||
+        const needsSupp = !doScrape || partial_scrape || limited_access ||
             scrape_status === 'partial' || scrape_status === 'limited' ||
             scrape_status === 'blocked' || combined_text.length < 500;
 
-        if (needsSupplementary && fetchSupplementaryEvidence) {
+        if (needsSupp && doSupplementary) {
             console.log('[HAI] Fetching supplementary evidence...');
             try {
-                supplementarySignals = await fetchSupplementaryEvidence(
+                supplementarySignals = await doSupplementary(
                     queryName, url, industry,
                     { entityProfile, combinedText: combined_text }
                 );
-                console.log(`[HAI] Supplementary signals: ${supplementarySignals?.totalSignals ?? 0} total`);
-            } catch (suppErr) {
-                console.warn('[HAI] Supplementary evidence failed (non-blocking):', suppErr.message);
-            }
+                console.log(`[HAI] Supplementary: ${supplementarySignals?.totalSignals ?? 0} items`);
+            } catch (e) { console.warn('[HAI] Supplementary failed (non-blocking):', e.message); }
         }
 
         // ── Step 3: OpenAI key guard ───────────────────────────────────────
         if (!process.env.OPENAI_API_KEY) {
             console.error('[HAI] OPENAI_API_KEY not set');
-            return res.status(500).json({ success: false, data: 'Evaluation service is not configured.' });
+            return res.status(500).json({ success: false, data: 'Evaluation service is not configured. Please contact support.' });
         }
 
         // ── Step 4: OpenAI evaluation ──────────────────────────────────────
-        console.log('[HAI] Calling OpenAI...');
+        if (!doCallOpenAI) {
+            console.error('[HAI] OpenAI service not resolvable');
+            return res.status(500).json({ success: false, data: 'Evaluation service is not available.' });
+        }
+
         let evaluation = null;
         try {
-            evaluation = await callOpenAI(combined_text, company, industry);
+            console.log('[HAI] Calling OpenAI...');
+            evaluation = await doCallOpenAI(combined_text, company, industry);
             console.log(`[HAI] OpenAI complete. Criteria: ${Object.keys(evaluation || {}).length}`);
-        } catch (aiErr) {
-            console.error('[HAI] OpenAI failed:', aiErr.message);
+        } catch (e) {
+            console.error('[HAI] OpenAI failed:', e.message);
             return res.status(500).json({ success: false, data: 'Evaluation could not be completed. Please try again.' });
         }
 
-        // ── Step 5: Premium report ─────────────────────────────────────────
-        let premiumReport   = null;
-        let evaluationState = 'valid';
-        let calibration     = null;
+        // ── Step 5: Premium report (non-blocking) ──────────────────────────
+        let premiumReport = null, evaluationState = 'valid', calibration = null;
 
-        if (generatePremiumReport) {
+        if (doReport) {
             try {
-                const reportResult = await generatePremiumReport(
-                    evaluation, combined_text, supplementarySignals,
-                    company, industry, stage, size
-                );
-                premiumReport   = reportResult.premiumReport   || null;
-                evaluationState = reportResult.evaluationState || 'valid';
-                calibration     = reportResult.calibration     || null;
-                console.log(`[HAI] Premium report state=${evaluationState}`);
-            } catch (reportErr) {
-                console.warn('[HAI] Premium report failed (non-blocking):', reportErr.message);
-            }
+                const r = await doReport(evaluation, combined_text, supplementarySignals, company, industry, stage, size);
+                premiumReport   = r.premiumReport   || null;
+                evaluationState = r.evaluationState || 'valid';
+                calibration     = r.calibration     || null;
+                console.log(`[HAI] Report: state=${evaluationState}`);
+            } catch (e) { console.warn('[HAI] Premium report failed (non-blocking):', e.message); }
         }
 
-        // ── Step 6: Log phase 1 (fire-and-forget) ─────────────────────────
-        safeWriteLog({
-            analysis_id:           analysisId,
-            company_name:          company,
-            company_url:           url,
-            industry, stage, size,
-            scrape_status,
-            limited_access_flag:   limited_access || false,
-            evaluation_state:      evaluationState,
-            edgar_signals:         supplementarySignals?.edgarSignals    ?? 0,
-            wayback_signals:       supplementarySignals?.waybackSignals  ?? 0,
-            oecd_signals:          supplementarySignals?.oecdSignals     ?? 0,
-            github_signals:        supplementarySignals?.githubSignals   ?? 0,
-            academic_signals:      supplementarySignals?.academicSignals ?? 0,
-            supplementary_total:   supplementarySignals?.totalSignals    ?? 0,
-            entity_resolved_name:  entityProfile?.resolvedName           ?? '',
-            entity_wikidata_id:    entityProfile?.wikidataId             ?? '',
-            entity_is_public:      entityProfile?.isPublicCompany        ?? false,
-            entity_confidence:     entityProfile?.overallConfidence       ?? 0,
-            entity_domain_match:   entityProfile?.domainVerified         ?? null,
-            has_overrides:         supplementarySignals?.impact?.hasOverrides  ?? false,
-            override_count:        supplementarySignals?.impact?.negativeOverrides?.length ?? 0,
-            worst_override:        supplementarySignals?.impact?.worstSeverity  ?? '',
+        // ── Step 6: Log ────────────────────────────────────────────────────
+        safeLog({
+            analysis_id: analysisId, company_name: company, company_url: url,
+            industry, stage, size, scrape_status,
+            limited_access_flag:  limited_access || false,
+            evaluation_state:     evaluationState,
+            edgar_signals:        supplementarySignals?.edgarSignals    ?? 0,
+            wayback_signals:      supplementarySignals?.waybackSignals  ?? 0,
+            oecd_signals:         supplementarySignals?.oecdSignals     ?? 0,
+            github_signals:       supplementarySignals?.githubSignals   ?? 0,
+            academic_signals:     supplementarySignals?.academicSignals ?? 0,
+            supplementary_total:  supplementarySignals?.totalSignals    ?? 0,
+            entity_resolved_name: entityProfile?.resolvedName           ?? '',
+            entity_is_public:     entityProfile?.isPublicCompany        ?? false,
+            entity_confidence:    entityProfile?.overallConfidence       ?? 0,
         });
 
         // ── Step 7: Respond ────────────────────────────────────────────────
-        console.log(`[HAI /evaluate] Done in ${Date.now() - startTime}ms`);
-
+        console.log(`[HAI] DONE in ${Date.now() - t0}ms`);
         return res.json({
             success: true,
             data: {
-                analysis_id:           analysisId,
-                evaluation:            evaluation        || {},
-                scraped_pages,
-                limited_access:        limited_access    || false,
-                partial_scrape:        partial_scrape    || false,
-                scraper_blocked:       scrape_status === 'blocked',
+                analysis_id: analysisId,
+                evaluation:  evaluation || {},
+                scraped_pages, limited_access, partial_scrape,
+                scraper_blocked:  scrape_status === 'blocked',
                 scrape_status,
-                premiumReport,
-                evaluation_state:      evaluationState,
-                calibration,
+                premiumReport, evaluation_state: evaluationState, calibration,
                 supplementary_signals: supplementarySignals,
                 entityProfile,
             }
         });
 
     } catch (err) {
-        // Log the full error so Railway logs show what actually failed
-        console.error('[HAI /evaluate] Unhandled error:', err.message);
-        console.error('[HAI /evaluate] Stack:', err.stack);
-        return res.status(500).json({
-            success: false,
-            data: 'An unexpected error occurred. Please try again.',
-        });
+        console.error('[HAI /evaluate] Unhandled:', err.message, '\n', err.stack);
+        return res.status(500).json({ success: false, data: 'An unexpected error occurred. Please try again.' });
     }
 });
 
