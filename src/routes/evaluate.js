@@ -173,11 +173,18 @@ router.post('/', async (req, res) => {
                 const r = await doReport(
                     evaluation,
                     combined_text,
-                    company,
-                    industry,
-                    stage,
-                    size,
-                    supplementarySignals
+                    {
+                        company,
+                        industry,
+                        stage,
+                        size,
+                        partialScrape:  partial_scrape,
+                        limitedAccess:  limited_access,
+                        scrapeStatus:   scrape_status,
+                        scrapedPages:   scraped_pages,
+                        supplementarySignals,
+                        entityProfile
+                    }
                 );
                 console.log('[HAI] Report raw return type:', typeof r, '| keys:', r ? Object.keys(r).join(',') : 'null');
 
