@@ -114,21 +114,10 @@ Respond with a valid JSON object only. No other text.`.trim();
 }
 
 // ── Build user message ──────────────────────────────────────────────────────
-function buildUserMessage(combinedText, companyName, industry, isThinContent, isNoContent, textLen) {
-
-    let textSection;
-    if (isNoContent) {
-        textSection = `No governance text was retrieved for ${companyName} (${industry}). Assign level 1 and executionLevel "none" to all criteria.`;
-    } else if (isThinContent) {
-        textSection = `WARNING: Only ${textLen} characters of text were retrieved for ${companyName} (${industry}). This is likely cookie notices, redirect pages, or access-blocked content with no governance information.
-
-MANDATORY INSTRUCTION: Because the text is too short to contain real governance evidence, you MUST assign level 1 and executionLevel "none" to ALL criteria without exception. Do not assign any level above 1.
-
-TEXT (for reference only — treat as insufficient evidence):
-${combinedText.trim()}`;
-    } else {
-        textSection = `GOVERNANCE TEXT FROM ${companyName.toUpperCase()} (${industry}):\n\n${combinedText.slice(0, 14000)}`;
-    }
+function buildUserMessage(combinedText, companyName, industry) {
+    const textSection = combinedText && combinedText.trim().length > 0
+        ? `GOVERNANCE TEXT FROM ${companyName.toUpperCase()} (${industry}):\n\n${combinedText.slice(0, 14000)}`
+        : `No governance text was retrieved for ${companyName} (${industry}). Assign level 1 and executionLevel "none" to all criteria.`;
 
     const evidenceIdsSection = RUBRIC_CRITERIA.map(c => {
         const ids = CRITERION_EVIDENCE_IDS[c.id] || [];
@@ -148,12 +137,8 @@ async function callOpenAI(combinedText, companyName, industry) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
 
-    const _textLen       = combinedText ? combinedText.trim().length : 0;
-    const _isThinContent = _textLen > 0 && _textLen < 1000;
-    const _isNoContent   = _textLen === 0;
-
     const systemPrompt = buildSystemPrompt();
-    const userMessage  = buildUserMessage(combinedText, companyName || 'Unknown', industry || 'Technology', _isThinContent, _isNoContent, _textLen);
+    const userMessage  = buildUserMessage(combinedText, companyName || 'Unknown', industry || 'Technology');
 
     const requestBody = {
         model:           'gpt-4o',
@@ -207,23 +192,18 @@ async function callOpenAI(combinedText, companyName, industry) {
             }
 
             // Normalise: ensure every criterion is present with defaults if missing
-            // Hard enforcement: thin/no content cannot produce levels above 1 regardless
-            // of what GPT-4o returns — this prevents default L2 inflation.
-            const _forceLevelOne = _isNoContent || _isThinContent;
             const normalised = {};
             RUBRIC_CRITERIA.forEach(c => {
                 const raw = parsed[c.id] || {};
-                const rawLevel = Math.max(1, Math.min(5, parseInt(raw.level, 10) || 1));
                 normalised[c.id] = {
-                    level:          _forceLevelOne ? 1 : rawLevel,
-                    items:          _forceLevelOne ? [] : (Array.isArray(raw.items) ? raw.items : []),
-                    executionLevel: _forceLevelOne ? 'none' : (['verified','partial','asserted','none'].includes(raw.executionLevel) ? raw.executionLevel : 'none'),
+                    level:          Math.max(1, Math.min(5, parseInt(raw.level, 10) || 1)),
+                    items:          Array.isArray(raw.items) ? raw.items : [],
+                    executionLevel: ['verified','partial','asserted','none'].includes(raw.executionLevel)
+                                        ? raw.executionLevel
+                                        : 'none',
                     reasoning:      typeof raw.reasoning === 'string' ? raw.reasoning.slice(0, 200) : '',
                 };
             });
-            if (_forceLevelOne) {
-                console.log(`[HAI] Forced all criteria to L1 — content too thin (${_textLen} chars) to support any level above 1.`);
-            }
 
             console.log(`[HAI] OpenAI attempt ${attempt} succeeded. Valid criteria: ${validKeys.length}/20`);
             return normalised;
