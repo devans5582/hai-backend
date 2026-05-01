@@ -105,7 +105,7 @@ router.post('/', async (req, res) => {
 
         // ── Step 1: Scrape ─────────────────────────────────────────────────
         let combined_text = '', scraped_pages = [], scrape_status = 'blocked';
-        let limited_access = false, partial_scrape = false, page_char_counts = [];
+        let limited_access = false, partial_scrape = false;
 
         if (doScrape) {
             try {
@@ -116,8 +116,6 @@ router.post('/', async (req, res) => {
                 scrape_status  = r.scrape_status  || (combined_text.length > 100 ? 'ok' : 'blocked');
                 limited_access = r.limited_access || false;
                 partial_scrape = r.partial_scrape || false;
-                // Capture per-page char counts for phantom scrape detection in report-generator
-                page_char_counts = (r.scraped_pages || []).map(p => (p.content || p.text || p.body || '').length);
                 console.log(`[HAI] Scrape: status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length}`);
             } catch (e) {
                 console.warn('[HAI] Scraper failed (treating as blocked):', e.message);
@@ -180,13 +178,15 @@ router.post('/', async (req, res) => {
                         industry,
                         stage,
                         size,
-                        partialScrape:  partial_scrape,
-                        limitedAccess:  limited_access,
-                        scrapeStatus:   scrape_status,
-                        scrapedPages:   scraped_pages,
+                        partialScrape: partial_scrape,
+                        limitedAccess: limited_access,
+                        scrapeStatus: scrape_status,
+                        scrapedPages: scraped_pages,
                         supplementarySignals,
                         entityProfile,
-                        pageCharCounts: page_char_counts
+                        pageCharCounts: (scraped_pages || []).map(p =>
+                            (p.content || p.text || p.body || '').length
+                        )
                     }
                 );
                 console.log('[HAI] Report raw return type:', typeof r, '| keys:', r ? Object.keys(r).join(',') : 'null');
@@ -220,18 +220,20 @@ router.post('/', async (req, res) => {
         }
 
         // ── Step 6: Log ────────────────────────────────────────────────────
-        // writeLog expects: { analysisId, targetUrl, reqBody, scrapeResult, premiumReport }
         safeLog({
-            analysisId,
-            targetUrl:    url,
-            reqBody:      { company, industry, stage, size },
-            scrapeResult: {
-                scrape_status,
-                limited_access,
-                partial_scrape,
-                scraper_blocked: scrape_status === 'blocked',
-            },
-            premiumReport,
+            analysis_id: analysisId, company_name: company, company_url: url,
+            industry, stage, size, scrape_status,
+            limited_access_flag:  limited_access || false,
+            evaluation_state:     evaluationState,
+            edgar_signals:        supplementarySignals?.edgarSignals    ?? 0,
+            wayback_signals:      supplementarySignals?.waybackSignals  ?? 0,
+            oecd_signals:         supplementarySignals?.oecdSignals     ?? 0,
+            github_signals:       supplementarySignals?.githubSignals   ?? 0,
+            academic_signals:     supplementarySignals?.academicSignals ?? 0,
+            supplementary_total:  supplementarySignals?.totalSignals    ?? 0,
+            entity_resolved_name: entityProfile?.resolvedName           ?? '',
+            entity_is_public:     entityProfile?.isPublicCompany        ?? false,
+            entity_confidence:    entityProfile?.overallConfidence       ?? 0,
         });
 
         // ── Step 7: Respond ────────────────────────────────────────────────
