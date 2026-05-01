@@ -928,12 +928,30 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     }
 
     // Step 1: Signal detection
-    const signals        = detectGovernanceSignals(scrapedText);
     const ctx            = scrapeContext || {};
     const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess);
-    const evalState      = determineEvaluationState(signals, isPartial);
+    const suppSignals    = ctx.supplementarySignals || null;
 
-    console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
+    // Detect signals from scraped text first
+    const textSignals = detectGovernanceSignals(scrapedText);
+
+    // Merge supplementary signals so blocked-scrape companies are not unfairly
+    // penalised — EDGAR/OECD/GitHub signals count toward the evaluation gate.
+    const suppHigh   = suppSignals ? (suppSignals.edgarSignals || 0) : 0;
+    const suppMedium = suppSignals ? ((suppSignals.oecdSignals || 0) + (suppSignals.academicSignals || 0)) : 0;
+    const suppLow    = suppSignals ? ((suppSignals.githubSignals || 0) + (suppSignals.waybackSignals || 0)) : 0;
+
+    const signals = {
+        high_signals:       textSignals.high_signals   + suppHigh,
+        medium_signals:     textSignals.medium_signals + suppMedium,
+        low_signals:        textSignals.low_signals    + suppLow,
+        enterprise_signals: textSignals.enterprise_signals || 0,
+        matched_phrases:    textSignals.matched_phrases
+    };
+
+    const evalState = determineEvaluationState(signals, isPartial);
+
+    console.log(`[report-generator] Signals — high:${signals.high_signals} (text:${textSignals.high_signals}+supp:${suppHigh}) medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
 
     // Step 2: Insufficient evidence gate — only fires when no signals at all,
     // even after fallback URL stubs are included in scrapedText.
