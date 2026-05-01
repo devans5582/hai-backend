@@ -114,10 +114,7 @@ Respond with a valid JSON object only. No other text.`.trim();
 }
 
 // ── Build user message ──────────────────────────────────────────────────────
-function buildUserMessage(combinedText, companyName, industry) {
-    const textLen = combinedText ? combinedText.trim().length : 0;
-    const isThinContent = textLen > 0 && textLen < 1000;
-    const isNoContent   = textLen === 0;
+function buildUserMessage(combinedText, companyName, industry, isThinContent, isNoContent, textLen) {
 
     let textSection;
     if (isNoContent) {
@@ -151,8 +148,12 @@ async function callOpenAI(combinedText, companyName, industry) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
 
+    const _textLen       = combinedText ? combinedText.trim().length : 0;
+    const _isThinContent = _textLen > 0 && _textLen < 1000;
+    const _isNoContent   = _textLen === 0;
+
     const systemPrompt = buildSystemPrompt();
-    const userMessage  = buildUserMessage(combinedText, companyName || 'Unknown', industry || 'Technology');
+    const userMessage  = buildUserMessage(combinedText, companyName || 'Unknown', industry || 'Technology', _isThinContent, _isNoContent, _textLen);
 
     const requestBody = {
         model:           'gpt-4o',
@@ -208,7 +209,7 @@ async function callOpenAI(combinedText, companyName, industry) {
             // Normalise: ensure every criterion is present with defaults if missing
             // Hard enforcement: thin/no content cannot produce levels above 1 regardless
             // of what GPT-4o returns — this prevents default L2 inflation.
-            const _forceLevelOne = isNoContent || isThinContent;
+            const _forceLevelOne = _isNoContent || _isThinContent;
             const normalised = {};
             RUBRIC_CRITERIA.forEach(c => {
                 const raw = parsed[c.id] || {};
@@ -221,7 +222,7 @@ async function callOpenAI(combinedText, companyName, industry) {
                 };
             });
             if (_forceLevelOne) {
-                console.log(`[HAI] Forced all criteria to L1 — content too thin (${textLen} chars) to support any level above 1.`);
+                console.log(`[HAI] Forced all criteria to L1 — content too thin (${_textLen} chars) to support any level above 1.`);
             }
 
             console.log(`[HAI] OpenAI attempt ${attempt} succeeded. Valid criteria: ${validKeys.length}/20`);
