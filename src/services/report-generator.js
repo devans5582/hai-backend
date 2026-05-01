@@ -761,6 +761,25 @@ function getInterpretationFrame(signalProfile) {
 
 
 
+// ---------------------------------------------------------------
+// PHANTOM SCRAPE DETECTION
+//
+// Detects when a scraper returns "OK" pages that are all near-identical
+// in size — a strong indicator of blocked/templated responses (e.g. a
+// firewall returning the same 311-char "access denied" page for every URL).
+//
+// Triggers when: 3+ pages scraped AND stddev/mean < 0.05 (within 5%)
+// ---------------------------------------------------------------
+function isUniformlySized(pageCharCounts) {
+    if (!Array.isArray(pageCharCounts) || pageCharCounts.length < 3) return false;
+    const mean = pageCharCounts.reduce((a, b) => a + b, 0) / pageCharCounts.length;
+    if (mean === 0) return false;
+    const variance = pageCharCounts.reduce((sum, n) => sum + Math.pow(n - mean, 2), 0) / pageCharCounts.length;
+    const stddev = Math.sqrt(variance);
+    const cv = stddev / mean; // coefficient of variation
+    return cv < 0.05; // less than 5% variance = suspiciously uniform
+}
+
 function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent, downgraded, signals, scrapeBlocked) {
     if (tier === 0) return { calibrated_score: rawScore, uplift_applied: 0, multi_pillar_bonus: 0, tier, downgraded: false };
 
@@ -867,7 +886,11 @@ function deriveRawScoreProxy(evaluationData) {
         let ratioSum = 0;
         for (const critId of criteriaIds) {
             const crit  = evaluationData[critId];
-            const level = (crit && crit.level) ? Math.min(5, Math.max(1, crit.level)) : 1;
+        const rawLevel = (crit && typeof crit.level !== 'undefined') ? crit.level : 1;
+        if (rawLevel === 0) {
+            console.warn(`[report-generator] deriveRawScoreProxy: level=0 detected for ${critId} — OpenAI may have returned invalid level. Treating as 1.`);
+        }
+        const level = Math.min(5, Math.max(1, rawLevel || 1));
             ratioSum += (level - 1) / 4;
         }
         total += (ratioSum / criteriaIds.length) * maxPoints;
@@ -1028,7 +1051,16 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     const { tier, pillarsWithEvidence, downgraded } = classifySignalTier(signals, evaluationData, null);
     const rawScoreProxy = deriveRawScoreProxy(evaluationData);
     // confPercent not available here; frontend applies its own exact confPercent
-    const scrapeBlocked = (ctx.scrapeStatus === "blocked") || (ctx.limitedAccess && !scrapedText);
+    // Phantom scrape detection: pages returned "OK" but all near-identical size
+    // (e.g. firewall returning same blocked-page body for every URL).
+    const pageCharCounts = ctx.pageCharCounts || null;
+    const phantomScrape  = isUniformlySized(pageCharCounts);
+    if (phantomScrape) {
+        console.log(`[report-generator] Phantom scrape detected — uniform page sizes: [${(pageCharCounts||[]).join(', ')}]`);
+    }
+    const scrapeBlocked = (ctx.scrapeStatus === "blocked") ||
+        (ctx.limitedAccess && !scrapedText) ||
+        phantomScrape;
     const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null, downgraded, signals, scrapeBlocked);
     console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} calibratedProxy:${calibration.calibrated_score} uplift:${calibration.uplift_applied} partial:${isPartial}`);
 
