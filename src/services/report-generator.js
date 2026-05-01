@@ -764,13 +764,34 @@ function getInterpretationFrame(signalProfile) {
 function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent, downgraded, signals, scrapeBlocked) {
     if (tier === 0) return { calibrated_score: rawScore, uplift_applied: 0, multi_pillar_bonus: 0, tier, downgraded: false };
 
-    // CRITICAL: when rawScore is 0 (all criteria L1 — no rubric evidence), cap uplift sharply.
-    // Supplementary signals may justify a tier, but if OpenAI found zero evidence in the text,
-    // a large uplift produces misleading scores. Cap at tier-appropriate minimums.
+    // CRITICAL: when rawScore is 0 (all criteria L1 — no rubric evidence found by OpenAI),
+    // reduce the tier midpoint uplift significantly. The tier reflects signal presence
+    // but without rubric evidence the score should stay low and differentiated.
+    //   Tier 1 (medium signals only):      uplift = 5–10  (range based on signal count)
+    //   Tier 2 (1-2 high signals):         uplift = 8–15
+    //   Tier 3 (3+ high signals):          uplift = 12–20
+    //   Tier 4 (broad deep signals):       uplift = 15–22
+    // Blocked scraper reduces by 30%.
     if (rawScore === 0) {
-        const zeroScoreCap = { 1: 5, 2: 8, 3: 10, 4: 12 };
-        const cappedUplift = zeroScoreCap[tier] || 5;
-        console.log('[report-generator] rawScore=0 — capping uplift to ' + cappedUplift + ' (was tier ' + tier + ')');
+        const highSig  = (signals && signals.high_signals)  || 0;
+        const medSig   = (signals && signals.medium_signals) || 0;
+        const totalSig = highSig + medSig;
+
+        const zeroMin = { 1: 5,  2: 8,  3: 12, 4: 15 };
+        const zeroMax = { 1: 10, 2: 15, 3: 20, 4: 22 };
+        const mn = zeroMin[tier] || 5;
+        const mx = zeroMax[tier] || 10;
+
+        // Interpolate within range based on signal count (0–10 signals maps to 0–100%)
+        const ratio = Math.min(1, totalSig / 10);
+        let cappedUplift = Math.round(mn + ratio * (mx - mn));
+
+        // Blocked scraper penalty
+        if (scrapeBlocked) cappedUplift = Math.round(cappedUplift * 0.7);
+
+        cappedUplift = Math.max(3, cappedUplift);
+
+        console.log('[report-generator] rawScore=0 uplift=' + cappedUplift + ' tier=' + tier + ' signals=' + totalSig + ' blocked=' + !!scrapeBlocked);
         return {
             calibrated_score:   cappedUplift,
             uplift_applied:     cappedUplift,
