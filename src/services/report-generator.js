@@ -764,6 +764,24 @@ function getInterpretationFrame(signalProfile) {
 function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent, downgraded, signals, scrapeBlocked) {
     if (tier === 0) return { calibrated_score: rawScore, uplift_applied: 0, multi_pillar_bonus: 0, tier, downgraded: false };
 
+    // CRITICAL: when rawScore is 0 (all criteria L1 — no rubric evidence), cap uplift sharply.
+    // Supplementary signals may justify a tier, but if OpenAI found zero evidence in the text,
+    // a large uplift produces misleading scores. Cap at tier-appropriate minimums.
+    if (rawScore === 0) {
+        const zeroScoreCap = { 1: 5, 2: 8, 3: 10, 4: 12 };
+        const cappedUplift = zeroScoreCap[tier] || 5;
+        console.log('[report-generator] rawScore=0 — capping uplift to ' + cappedUplift + ' (was tier ' + tier + ')');
+        return {
+            calibrated_score:   cappedUplift,
+            uplift_applied:     cappedUplift,
+            multi_pillar_bonus: 0,
+            tier,
+            downgraded:         !!downgraded,
+            evidence_cap_applied: false,
+            zero_score_cap_applied: true
+        };
+    }
+
     // Base uplift from midpoint, then vary by actual signal depth within the tier
     let uplift = UPLIFT_MIDPOINTS[tier] || 0;
 
