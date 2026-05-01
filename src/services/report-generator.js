@@ -761,9 +761,32 @@ function getInterpretationFrame(signalProfile) {
 
 
 
-function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent, downgraded) {
+function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent, downgraded, signals, scrapeBlocked) {
     if (tier === 0) return { calibrated_score: rawScore, uplift_applied: 0, multi_pillar_bonus: 0, tier, downgraded: false };
+
+    // Base uplift from midpoint, then vary by actual signal depth within the tier
     let uplift = UPLIFT_MIDPOINTS[tier] || 0;
+
+    // Vary uplift within the tier based on high signal count so two Tier-3
+    // companies don't always get identical scores:
+    //   Tier3 range: 22–35.  midpoint=29.  adjust by ±(highSignals-3)*2 clamped to range.
+    //   Tier2 range: 10–20.  midpoint=15.  adjust by ±(highSignals-1)*2.5 clamped.
+    if (signals && tier === 3) {
+        const delta = Math.min(6, Math.max(-6, ((signals.high_signals || 3) - 3) * 2));
+        uplift = Math.round(Math.min(35, Math.max(22, uplift + delta)));
+    } else if (signals && tier === 2) {
+        const delta = Math.min(5, Math.max(-5, ((signals.high_signals || 1) - 1) * 2.5));
+        uplift = Math.round(Math.min(20, Math.max(10, uplift + delta)));
+    } else if (signals && tier === 1) {
+        const delta = Math.min(2, Math.max(-2, ((signals.medium_signals || 1) - 1)));
+        uplift = Math.round(Math.min(7, Math.max(3, uplift + delta)));
+    }
+
+    // Scrape-blocked penalty: if website was fully blocked, reduce uplift by 25%
+    // since we have less confidence the signals reflect actual page depth.
+    if (scrapeBlocked) {
+        uplift = Math.round(uplift * 0.75);
+    }
 
     // Confidence modifier: reduce uplift 20% when evidence strength < 50%
     if (typeof confPercent === 'number' && confPercent < 50) {
@@ -966,7 +989,8 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     const { tier, pillarsWithEvidence, downgraded } = classifySignalTier(signals, evaluationData, null);
     const rawScoreProxy = deriveRawScoreProxy(evaluationData);
     // confPercent not available here; frontend applies its own exact confPercent
-    const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null, downgraded);
+    const scrapeBlocked = (ctx.scrapeStatus === "blocked") || (ctx.limitedAccess && !scrapedText);
+    const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null, downgraded, signals, scrapeBlocked);
     console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} calibratedProxy:${calibration.calibrated_score} uplift:${calibration.uplift_applied} partial:${isPartial}`);
 
     // Step 4: Generate narrative report
