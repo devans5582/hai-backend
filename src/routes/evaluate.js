@@ -155,11 +155,10 @@ router.post('/', async (req, res) => {
         }
 
         // When scraper is fully blocked AND no text content available, skip OpenAI.
-        // OpenAI with empty text returns consistent default L2/L3 levels for every company,
+        // OpenAI with empty/minimal text returns consistent default L2/L3 levels for every company,
         // producing an identical ~31 score regardless of the actual company being assessed.
-        // In this case, all criteria stay at L1 (the default) and scoring proceeds from
-        // supplementary signals only via the calibration uplift in report-generator.
-        const _hasContent = combined_text && combined_text.length > 200;
+        // Threshold of 1000 chars filters out cookie notices and boilerplate without governance content.
+        const _hasContent = combined_text && combined_text.length > 1000;
         const _hasSupp    = supplementarySignals && (supplementarySignals.totalSignals || 0) > 0;
 
         let evaluation = null;
@@ -171,6 +170,18 @@ router.post('/', async (req, res) => {
                 console.log('[HAI] Calling OpenAI...');
                 evaluation = await doCallOpenAI(combined_text, company, industry);
                 console.log(`[HAI] OpenAI complete. Criteria: ${Object.keys(evaluation || {}).length}`);
+
+                // Post-processing: if content was thin (< 3000 chars), cap all criteria at L2.
+                // OpenAI returns optimistic L2/L3 defaults when given minimal content,
+                // which inflates scores. With thin content, L2 is the maximum supportable level.
+                if (evaluation && combined_text.length < 3000) {
+                    console.log(`[HAI] Thin content (${combined_text.length} chars) — capping all criteria at L2 to prevent default score inflation.`);
+                    Object.keys(evaluation).forEach(critId => {
+                        if (evaluation[critId] && evaluation[critId].level > 2) {
+                            evaluation[critId] = { level: 2, items: evaluation[critId].items || [] };
+                        }
+                    });
+                }
             } catch (e) {
                 console.error('[HAI] OpenAI failed:', e.message);
                 return res.status(500).json({ success: false, data: 'Evaluation could not be completed. Please try again.' });
