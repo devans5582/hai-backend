@@ -764,20 +764,31 @@ function getInterpretationFrame(signalProfile) {
 // ---------------------------------------------------------------
 // PHANTOM SCRAPE DETECTION
 //
-// Detects when a scraper returns "OK" pages that are all near-identical
-// in size — a strong indicator of blocked/templated responses (e.g. a
-// firewall returning the same 311-char "access denied" page for every URL).
+// Detects when a scraper returns "OK" pages that contain no real content —
+// either because all pages are suspiciously uniform (firewall returning the
+// same blocked-page body) or because the vast majority of pages are tiny stubs
+// (under 600 chars), which indicates blocked/empty responses regardless of
+// whether a handful of pages differ slightly in size.
 //
-// Triggers when: 3+ pages scraped AND stddev/mean < 0.05 (within 5%)
+// Both conditions indicate the scraper got URL headers but no real body content.
 // ---------------------------------------------------------------
 function isUniformlySized(pageCharCounts) {
     if (!Array.isArray(pageCharCounts) || pageCharCounts.length < 3) return false;
+
+    // Condition 1: majority of pages are stub-sized (< 600 chars).
+    // A legitimate scrape of governance/policy pages will have substantive body content.
+    // 600 chars is roughly 3-4 sentences — the minimum for any real page body.
+    const STUB_THRESHOLD = 600;
+    const stubCount = pageCharCounts.filter(c => c < STUB_THRESHOLD).length;
+    const stubRatio = stubCount / pageCharCounts.length;
+    if (stubRatio >= 0.75) return true;  // 75%+ pages are stubs
+
+    // Condition 2: very low coefficient of variation (pages suspiciously identical in size)
     const mean = pageCharCounts.reduce((a, b) => a + b, 0) / pageCharCounts.length;
     if (mean === 0) return false;
     const variance = pageCharCounts.reduce((sum, n) => sum + Math.pow(n - mean, 2), 0) / pageCharCounts.length;
-    const stddev = Math.sqrt(variance);
-    const cv = stddev / mean; // coefficient of variation
-    return cv < 0.05; // less than 5% variance = suspiciously uniform
+    const cv = Math.sqrt(variance) / mean;
+    return cv < 0.05;
 }
 
 function computeCalibration(rawScore, tier, pillarsWithEvidence, confPercent, downgraded, signals, scrapeBlocked) {
@@ -1034,25 +1045,8 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
         matched_phrases:    textSignals.matched_phrases
     };
 
-    const evalState = determineEvaluationState(signals, isPartial);
-
-    console.log(`[report-generator] Signals — high:${signals.high_signals} (text:${textSignals.high_signals}+supp:${suppHigh}) medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
-
-    // Step 2: Insufficient evidence gate — only fires when no signals at all,
-    // even after fallback URL stubs are included in scrapedText.
-    if (evalState === 'insufficient_evidence') {
-        console.log('[report-generator] insufficient_evidence — returning structured refusal');
-        return buildInsufficientEvidenceResponse(signals);
-    }
-
-    // Step 3: Tier and calibration
-    // confPercent not available at backend — pass null so Tier3.5 downgrade
-    // fires conservatively. Frontend re-applies with exact confPercent.
-    const { tier, pillarsWithEvidence, downgraded } = classifySignalTier(signals, evaluationData, null);
-    const rawScoreProxy = deriveRawScoreProxy(evaluationData);
-    // confPercent not available here; frontend applies its own exact confPercent
-    // Phantom scrape detection: pages returned "OK" but all near-identical size
-    // (e.g. firewall returning same blocked-page body for every URL).
+    // ── Phantom scrape detection ─────────────────────────────────────────────
+    // Must happen BEFORE tier classification so URL-only signals are reweighted.
     const pageCharCounts = ctx.pageCharCounts || null;
     const phantomScrape  = isUniformlySized(pageCharCounts);
     if (phantomScrape) {
@@ -1061,11 +1055,50 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     const scrapeBlocked = (ctx.scrapeStatus === "blocked") ||
         (ctx.limitedAccess && !scrapedText) ||
         phantomScrape;
-    const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null, downgraded, signals, scrapeBlocked);
+
+    // ── URL-slug signal reweighting for blocked/phantom scrapes ──────────────
+    // When scraping is blocked, all high signals come from URL slugs alone —
+    // the page bodies were never confirmed. Demote URL-only high signals to
+    // medium so they cannot inflate tier classification above what text evidence
+    // actually supports. Text-body high signals are kept as-is.
+    //
+    // Without this, a blocked site with /ai-policy + /ethics + /governance + /responsible
+    // URLs scores Tier 3 (4 high signals) every time regardless of actual content.
+    let effectiveSignals = signals;
+    if (scrapeBlocked) {
+        const urlHighCount  = signals.matched_phrases.filter(p => p.tier === 'high'   && p.source === 'url').length;
+        const textHighCount = signals.matched_phrases.filter(p => p.tier === 'high'   && p.source === 'text').length;
+        const reweightedHigh   = textHighCount;               // URL highs are demoted
+        const reweightedMedium = signals.medium_signals + urlHighCount; // demoted highs become medium
+        effectiveSignals = {
+            ...signals,
+            high_signals:   reweightedHigh,
+            medium_signals: reweightedMedium,
+        };
+        console.log(`[report-generator] Blocked reweight — high:${signals.high_signals}→${reweightedHigh} (url-high demoted to medium) medium:${signals.medium_signals}→${reweightedMedium}`);
+    }
+
+    const evalState = determineEvaluationState(effectiveSignals, isPartial);
+
+    console.log(`[report-generator] Signals — high:${effectiveSignals.high_signals} (text:${textSignals.high_signals}+supp:${suppHigh}) medium:${effectiveSignals.medium_signals} enterprise:${effectiveSignals.enterprise_signals||0} low:${effectiveSignals.low_signals} state:${evalState} partial:${isPartial}`);
+
+    // Step 2: Insufficient evidence gate — only fires when no signals at all,
+    // even after fallback URL stubs are included in scrapedText.
+    if (evalState === 'insufficient_evidence') {
+        console.log('[report-generator] insufficient_evidence — returning structured refusal');
+        return buildInsufficientEvidenceResponse(effectiveSignals);
+    }
+
+    // Step 3: Tier and calibration
+    const { tier, pillarsWithEvidence, downgraded } = classifySignalTier(effectiveSignals, evaluationData, null);
+    const rawScoreProxy = deriveRawScoreProxy(evaluationData);
+    const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null, downgraded, effectiveSignals, scrapeBlocked);
     console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} calibratedProxy:${calibration.calibrated_score} uplift:${calibration.uplift_applied} partial:${isPartial}`);
 
     // Step 4: Generate narrative report
-    const userPrompt = buildUserPrompt(evaluationData, scrapedText, signals, isPartial);
+    // Use original signals for prompt so AI gets full URL slug context for narrative,
+    // but effective (reweighted) signals drove the tier/score calculation above.
+    const userPrompt = buildUserPrompt(evaluationData, scrapedText, effectiveSignals, isPartial);
 
     let response;
     try {
@@ -1115,9 +1148,9 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     // Step 5: Attach evaluation metadata
     report.evaluation_state = (evalState === 'partial_evaluation') ? 'partial_evaluation' : 'valid';
     report.signal_profile   = {
-        high_signals: signals.high_signals, medium_signals: signals.medium_signals,
-        low_signals: signals.low_signals, tier,
-        matched_phrases: signals.matched_phrases.slice(0, 10)
+        high_signals: effectiveSignals.high_signals, medium_signals: effectiveSignals.medium_signals,
+        low_signals: effectiveSignals.low_signals, tier,
+        matched_phrases: effectiveSignals.matched_phrases.slice(0, 10)
     };
     report.calibration = {
         tier,
