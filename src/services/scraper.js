@@ -13,14 +13,56 @@ const USER_AGENT =
     'Chrome/120.0.0.0 Safari/537.36';
 
 const GOVERNANCE_KEYWORDS = [
+    // Original
     'privacy', 'trust', 'security', 'governance', 'compliance',
     'transparency', 'ethic', 'principle', 'legal', 'policy',
-    'terms of use', 'terms of service'
+    'terms of use', 'terms of service',
+    // Expanded — corporate responsibility, AI, ESG, risk
+    'responsible', 'responsibility', 'corporate responsibility',
+    'artificial intelligence', 'ai policy', 'ai governance',
+    'machine learning', 'algorithm', 'automated',
+    'risk', 'risk management', 'enterprise risk',
+    'esg', 'environmental', 'social', 'sustainability',
+    'annual report', 'public policy', 'regulatory',
+    'about us', 'our values', 'mission', 'purpose',
+    'human rights', 'data ethics', 'fairness',
+    'technology', 'innovation', 'digital',
+    'accountability', 'oversight', 'board',
+    'investor relations', 'newsroom', 'press',
 ];
 
 const FORCED_PATHS = [
+    // Original governance paths
     '/privacy', '/terms', '/ai-policy',
-    '/responsible-ai', '/trust', '/ethics', '/governance'
+    '/responsible-ai', '/trust', '/ethics', '/governance',
+    // Corporate responsibility and ESG
+    '/about', '/about-us', '/corporate-responsibility',
+    '/responsibility', '/esg', '/sustainability',
+    // Risk and compliance
+    '/risk', '/compliance', '/regulatory',
+    // AI and technology
+    '/ai', '/artificial-intelligence', '/technology',
+    // Investor and public accountability
+    '/investor-relations', '/newsroom', '/public-policy',
+];
+
+// Pages whose URL paths strongly suggest non-governance content.
+// These are deprioritised: if they pass the redirect-wall check they are
+// still scraped, but they only count toward real content if they contain
+// at least one AI_GOVERNANCE_TERM (below).
+const LOW_VALUE_PATH_PATTERNS = [
+    '/fraud', '/scam', '/phishing', '/security-alert',
+    '/opt-out', '/cookie', '/sitemap', '/careers',
+    '/investor', '/press-release', '/news/',
+];
+
+// At least one of these terms must appear in a low-value page's clean text
+// for it to be considered real governance content.
+const AI_GOVERNANCE_TERMS = [
+    'artificial intelligence', ' ai ', 'machine learning', 'algorithm',
+    'automated decision', 'governance', 'responsible', 'ethics',
+    'accountability', 'oversight', 'compliance', 'risk management',
+    'data ethics', 'fairness', 'transparency', 'human rights',
 ];
 
 const BLOCK_KEYWORDS = [
@@ -152,7 +194,10 @@ async function scrapeCompanyPages(targetUrl) {
     // Tracks clean-text lengths of pages already fetched.
     // Used to detect redirect/wall pages that return HTTP 200 but identical
     // content across different URLs (see redirect/wall detection below).
-    const seenPageLengths = new Set();
+    const seenPageLengths  = new Set();
+    // Count of pages detected as redirect walls — used to trigger supplementary
+    // evidence when most forced governance paths are blocked.
+    let redirectWallCount  = 0;
 
     for (const pageUrl of uniquePages) {
         try {
@@ -209,9 +254,28 @@ async function scrapeCompanyPages(targetUrl) {
             if (isLikelyRedirectWall) {
                 console.log(`[scraper] Skipped redirect/wall (duplicate length ${cleanText.length}) — ${pageUrl}`);
                 combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — redirect wall]\n`;
+                redirectWallCount++;
                 continue;
             }
             // ── End redirect/wall detection ──────────────────────────────────
+
+            // ── Low-value page filter ─────────────────────────────────────────
+            // Pages on fraud, scam, opt-out, cookie paths rarely contain AI
+            // governance content. Accept them only if they mention at least one
+            // AI governance term — otherwise add as a URL stub only so the slug
+            // contributes to signal detection without polluting OpenAI's context.
+            const pageUrlLower = pageUrl.toLowerCase();
+            const isLowValuePath = LOW_VALUE_PATH_PATTERNS.some(p => pageUrlLower.includes(p));
+            if (isLowValuePath) {
+                const cleanLower = cleanText.toLowerCase();
+                const hasGovernanceTerm = AI_GOVERNANCE_TERMS.some(t => cleanLower.includes(t));
+                if (!hasGovernanceTerm) {
+                    console.log(`[scraper] Skipped low-value path (no AI governance terms) — ${pageUrl}`);
+                    combinedText += `\n\n--- Content from ${pageUrl} ---\n[page low-value — no governance terms]\n`;
+                    continue;
+                }
+            }
+            // ── End low-value page filter ─────────────────────────────────────
             combinedText   += `\n\n--- Content from ${pageUrl} ---\n\n` + cleanText;
             successfulPages.push(pageUrl);
             console.log(`[scraper] OK ${pageUrl} (${cleanText.length} chars)`);
@@ -253,15 +317,16 @@ async function scrapeCompanyPages(targetUrl) {
         combinedText = combinedText.slice(0, MAX_CHARS) + '... [TRUNCATED]';
     }
 
-    console.log(`[scraper] Complete — ${successfulPages.length}/${uniquePages.length} pages OK, ${combinedText.length} total chars, ${realContentChars} real chars`);
+    console.log(`[scraper] Complete — ${successfulPages.length}/${uniquePages.length} pages OK, ${combinedText.length} total chars, ${realContentChars} real chars, ${redirectWallCount} redirect walls`);
 
     return {
-        scraper_blocked: false,
-        combined_text:   combinedText,
-        scraped_pages:   successfulPages,
-        limited_access:  limitedAccess,
-        content_empty:   contentEmpty,
-        real_content_chars: realContentChars
+        scraper_blocked:    false,
+        combined_text:      combinedText,
+        scraped_pages:      successfulPages,
+        limited_access:     limitedAccess,
+        content_empty:      contentEmpty,
+        real_content_chars: realContentChars,
+        redirect_wall_count: redirectWallCount,
     };
 }
 
