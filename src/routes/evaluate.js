@@ -228,20 +228,20 @@ router.post('/', async (req, res) => {
         }
 
         // ── Step 6: Log ────────────────────────────────────────────────────
+        // writeLog expects { analysisId, targetUrl, reqBody, scrapeResult, premiumReport }
+        // Pass both the structured shape writeLog needs AND the flat fields it reads
+        // from reqBody, so all columns are populated in the Phase 1 INSERT.
         safeLog({
-            analysis_id: analysisId, company_name: company, company_url: url,
-            industry, stage, size, scrape_status,
-            limited_access_flag:  limited_access || false,
-            evaluation_state:     evaluationState,
-            edgar_signals:        supplementarySignals?.edgarSignals    ?? 0,
-            wayback_signals:      supplementarySignals?.waybackSignals  ?? 0,
-            oecd_signals:         supplementarySignals?.oecdSignals     ?? 0,
-            github_signals:       supplementarySignals?.githubSignals   ?? 0,
-            academic_signals:     supplementarySignals?.academicSignals ?? 0,
-            supplementary_total:  supplementarySignals?.totalSignals    ?? 0,
-            entity_resolved_name: entityProfile?.resolvedName           ?? '',
-            entity_is_public:     entityProfile?.isPublicCompany        ?? false,
-            entity_confidence:    entityProfile?.overallConfidence       ?? 0,
+            analysisId,
+            targetUrl:    url,
+            reqBody: {
+                company:  company,
+                industry: industry,
+                stage:    stage,
+                size:     size,
+            },
+            scrapeResult: scrapeResult || { scrape_status, limited_access, content_empty },
+            premiumReport: premiumReport || null,
         });
 
         // ── Step 7: Respond ────────────────────────────────────────────────
