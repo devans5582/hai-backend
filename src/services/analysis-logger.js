@@ -101,9 +101,14 @@ async function writeLog({ analysisId, targetUrl, reqBody, scrapeResult, premiumR
             medium_signals:      typeof sp.medium_signals === 'number' ? sp.medium_signals : 0,
             low_signals:         typeof sp.low_signals    === 'number' ? sp.low_signals    : 0,
 
-            // Backend-computable score proxies from calibration object
-            raw_score:           typeof cal.raw_score_proxy  === 'number' ? cal.raw_score_proxy  : null,
-            calibrated_score:    typeof cal.calibrated_score === 'number' ? cal.calibrated_score : null,
+            // Backend-computable score proxies from calibration object.
+            // raw_score_proxy is logged here as a diagnostic aid.
+            // calibrated_score is intentionally omitted from Phase 1: the backend
+            // no longer computes a calibrated value (see Fix 4 — single-source
+            // calibration).  The frontend writes the authoritative calibrated_score
+            // via patchLog() in Phase 2 alongside final_score.
+            raw_score:           typeof cal.raw_score_proxy === 'number' ? cal.raw_score_proxy : null,
+            calibrated_score:    null,
 
             // Phase 2 fields — NULL until patchLog() is called by frontend
             final_score:          null,
@@ -152,6 +157,10 @@ async function patchLog(analysisId, fields) {
             'industry',
             'stage',
             'size',
+            // calibrated_score moved from Phase 1 INSERT to Phase 2 PATCH (Fix 4):
+            // the authoritative calibration is now computed once in bundle.js
+            // with the exact confPercent, then written here.
+            'calibrated_score',
             'final_score',
             'evidence_strength',
             'confidence_score',

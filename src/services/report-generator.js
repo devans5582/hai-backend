@@ -930,7 +930,14 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     // Step 1: Signal detection
     const signals        = detectGovernanceSignals(scrapedText);
     const ctx            = scrapeContext || {};
-    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess);
+    // isPartial is true when:
+    //   - scraper flagged a partial scrape (homepage unreachable)
+    //   - limited_access: total text under 1 000 chars
+    //   - content_empty: text exceeded that threshold but was almost entirely
+    //     scraper stubs — real governance content < 500 chars.
+    //     Without this flag, stub-heavy pages pass as valid, OpenAI receives no
+    //     usable text, returns all criteria at level 1, and confPercent = 100.
+    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess || ctx.contentEmpty);
     const evalState      = determineEvaluationState(signals, isPartial);
 
     console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
@@ -942,14 +949,19 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
         return buildInsufficientEvidenceResponse(signals);
     }
 
-    // Step 3: Tier and calibration
-    // confPercent not available at backend — pass null so Tier3.5 downgrade
-    // fires conservatively. Frontend re-applies with exact confPercent.
+    // Step 3: Tier and calibration inputs
+    // confPercent is not available at the backend — the exact value is computed
+    // in bundle.js from the rubric evidence items after OpenAI scoring.
+    // We therefore do NOT compute a calibrated_score here.
+    // Instead we return the tier, uplift midpoint, and pillar bonus so that
+    // bundle.js can perform the single authoritative calibration with the real
+    // confPercent.  This eliminates the two-run divergence that was producing
+    // four different observed offsets for the same tier.
     const { tier, pillarsWithEvidence, downgraded } = classifySignalTier(signals, evaluationData, null);
-    const rawScoreProxy = deriveRawScoreProxy(evaluationData);
-    // confPercent not available here; frontend applies its own exact confPercent
-    const calibration   = computeCalibration(rawScoreProxy, tier, pillarsWithEvidence, null, downgraded);
-    console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} calibratedProxy:${calibration.calibrated_score} uplift:${calibration.uplift_applied} partial:${isPartial}`);
+    const rawScoreProxy  = deriveRawScoreProxy(evaluationData);
+    const upliftMidpoint = UPLIFT_MIDPOINTS[tier] || 0;
+    const multiPillarBonus = (pillarsWithEvidence >= 4 && !downgraded) ? 8 : 0;
+    console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} upliftMidpoint:${upliftMidpoint} partial:${isPartial}`);
 
     // Step 4: Generate narrative report
     const userPrompt = buildUserPrompt(evaluationData, scrapedText, signals, isPartial);
@@ -1008,13 +1020,18 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     };
     report.calibration = {
         tier,
-        uplift_applied:         calibration.uplift_applied,
-        multi_pillar_bonus:     calibration.multi_pillar_bonus,
+        // uplift_midpoint: the base uplift for this tier BEFORE confidence
+        // modifiers are applied.  bundle.js applies those modifiers with the
+        // exact confPercent and is the single source of truth for the final
+        // verified score.  Do NOT read uplift_midpoint as the final uplift —
+        // bundle.js may reduce it (e.g. 20% reduction when confPercent < 50).
+        uplift_midpoint:        upliftMidpoint,
+        multi_pillar_bonus:     multiPillarBonus,
         raw_score_proxy:        rawScoreProxy,
         score_cap:              SCORE_CAP,
         evidence_cap_threshold: EVIDENCE_CAP_THRESHOLD,
         evidence_cap_value:     EVIDENCE_CAP_VALUE,
-        downgraded:             calibration.downgraded,
+        downgraded:             downgraded,
         partial_evaluation:     isPartial
     };
 

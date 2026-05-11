@@ -34,6 +34,31 @@ const MAX_DISCOVERED_LINKS  = 5;
 const MAX_CHARS             = 30000;
 const LIMITED_ACCESS_THRESHOLD = 1000;
 
+// Minimum real (non-stub) text required for a valid evaluation.
+// Stub lines written by the scraper when a page is blocked all start with
+// "[page restricted", "[page empty", or "[page not retrieved".
+// A combined_text that exceeds LIMITED_ACCESS_THRESHOLD but is composed
+// almost entirely of these stubs must not be treated as a full valid scrape.
+const REAL_CONTENT_THRESHOLD = 500;
+
+// ── measureRealContent ────────────────────────────────────────────
+// Strips every stub line from combined_text and returns the char count
+// of what remains.  Used to set content_empty on the return value.
+function measureRealContent(combinedText) {
+    if (!combinedText) return 0;
+    // Remove stub annotations added by the scraper for blocked/empty pages
+    const stripped = combinedText
+        .replace(/\[page restricted[^\]]*\]/gi, '')
+        .replace(/\[page empty[^\]]*\]/gi, '')
+        .replace(/\[page not retrieved[^\]]*\]/gi, '')
+        .replace(/\[Fallback evaluation[^\]]*\]/gi, '')
+        .replace(/\[Homepage:[^\]]*\]/gi, '')
+        .replace(/--- Content from https?:\/\/\S+ ---/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return stripped.length;
+}
+
 
 // ---------------------------------------------------------------
 // Main export
@@ -174,12 +199,23 @@ async function scrapeCompanyPages(targetUrl) {
     }
 
     // ----------------------------------------------------------------
-    // Step 5: Assess limited_access and truncate
+    // Step 5: Assess limited_access, content_empty, and truncate
     // ----------------------------------------------------------------
     const limitedAccess = combinedText.trim().length < LIMITED_ACCESS_THRESHOLD;
 
+    // content_empty: total chars exceed the limited_access threshold (so the
+    // old code would pass it as valid) but almost all of that text is scraper
+    // stubs from blocked/restricted pages — not real governance content.
+    // report-generator uses this flag to route the evaluation as partial
+    // rather than valid, preventing a full uplift on stub-only text.
+    const realContentChars = measureRealContent(combinedText);
+    const contentEmpty     = !limitedAccess && realContentChars < REAL_CONTENT_THRESHOLD;
+
     if (limitedAccess) {
         console.warn(`[scraper] limited_access=true — total text under ${LIMITED_ACCESS_THRESHOLD} chars`);
+    }
+    if (contentEmpty) {
+        console.warn(`[scraper] content_empty=true — only ${realContentChars} real chars despite ${combinedText.trim().length} total (rest are stubs)`);
     }
 
     if (combinedText.length > MAX_CHARS) {
@@ -187,13 +223,15 @@ async function scrapeCompanyPages(targetUrl) {
         combinedText = combinedText.slice(0, MAX_CHARS) + '... [TRUNCATED]';
     }
 
-    console.log(`[scraper] Complete — ${successfulPages.length}/${uniquePages.length} pages OK, ${combinedText.length} chars`);
+    console.log(`[scraper] Complete — ${successfulPages.length}/${uniquePages.length} pages OK, ${combinedText.length} total chars, ${realContentChars} real chars`);
 
     return {
         scraper_blocked: false,
         combined_text:   combinedText,
         scraped_pages:   successfulPages,
-        limited_access:  limitedAccess
+        limited_access:  limitedAccess,
+        content_empty:   contentEmpty,
+        real_content_chars: realContentChars
     };
 }
 
