@@ -4,12 +4,37 @@ const { createClient } = require('@supabase/supabase-js');
 
 const TABLE = 'hai_assessments';
 
+// ── Node 18 / Supabase WebSocket fix ─────────────────────────────────────────
+// @supabase/realtime-js throws a hard error on Node 18 when no native WebSocket
+// is found.  This backend only uses the REST API (insertBenchmark, getIndustryAverage)
+// and never opens Realtime subscriptions, so we:
+//   1. Provide the `ws` package as the Realtime transport (silences the throw)
+//   2. Set autoConnectSocket: false (prevents an unnecessary WS connection opening)
+//
+// `ws` is already in node_modules transitively; the explicit require here ensures
+// it is resolved even if hoisting changes in a future npm update.
+// ─────────────────────────────────────────────────────────────────────────────
+let _ws;
+try {
+    _ws = require('ws');
+} catch (_) {
+    // ws not available — fall back to undefined; only fails on Node < 22 without ws
+    _ws = undefined;
+}
+
 // Initialise once — createClient is safe to call at module load time.
 // SUPABASE_SERVICE_ROLE_KEY is used (not the anon key) so the backend
 // can INSERT and SELECT without Row Level Security interference.
 const supabase = createClient(
     process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    {
+        realtime: {
+            transport:         _ws,    // provide ws so Node 18 WebSocket factory doesn't throw
+            autoConnectSocket: false,  // don't open a socket — this service only uses REST
+            reconnectAfterMs:  () => 60000, // long back-off so retries don't spam logs if it does try
+        }
+    }
 );
 
 /**
