@@ -149,6 +149,10 @@ async function scrapeCompanyPages(targetUrl) {
     // ----------------------------------------------------------------
     let combinedText      = '';
     const successfulPages = [];
+    // Tracks clean-text lengths of pages already fetched.
+    // Used to detect redirect/wall pages that return HTTP 200 but identical
+    // content across different URLs (see redirect/wall detection below).
+    const seenPageLengths = new Set();
 
     for (const pageUrl of uniquePages) {
         try {
@@ -182,6 +186,32 @@ async function scrapeCompanyPages(targetUrl) {
             }
 
             const cleanText = extractText(pageHtml);
+
+            // ── Redirect/wall detection ──────────────────────────────────────
+            // Some sites return HTTP 200 with a generic "sign in", "access denied",
+            // or redirect page for every protected URL.  These pages are identical
+            // in length across completely different paths — a strong signal that
+            // the content is not real governance text.
+            //
+            // Detection: if this page's clean text length exactly matches a
+            // previously seen page length AND it's suspiciously short (< 2000 chars),
+            // treat it as a redirect wall, log it, and add a stub instead.
+            //
+            // We track lengths in a Set rather than full content hashes to keep
+            // memory overhead low and avoid hashing 30 KB strings per page.
+            const isLikelyRedirectWall = (
+                cleanText.length < 2000 &&
+                seenPageLengths.has(cleanText.length) &&
+                cleanText.length > 0
+            );
+            seenPageLengths.add(cleanText.length);
+
+            if (isLikelyRedirectWall) {
+                console.log(`[scraper] Skipped redirect/wall (duplicate length ${cleanText.length}) — ${pageUrl}`);
+                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — redirect wall]\n`;
+                continue;
+            }
+            // ── End redirect/wall detection ──────────────────────────────────
             combinedText   += `\n\n--- Content from ${pageUrl} ---\n\n` + cleanText;
             successfulPages.push(pageUrl);
             console.log(`[scraper] OK ${pageUrl} (${cleanText.length} chars)`);
