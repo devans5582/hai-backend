@@ -105,6 +105,39 @@ router.post(
         const confidence = (req.body.confidence || 'N/A').toString().trim();
 
         // --------------------------------------------------------
+        // 2a. Score validity gate — server-side safety net
+        //
+        // The frontend delivery gate in bundle.js is the primary
+        // guard, but this server-side check ensures no invalid report
+        // is delivered even if a stale or modified frontend bypasses
+        // the client-side gate.
+        //
+        // Blocks delivery when:
+        //   - score is 'N/A', missing, or zero
+        //   - confidence is 'N/A', missing, or ≤ 10
+        //
+        // Returns success: false so the frontend log records the block.
+        // --------------------------------------------------------
+        const scoreNum = parseFloat(score);
+        const confNum  = parseFloat(confidence);
+
+        if (score === 'N/A' || isNaN(scoreNum) || scoreNum <= 0) {
+            console.warn('[send-report] Delivery blocked — invalid score:', score, '| company:', company);
+            return res.status(200).json({
+                success: false,
+                data: 'Report delivery blocked: score is not valid for this evaluation.'
+            });
+        }
+
+        if (confidence === 'N/A' || isNaN(confNum) || confNum <= 10) {
+            console.warn('[send-report] Delivery blocked — confidence too low:', confidence, '| company:', company);
+            return res.status(200).json({
+                success: false,
+                data: 'Report delivery blocked: confidence score is too low for this evaluation.'
+            });
+        }
+
+        // --------------------------------------------------------
         // 2. Decode the base64 PDF
         //
         // pdf_data format from jsPDF doc.output('datauristring'):

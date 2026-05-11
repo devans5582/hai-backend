@@ -105,18 +105,21 @@ router.post('/', async (req, res) => {
 
         // ── Step 1: Scrape ─────────────────────────────────────────────────
         let combined_text = '', scraped_pages = [], scrape_status = 'blocked';
-        let limited_access = false, partial_scrape = false;
+        let limited_access = false, partial_scrape = false, content_empty = false;
+        let scrapeResult = null;
 
         if (doScrape) {
             try {
                 console.log(`[HAI] Scraping ${url}`);
                 const r = await doScrape(url) || {};
+                scrapeResult   = r;
                 combined_text  = r.combined_text  || '';
                 scraped_pages  = r.scraped_pages  || [];
                 scrape_status  = r.scrape_status  || (combined_text.length > 100 ? 'ok' : 'blocked');
                 limited_access = r.limited_access || false;
                 partial_scrape = r.partial_scrape || false;
-                console.log(`[HAI] Scrape: status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length}`);
+                content_empty  = r.content_empty  || false;
+                console.log(`[HAI] Scrape: status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length} content_empty=${content_empty}`);
             } catch (e) {
                 console.warn('[HAI] Scraper failed (treating as blocked):', e.message);
                 scrape_status = 'blocked';
@@ -180,6 +183,11 @@ router.post('/', async (req, res) => {
                         size,
                         partialScrape: partial_scrape,
                         limitedAccess: limited_access,
+                        // content_empty: scraper found sufficient total chars but almost all
+                        // were stubs from blocked pages — real governance text < 500 chars.
+                        // report-generator uses this to route as partial_evaluation instead
+                        // of valid, preventing full uplift on stub-only content.
+                        contentEmpty:  content_empty,
                         scrapeStatus: scrape_status,
                         scrapedPages: scraped_pages,
                         supplementarySignals,
