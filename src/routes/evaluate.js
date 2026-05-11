@@ -119,7 +119,14 @@ router.post('/', async (req, res) => {
                 limited_access = r.limited_access || false;
                 partial_scrape = r.partial_scrape || false;
                 content_empty  = r.content_empty  || false;
-                console.log(`[HAI] Scrape: status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length} content_empty=${content_empty}`);
+                const redirect_walls = r.redirect_wall_count || 0;
+                // Treat as limited access when most forced governance paths were redirect walls
+                // so supplementary evidence triggers and fills the coverage gap
+                if (redirect_walls >= 3 && !limited_access) {
+                    console.log(`[HAI] ${redirect_walls} redirect walls detected — treating as limited_access for supplementary trigger`);
+                    limited_access = true;
+                }
+                console.log(`[HAI] Scrape: status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length} content_empty=${content_empty} redirect_walls=${redirect_walls}`);
             } catch (e) {
                 console.warn('[HAI] Scraper failed (treating as blocked):', e.message);
                 scrape_status = 'blocked';
