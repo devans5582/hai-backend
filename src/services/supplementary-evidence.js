@@ -144,8 +144,39 @@ async function fetchEdgar(companyName) {
         });
         const hits  = res.data?.hits?.hits || [];
 
-        hits.slice(0, 3).forEach(hit => {
+        // ── Entity relevance filter ────────────────────────────────────────
+        // EDGAR full-text search returns any filing that MENTIONS the company
+        // name — including ETFs, funds, and third-party filings that reference
+        // the company in passing. We only count a filing when its primary
+        // entity name closely matches the company we're evaluating.
+        //
+        // Match rule: the filing's display_names[0] must contain all significant
+        // words from companyName (case-insensitive, ignoring common suffixes).
+        // e.g. "Wells Fargo" must appear in the filer name, not just in body text.
+        const significantWords = companyName
+            .toLowerCase()
+            .replace(/\b(inc|corp|ltd|llc|plc|co|the|&|and)\b/g, '')
+            .trim()
+            .split(/\s+/)
+            .filter(w => w.length > 2);
+
+        function isEntityMatch(displayNames) {
+            if (!displayNames || displayNames.length === 0) return false;
+            const filerName = (displayNames[0] || '').toLowerCase();
+            // All significant words must appear in the filer name
+            return significantWords.every(word => filerName.includes(word));
+        }
+
+        let matched = 0;
+        for (const hit of hits) {
+            if (matched >= 3) break;
             const src = hit._source || {};
+
+            if (!isEntityMatch(src.display_names)) {
+                console.log(`[HAI:supp] EDGAR skipped non-entity match: "${src.display_names?.[0]}" for "${companyName}"`);
+                continue;
+            }
+
             const text = [src.period_of_report, src.display_names?.[0], src.form_type].filter(Boolean).join(' — ');
             results.push({
                 source:           'EDGAR',
@@ -159,7 +190,14 @@ async function fetchEdgar(companyName) {
                 evidenceType:     'external',
                 role:             'justifies',
             });
-        });
+            matched++;
+        }
+
+        if (matched === 0 && hits.length > 0) {
+            console.log(`[HAI:supp] EDGAR: ${hits.length} hits found but none matched entity "${companyName}" — all rejected as non-entity filings`);
+        } else {
+            console.log(`[HAI:supp] EDGAR: ${matched} entity-matched filings for "${companyName}"`);
+        }
     } catch (err) {
         console.log('[HAI] EDGAR fetch failed:', err.message);
     }
@@ -647,7 +685,7 @@ async function fetchSupplementaryEvidence(companyName, companyUrl, industry, opt
         // Phase 6: execution
         executionGapCount:        execGapCriteria.length,
         verifiedExecutionCount:   verifiedExecCount,
-        executionGapCriteria:     execGapCriteria,
+        executionGapCriteria,
     };
 
     // ── Return supplementary_signals shape (matches frontend expectations) ─
