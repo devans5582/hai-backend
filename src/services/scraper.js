@@ -44,6 +44,17 @@ const FORCED_PATHS = [
     '/ai', '/artificial-intelligence', '/technology',
     // Investor and public accountability
     '/investor-relations', '/newsroom', '/public-policy',
+    // Locale-prefixed paths used by large enterprises (Microsoft, Google, etc.)
+    // microsoft.com/responsible-ai redirects to a wall; the real content is at:
+    '/en-us/ai/responsible-ai',
+    '/en-us/corporate-responsibility',
+    '/en-us/about/responsible-ai',
+    '/en-us/ai/principles-and-approach',
+    // Common locale variants for other large enterprises
+    '/en-gb/ai/responsible-ai',
+    '/en/responsible-ai',
+    '/en/ai-governance',
+    '/en-us/trust-center',
 ];
 
 // Pages whose URL paths strongly suggest non-governance content.

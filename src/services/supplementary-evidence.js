@@ -168,6 +168,7 @@ async function fetchEdgar(companyName) {
         }
 
         let matched = 0;
+        const seenFileDates = new Set(); // deduplicate filings with identical file_date
         for (const hit of hits) {
             if (matched >= 3) break;
             const src = hit._source || {};
@@ -176,6 +177,15 @@ async function fetchEdgar(companyName) {
                 console.log(`[HAI:supp] EDGAR skipped non-entity match: "${src.display_names?.[0]}" for "${companyName}"`);
                 continue;
             }
+
+            // Skip filings with a date we've already included — EDGAR sometimes returns
+            // multiple hits for the same filing period (amended vs original submission).
+            const _dedupeKey = (src.file_date || '') + '|' + (src.period_of_report || '');
+            if (_dedupeKey && seenFileDates.has(_dedupeKey)) {
+                console.log(`[HAI:supp] EDGAR deduped filing: ${_dedupeKey}`);
+                continue;
+            }
+            if (_dedupeKey) seenFileDates.add(_dedupeKey);
 
             const text = [src.period_of_report, src.display_names?.[0], src.form_type].filter(Boolean).join(' — ');
 
@@ -349,18 +359,26 @@ async function fetchWayback(companyUrl) {
             });
             const snap = res.data?.archived_snapshots?.closest;
             if (snap && snap.available && snap.status === '200') {
-                results.push({
-                    source:           'WAYBACK',
-                    sourceTier:       'low',
-                    tierWeight:       0.25,
-                    text:             `Archived governance page found: ${baseUrl}${path} (snapshot: ${snap.timestamp?.slice(0,8) || 'unknown date'})`,
-                    url:              snap.url || null,
-                    dateIssued:       snap.timestamp ? snap.timestamp.slice(0,4) + '-' + snap.timestamp.slice(4,6) + '-' + snap.timestamp.slice(6,8) : null,
-                    relevantPillars:  SOURCE_PILLAR_MAP.WAYBACK,
-                    criterionSpecificFor: mapTextToCriteria(path, SOURCE_PILLAR_MAP.WAYBACK),
-                    evidenceType:     'governance',
-                    role:             'supports',  // Wayback can never justify — corroboration only
-                });
+                // Reject snapshots older than 2015. A pre-2015 archive page predates
+                // modern AI governance frameworks and has no probative value for a
+                // 2026 HAI assessment. The 2001 Microsoft trust page is a clear example.
+                const _snapYear = snap.timestamp ? parseInt(snap.timestamp.slice(0, 4), 10) : 0;
+                if (_snapYear < 2015) {
+                    console.log(`[HAI:supp] Wayback snapshot too old (${_snapYear}) — skipped: ${baseUrl}${path}`);
+                } else {
+                    results.push({
+                        source:           'WAYBACK',
+                        sourceTier:       'low',
+                        tierWeight:       0.25,
+                        text:             `Archived governance page found: ${baseUrl}${path} (snapshot: ${snap.timestamp?.slice(0,8) || 'unknown date'})`,
+                        url:              snap.url || null,
+                        dateIssued:       snap.timestamp ? snap.timestamp.slice(0,4) + '-' + snap.timestamp.slice(4,6) + '-' + snap.timestamp.slice(6,8) : null,
+                        relevantPillars:  SOURCE_PILLAR_MAP.WAYBACK,
+                        criterionSpecificFor: mapTextToCriteria(path, SOURCE_PILLAR_MAP.WAYBACK),
+                        evidenceType:     'governance',
+                        role:             'supports',  // Wayback can never justify — corroboration only
+                    });
+                }
             }
         } catch (err) {
             // Individual path failures are non-blocking
