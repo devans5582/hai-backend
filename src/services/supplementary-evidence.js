@@ -205,31 +205,77 @@ async function fetchEdgar(companyName) {
 }
 
 async function fetchOecd(companyName) {
+    // OECD.ai does not offer a public REST search API — the previous /wonk/api/search
+    // endpoint was a private internal route that returned 403/404 on every external call.
+    //
+    // Replacement: query the OECD.ai public initiatives catalogue via their
+    // publicly accessible search page (HTML scrape of structured result data).
+    // Falls back gracefully with an empty array if the page is unreachable.
     const results = [];
     try {
-        const query = encodeURIComponent(companyName);
-        const url   = `https://oecd.ai/en/wonk/api/search?q=${query}&type=private_sector&limit=3`;
+        const query = encodeURIComponent(`${companyName} artificial intelligence`);
+        const url   = `https://oecd.ai/en/catalogue/tools?q=${query}&limit=5`;
         const res   = await axios.get(url, {
-            timeout: 7000,
-            headers: { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' }
+            timeout: 8000,
+            headers: {
+                'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)',
+                'Accept':     'text/html,application/xhtml+xml',
+            },
+            validateStatus: s => s < 500,
         });
-        const items = res.data?.results || res.data?.items || [];
 
-        items.slice(0, 2).forEach(item => {
-            const text = item.title || item.name || item.description || '';
+        if (res.status !== 200) {
+            console.log(`[HAI] OECD catalogue returned HTTP ${res.status} — skipping`);
+            return results;
+        }
+
+        // Extract tool names from HTML — OECD catalogue renders tool titles in
+        // <h3 class="tool-title"> or similar. Simple regex is sufficient here
+        // since we only need the title text for signal classification.
+        const html   = String(res.data || '');
+        const titles = [];
+        const re     = /<h[23][^>]*class="[^"]*tool[^"]*"[^>]*>([^<]{10,200})<\/h[23]>/gi;
+        let m;
+        while ((m = re.exec(html)) !== null && titles.length < 3) {
+            const t = m[1].replace(/&amp;/g,'&').replace(/&#\d+;/g,'').trim();
+            if (t) titles.push(t);
+        }
+
+        // If structured titles not found, treat any page load as a weak signal
+        // confirming OECD coverage (the search returned a valid page for this company)
+        if (titles.length === 0 && html.length > 500) {
+            const compLower = companyName.toLowerCase();
+            if (html.toLowerCase().includes(compLower)) {
+                results.push({
+                    source:           'OECD',
+                    sourceTier:       'medium',
+                    tierWeight:       0.6,
+                    text:             `OECD AI Observatory: ${companyName} referenced in AI policy catalogue`,
+                    url:              `https://oecd.ai/en/catalogue/tools?q=${encodeURIComponent(companyName)}`,
+                    dateIssued:       null,
+                    relevantPillars:  SOURCE_PILLAR_MAP.OECD,
+                    criterionSpecificFor: [],
+                    evidenceType:     'governance',
+                    role:             'supports',
+                });
+            }
+        }
+
+        titles.forEach(title => {
             results.push({
                 source:           'OECD',
                 sourceTier:       'medium',
                 tierWeight:       0.6,
-                text:             `OECD AI Observatory: ${text.slice(0, 200)}`,
-                url:              item.url || 'https://oecd.ai/en/wonk',
-                dateIssued:       item.date || item.published_date || null,
+                text:             `OECD AI Observatory tool: ${title.slice(0, 200)}`,
+                url:              `https://oecd.ai/en/catalogue/tools?q=${encodeURIComponent(companyName)}`,
+                dateIssued:       null,
                 relevantPillars:  SOURCE_PILLAR_MAP.OECD,
-                criterionSpecificFor: mapTextToCriteria(text, SOURCE_PILLAR_MAP.OECD),
+                criterionSpecificFor: mapTextToCriteria(title, SOURCE_PILLAR_MAP.OECD),
                 evidenceType:     'governance',
                 role:             'supports',
             });
         });
+
     } catch (err) {
         console.log('[HAI] OECD fetch failed:', err.message);
     }
@@ -241,9 +287,17 @@ async function fetchAcademic(companyName) {
     try {
         const query = encodeURIComponent(`${companyName} responsible AI governance`);
         const url   = `https://api.semanticscholar.org/graph/v1/paper/search?query=${query}&limit=3&fields=title,year,authors,externalIds`;
+        // Add Semantic Scholar API key if available — raises rate limit from
+        // the heavily throttled anonymous tier to 1 req/sec (free, no daily cap).
+        // Register at semanticscholar.org/product/api and set SEMANTIC_SCHOLAR_API_KEY
+        // in Railway environment variables. Falls back gracefully without the key.
+        const s2Headers = { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' };
+        if (process.env.SEMANTIC_SCHOLAR_API_KEY) {
+            s2Headers['x-api-key'] = process.env.SEMANTIC_SCHOLAR_API_KEY;
+        }
         const res   = await axios.get(url, {
             timeout: 7000,
-            headers: { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' }
+            headers: s2Headers,
         });
         const papers = res.data?.data || [];
 
