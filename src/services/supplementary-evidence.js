@@ -178,12 +178,31 @@ async function fetchEdgar(companyName) {
             }
 
             const text = [src.period_of_report, src.display_names?.[0], src.form_type].filter(Boolean).join(' — ');
+
+            // Build a distinct label for each filing using form type + period.
+            // Previously all 3 bullets rendered identically because display_names[0]
+            // is always "MICROSOFT CORP" and period_of_report was appended inconsistently.
+            // Format: "SEC 10-K filing: MICROSOFT CORP (MSFT) — Period: 2023-06-30"
+            const _filerLabel  = src.display_names?.[0] || companyName;
+            const _ticker      = src.display_names?.[1] ? ` (${src.display_names[1]})` : '';
+            const _period      = src.period_of_report   ? ` — Period: ${src.period_of_report}` : '';
+            const _fileDate    = src.file_date          ? ` — Filed: ${src.file_date}` : '';
+            const _formType    = src.form_type          || '10-K';
+            const _filingText  = `SEC ${_formType} filing: ${_filerLabel}${_ticker}${_period || _fileDate}`;
+
+            // Use the CIK-based URL which is shorter (won't wrap in PDF) and
+            // links directly to this filer's filings rather than a name search.
+            const _cik = src.entity_id || src.cik || null;
+            const _url = _cik
+                ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${_cik}&type=${_formType}&count=5`
+                : `https://efts.sec.gov/LATEST/search-index?q=${encodeURIComponent('"' + companyName + '"')}&forms=${_formType}`;
+
             results.push({
                 source:           'EDGAR',
                 sourceTier:       'high',
                 tierWeight:       1.0,
-                text:             `SEC ${src.form_type || '10-K'} filing: ${src.display_names?.[0] || companyName}. ${src.period_of_report ? 'Period: ' + src.period_of_report : ''}`,
-                url:              src.file_date ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${encodeURIComponent(companyName)}&type=10-K&dateb=&owner=include&count=5` : null,
+                text:             _filingText,
+                url:              _url,
                 dateIssued:       src.file_date  || null,
                 relevantPillars:  SOURCE_PILLAR_MAP.EDGAR,
                 criterionSpecificFor: mapTextToCriteria(text, SOURCE_PILLAR_MAP.EDGAR),
