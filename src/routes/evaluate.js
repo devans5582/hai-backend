@@ -6,6 +6,7 @@
 const express    = require('express');
 const router     = express.Router();
 const { v4: uuidv4 } = require('uuid');
+const axios      = require('axios');
 
 const scraper    = require('../services/scraper');
 const openai     = require('../services/openai');
@@ -75,6 +76,18 @@ router.post('/', async (req, res) => {
     const stage    = (req.body.stage    || 'startup').trim();
     const size     = (req.body.size     || '1-10').trim();
 
+    // Optional direct governance page URLs submitted by the user.
+    // Sent when the company's site blocks automated scraping (e.g. Wells Fargo,
+    // Snowflake) so the user can paste specific governance/AI-policy page URLs.
+    // Passed through to the scraper, which fetches them first — before FORCED_PATHS —
+    // so real governance text reaches OpenAI instead of the calibration floor.
+    // Accepts: comma-separated string OR repeated directUrl[] form fields.
+    // URLSearchParams encodes repeated keys as directUrl[]=... or directUrl=...
+    const _rawDirect = req.body.directUrls || req.body['directUrls[]'] || '';
+    const directUrls = (Array.isArray(_rawDirect) ? _rawDirect : String(_rawDirect).split(','))
+        .map(u => u.trim())
+        .filter(u => u.length > 0 && u.includes('.'));
+
     if (!rawUrl || !isValidUrl(rawUrl))
         return res.status(400).json({ success: false, data: 'A valid URL is required.' });
     if (!company)
@@ -85,6 +98,65 @@ router.post('/', async (req, res) => {
     console.log(`[HAI] START id=${analysisId} company="${company}" url=${url}`);
 
     try {
+
+        // ── Deduplication check — reject re-assessment within 7 days ───────
+        // Queries hai_analysis_logs for a successfully delivered evaluation of the
+        // same domain in the last 7 days. Uses company_url ilike match so no
+        // extra target_domain column is needed. Failures are non-blocking — a
+        // Supabase outage never prevents an assessment from running.
+        if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
+            try {
+                let targetDomain = '';
+                try { targetDomain = new URL(url).hostname.replace(/^www\./, ''); } catch (_) {}
+
+                if (targetDomain) {
+                    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+                    const dedupResp = await axios.get(
+                        `${process.env.SUPABASE_URL}/rest/v1/hai_analysis_logs`,
+                        {
+                            timeout: 5000,
+                            headers: {
+                                'apikey':        process.env.SUPABASE_SERVICE_KEY,
+                                'Authorization': 'Bearer ' + process.env.SUPABASE_SERVICE_KEY,
+                            },
+                            params: {
+                                select:                  'analysis_id,timestamp,final_score,email_delivery_status',
+                                // target_domain is an exact-match column populated from Phase 6.2.
+                                // Falls back to ilike on company_url for rows logged before
+                                // the target_domain column was added.
+                                target_domain:           `eq.${targetDomain}`,
+                                timestamp:               `gte.${sevenDaysAgo}`,
+                                // Only block on rows that were actually delivered or in-flight
+                                // (not on rows that were hard-blocked by the delivery gate).
+                                'email_delivery_status': 'not.ilike.blocked*',
+                                order:                   'timestamp.desc',
+                                limit:                   1,
+                            },
+                            validateStatus: () => true,
+                        }
+                    );
+
+                    if (dedupResp.status === 200 && Array.isArray(dedupResp.data) && dedupResp.data.length > 0) {
+                        const prior = dedupResp.data[0];
+                        const priorDate = new Date(prior.timestamp).toLocaleDateString('en-GB', {
+                            day: 'numeric', month: 'long', year: 'numeric'
+                        });
+                        const score = prior.final_score != null ? ` (score: ${prior.final_score})` : '';
+                        console.log(`[HAI] DEDUP block — ${targetDomain} assessed ${priorDate}, id=${prior.analysis_id}`);
+                        return res.json({
+                            success: false,
+                            data: `This organisation was assessed on ${priorDate}${score}. ` +
+                                  `Re-assessment is available after the 7-day window to ensure scoring integrity. ` +
+                                  `Assessment ID: ${prior.analysis_id}`
+                        });
+                    }
+                }
+            } catch (dedupErr) {
+                // Non-blocking — log and continue regardless
+                console.warn('[HAI] Dedup check failed (non-blocking):', dedupErr.message);
+            }
+        }
+        // ── End deduplication check ────────────────────────────────────────
 
         // ── Step 0: Entity resolution (non-blocking) ───────────────────────
         let entityProfile = { inputName: company, inputUrl: url, resolvedName: company,
@@ -111,7 +183,7 @@ router.post('/', async (req, res) => {
         if (doScrape) {
             try {
                 console.log(`[HAI] Scraping ${url}`);
-                const r = await doScrape(url) || {};
+                const r = await doScrape(url, { directUrls }) || {};
                 scrapeResult   = r;
                 combined_text  = r.combined_text  || '';
                 scraped_pages  = r.scraped_pages  || [];
