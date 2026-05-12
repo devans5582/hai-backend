@@ -85,9 +85,6 @@ async function writeLog({ analysisId, targetUrl, reqBody, scrapeResult, premiumR
             // fields are not present in the original request body.
             company_name:        (reqBody && reqBody.company)  || null,
             company_url:         targetUrl                      || null,
-            // target_domain is the bare hostname (no www, no path) derived from company_url.
-            // Stored for efficient deduplication queries in evaluate.js without needing
-            // ilike pattern matching. Supabase DDL: ADD COLUMN target_domain TEXT;
             target_domain:       (() => {
                 try { return new URL(targetUrl || '').hostname.replace(/^www\./, ''); }
                 catch (_) { return null; }

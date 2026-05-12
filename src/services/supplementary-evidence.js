@@ -205,12 +205,8 @@ async function fetchEdgar(companyName) {
 }
 
 async function fetchOecd(companyName) {
-    // OECD.ai does not offer a public REST search API — the previous /wonk/api/search
-    // endpoint was a private internal route that returned 403/404 on every external call.
-    //
-    // Replacement: query the OECD.ai public initiatives catalogue via their
-    // publicly accessible search page (HTML scrape of structured result data).
-    // Falls back gracefully with an empty array if the page is unreachable.
+    // The previous /en/wonk/api/search was a private internal endpoint — 403/404 externally.
+    // Replaced with the public OECD.ai catalogue search page (HTML scrape).
     const results = [];
     try {
         const query = encodeURIComponent(`${companyName} artificial intelligence`);
@@ -229,36 +225,28 @@ async function fetchOecd(companyName) {
             return results;
         }
 
-        // Extract tool names from HTML — OECD catalogue renders tool titles in
-        // <h3 class="tool-title"> or similar. Simple regex is sufficient here
-        // since we only need the title text for signal classification.
         const html   = String(res.data || '');
         const titles = [];
         const re     = /<h[23][^>]*class="[^"]*tool[^"]*"[^>]*>([^<]{10,200})<\/h[23]>/gi;
         let m;
         while ((m = re.exec(html)) !== null && titles.length < 3) {
-            const t = m[1].replace(/&amp;/g,'&').replace(/&#\d+;/g,'').trim();
+            const t = m[1].replace(/&amp;/g, '&').replace(/&#\d+;/g, '').trim();
             if (t) titles.push(t);
         }
 
-        // If structured titles not found, treat any page load as a weak signal
-        // confirming OECD coverage (the search returned a valid page for this company)
-        if (titles.length === 0 && html.length > 500) {
-            const compLower = companyName.toLowerCase();
-            if (html.toLowerCase().includes(compLower)) {
-                results.push({
-                    source:           'OECD',
-                    sourceTier:       'medium',
-                    tierWeight:       0.6,
-                    text:             `OECD AI Observatory: ${companyName} referenced in AI policy catalogue`,
-                    url:              `https://oecd.ai/en/catalogue/tools?q=${encodeURIComponent(companyName)}`,
-                    dateIssued:       null,
-                    relevantPillars:  SOURCE_PILLAR_MAP.OECD,
-                    criterionSpecificFor: [],
-                    evidenceType:     'governance',
-                    role:             'supports',
-                });
-            }
+        if (titles.length === 0 && html.length > 500 && html.toLowerCase().includes(companyName.toLowerCase())) {
+            results.push({
+                source:           'OECD',
+                sourceTier:       'medium',
+                tierWeight:       0.6,
+                text:             `OECD AI Observatory: ${companyName} referenced in AI policy catalogue`,
+                url:              `https://oecd.ai/en/catalogue/tools?q=${encodeURIComponent(companyName)}`,
+                dateIssued:       null,
+                relevantPillars:  SOURCE_PILLAR_MAP.OECD,
+                criterionSpecificFor: [],
+                evidenceType:     'governance',
+                role:             'supports',
+            });
         }
 
         titles.forEach(title => {
@@ -287,10 +275,6 @@ async function fetchAcademic(companyName) {
     try {
         const query = encodeURIComponent(`${companyName} responsible AI governance`);
         const url   = `https://api.semanticscholar.org/graph/v1/paper/search?query=${query}&limit=3&fields=title,year,authors,externalIds`;
-        // Add Semantic Scholar API key if available — raises rate limit from
-        // the heavily throttled anonymous tier to 1 req/sec (free, no daily cap).
-        // Register at semanticscholar.org/product/api and set SEMANTIC_SCHOLAR_API_KEY
-        // in Railway environment variables. Falls back gracefully without the key.
         const s2Headers = { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' };
         if (process.env.SEMANTIC_SCHOLAR_API_KEY) {
             s2Headers['x-api-key'] = process.env.SEMANTIC_SCHOLAR_API_KEY;
@@ -617,6 +601,24 @@ async function fetchSupplementaryEvidence(companyName, companyUrl, industry, opt
         ...waybackResults,
         ...githubResults,
     ];
+
+    // ── Memory cap: limit annotation input to prevent Railway SIGTERM ─────
+    // annotateWithTimeDecay and annotateWithExecutionScore iterate over every
+    // item and hold the full combinedText string in scope simultaneously.
+    // On Railway's 512MB hobby plan, a large allEvidence array alongside the
+    // 30,000-char scrape text and OpenAI response can exhaust memory mid-request.
+    // Cap at 20 items before annotation, prioritising by source tier so the
+    // highest-quality evidence is always retained.
+    const MAX_EVIDENCE_ITEMS = 20;
+    if (allEvidence.length > MAX_EVIDENCE_ITEMS) {
+        const tierOrder = { high: 0, medium: 1, low: 2 };
+        allEvidence.sort((a, b) =>
+            (tierOrder[a.sourceTier] ?? 3) - (tierOrder[b.sourceTier] ?? 3)
+        );
+        const dropped = allEvidence.length - MAX_EVIDENCE_ITEMS;
+        allEvidence = allEvidence.slice(0, MAX_EVIDENCE_ITEMS);
+        console.log(`[HAI:supp] Evidence capped at ${MAX_EVIDENCE_ITEMS} items (dropped ${dropped} lower-tier items)`);
+    }
 
     // ── Phase 6: annotate with time decay and execution detection ─────────
     allEvidence = annotateWithTimeDecay(allEvidence);
