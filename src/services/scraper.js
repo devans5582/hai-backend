@@ -113,9 +113,16 @@ function measureRealContent(combinedText) {
  * scraper_blocked so the caller always gets a usable value.
  *
  * @param {string} targetUrl
+ * @param {object} [options]
+ * @param {string[]} [options.directUrls]  — Optional user-supplied governance page URLs.
+ *   Fetched first, before FORCED_PATHS, so companies whose sites block automated
+ *   scraping (e.g. Wells Fargo, Snowflake) can receive real scores instead of the
+ *   calibration floor. Direct URL content is exempt from the redirect-wall filter
+ *   (the user explicitly provided the URL) but still flows through measureRealContent().
  * @returns {Promise<{scraper_blocked, combined_text?, scraped_pages?, limited_access?, message?}>}
  */
-async function scrapeCompanyPages(targetUrl) {
+async function scrapeCompanyPages(targetUrl, options = {}) {
+    const directUrls = Array.isArray(options.directUrls) ? options.directUrls : [];
 
     // ----------------------------------------------------------------
     // Step 1: Fetch the homepage
@@ -185,6 +192,52 @@ async function scrapeCompanyPages(targetUrl) {
 
     const uniquePages = [...new Set(pagesToScrape)];
     console.log(`[scraper] Page list built — ${uniquePages.length} URLs (${discoveredCount} discovered from homepage)`);
+
+    // ----------------------------------------------------------------
+    // Step 3b: Fetch user-supplied direct URLs (before FORCED_PATHS)
+    // ----------------------------------------------------------------
+    // These are governance page URLs submitted via the form when the company's
+    // site blocks automated access. They are fetched unconditionally — the
+    // redirect-wall duplicate-length check is intentionally skipped because the
+    // user explicitly chose these URLs. A lower minimum body length (200 chars)
+    // applies so that concise policy pages are not dropped.
+    if (directUrls.length > 0) {
+        console.log(`[scraper] Fetching ${directUrls.length} user-supplied direct URL(s)`);
+        for (const directUrl of directUrls) {
+            try {
+                const dresp = await axios.get(directUrl, {
+                    timeout: 10000,
+                    headers: { 'User-Agent': USER_AGENT },
+                    validateStatus: () => true,
+                    maxRedirects: 5,
+                });
+                const dHtml = dresp.data ? String(dresp.data) : '';
+                if (BLOCK_STATUS_CODES.includes(dresp.status)) {
+                    console.log(`[scraper] Direct URL HTTP ${dresp.status} — ${directUrl}`);
+                    combinedText += `\n\n--- Content from ${directUrl} ---\n[page restricted — HTTP ${dresp.status}]\n`;
+                } else if (isBlockedPage(dHtml)) {
+                    console.log(`[scraper] Direct URL firewall/captcha — ${directUrl}`);
+                    combinedText += `\n\n--- Content from ${directUrl} ---\n[page restricted — firewall]\n`;
+                } else {
+                    const dClean = extractText(dHtml);
+                    if (dClean.length >= 200) {
+                        combinedText += `\n\n--- Content from ${directUrl} ---\n\n` + dClean;
+                        successfulPages.push(directUrl);
+                        // Record length so redirect-wall detection doesn't later flag
+                        // a coincidentally same-length FORCED_PATH page.
+                        seenPageLengths.add(dClean.length);
+                        console.log(`[scraper] Direct URL OK ${directUrl} (${dClean.length} chars)`);
+                    } else {
+                        console.log(`[scraper] Direct URL body too short (${dClean.length} chars) — ${directUrl}`);
+                        combinedText += `\n\n--- Content from ${directUrl} ---\n[page empty]\n`;
+                    }
+                }
+            } catch (dErr) {
+                console.log(`[scraper] Direct URL fetch error (${dErr.code || dErr.message}) — ${directUrl}`);
+                combinedText += `\n\n--- Content from ${directUrl} ---\n[page restricted — fetch error]\n`;
+            }
+        }
+    }
 
     // ----------------------------------------------------------------
     // Step 4: Fetch each page and extract text
