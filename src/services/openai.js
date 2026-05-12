@@ -144,6 +144,7 @@ async function callOpenAI(combinedText, companyName, industry) {
         model:           'gpt-4o',
         max_tokens:      4000,
         temperature:     0.1,   // low temperature for consistent structured output
+        seed:            42,    // deterministic scoring — same text produces same criterion levels
         response_format: { type: 'json_object' },
         messages: [
             { role: 'system', content: systemPrompt },
