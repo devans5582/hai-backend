@@ -38,6 +38,10 @@ app.use((req, res, next) => {
             origin.endsWith('.hostgator.com')
         ));
 
+    // ── DIAGNOSTIC — remove after root cause confirmed ───────────────────
+    console.log(`[CORS] method=${req.method} origin=${origin || '(none)'} allowed=${allowed} path=${req.path}`);
+    // ── END DIAGNOSTIC ───────────────────────────────────────────────────
+
     if (allowed) {
         res.setHeader('Access-Control-Allow-Origin',  origin);
         res.setHeader('Vary', 'Origin');
@@ -53,6 +57,7 @@ app.use((req, res, next) => {
 
     // Respond immediately to preflight OPTIONS — do not forward to route handlers
     if (req.method === 'OPTIONS') {
+        console.log(`[CORS] Preflight OPTIONS responded 204 for origin=${origin || '(none)'}`);
         return res.sendStatus(204);
     }
 
@@ -87,7 +92,31 @@ const sendReportRoute  = require('./src/routes/send-report');
 const logPatchRoute    = require('./src/routes/log-patch');
 const healthRoute      = require('./src/routes/health');
 
-app.use('/evaluate',    secretGuard, evaluateRoute);
+// ── Diagnostic wrapper for /evaluate ────────────────────────────────────────
+// Logs entry, completion, and any crash before response headers are sent.
+// Remove after root cause of apparent CORS error is confirmed.
+app.use('/evaluate', secretGuard, (req, res, next) => {
+    const t0 = Date.now();
+    console.log(`[DIAG] /evaluate ENTERED — method=${req.method} origin=${req.headers.origin || '(none)'} body_keys=${Object.keys(req.body || {}).join(',')}`);
+
+    // Intercept res.json to log when a response is actually sent
+    const _origJson = res.json.bind(res);
+    res.json = function(data) {
+        console.log(`[DIAG] /evaluate RESPONDED — status=${res.statusCode} success=${data && data.success} ms=${Date.now() - t0}`);
+        return _origJson(data);
+    };
+
+    // Catch synchronous throws before route handler runs
+    try {
+        next();
+    } catch (err) {
+        console.error(`[DIAG] /evaluate THREW BEFORE HANDLER — ${err.message}`);
+        console.error(err.stack);
+        if (!res.headersSent) {
+            res.status(500).json({ success: false, data: 'Unexpected server error.' });
+        }
+    }
+}, evaluateRoute);
 app.use('/benchmark',   secretGuard, benchmarkRoute);
 app.use('/send-report', sendReportRoute);
 app.use('/log',         secretGuard, logPatchRoute);
