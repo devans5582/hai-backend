@@ -76,13 +76,9 @@ router.post('/', async (req, res) => {
     const stage    = (req.body.stage    || 'startup').trim();
     const size     = (req.body.size     || '1-10').trim();
 
-    // Optional direct governance page URLs submitted by the user.
-    // Sent when the company's site blocks automated scraping (e.g. Wells Fargo,
-    // Snowflake) so the user can paste specific governance/AI-policy page URLs.
-    // Passed through to the scraper, which fetches them first — before FORCED_PATHS —
-    // so real governance text reaches OpenAI instead of the calibration floor.
-    // Accepts: comma-separated string OR repeated directUrl[] form fields.
-    // URLSearchParams encodes repeated keys as directUrl[]=... or directUrl=...
+    // Optional direct governance page URLs (Priority 3 — direct URL input).
+    // Sent when the company site blocks automated scraping so users can paste
+    // specific governance/AI-policy page URLs for accurate scoring.
     const _rawDirect = req.body.directUrls || req.body['directUrls[]'] || '';
     const directUrls = (Array.isArray(_rawDirect) ? _rawDirect : String(_rawDirect).split(','))
         .map(u => u.trim())
@@ -100,15 +96,10 @@ router.post('/', async (req, res) => {
     try {
 
         // ── Deduplication check — reject re-assessment within 7 days ───────
-        // Queries hai_analysis_logs for a successfully delivered evaluation of the
-        // same domain in the last 7 days. Uses company_url ilike match so no
-        // extra target_domain column is needed. Failures are non-blocking — a
-        // Supabase outage never prevents an assessment from running.
         if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
             try {
                 let targetDomain = '';
                 try { targetDomain = new URL(url).hostname.replace(/^www\./, ''); } catch (_) {}
-
                 if (targetDomain) {
                     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
                     const dedupResp = await axios.get(
@@ -121,13 +112,8 @@ router.post('/', async (req, res) => {
                             },
                             params: {
                                 select:                  'analysis_id,timestamp,final_score,email_delivery_status',
-                                // target_domain is an exact-match column populated from Phase 6.2.
-                                // Falls back to ilike on company_url for rows logged before
-                                // the target_domain column was added.
                                 target_domain:           `eq.${targetDomain}`,
                                 timestamp:               `gte.${sevenDaysAgo}`,
-                                // Only block on rows that were actually delivered or in-flight
-                                // (not on rows that were hard-blocked by the delivery gate).
                                 'email_delivery_status': 'not.ilike.blocked*',
                                 order:                   'timestamp.desc',
                                 limit:                   1,
@@ -135,7 +121,6 @@ router.post('/', async (req, res) => {
                             validateStatus: () => true,
                         }
                     );
-
                     if (dedupResp.status === 200 && Array.isArray(dedupResp.data) && dedupResp.data.length > 0) {
                         const prior = dedupResp.data[0];
                         const priorDate = new Date(prior.timestamp).toLocaleDateString('en-GB', {
@@ -152,7 +137,6 @@ router.post('/', async (req, res) => {
                     }
                 }
             } catch (dedupErr) {
-                // Non-blocking — log and continue regardless
                 console.warn('[HAI] Dedup check failed (non-blocking):', dedupErr.message);
             }
         }
@@ -222,6 +206,18 @@ router.post('/', async (req, res) => {
                 );
                 console.log(`[HAI] Supplementary: ${supplementarySignals?.totalSignals ?? 0} items`);
             } catch (e) { console.warn('[HAI] Supplementary failed (non-blocking):', e.message); }
+        }
+
+        // ── Memory fix: trim combined_text before OpenAI + report calls ──
+        // The scraper truncates to 30,000 chars but that string is held in memory
+        // simultaneously with the OpenAI response, the supplementary evidence array,
+        // and the report object — enough to hit Railway's 512MB limit mid-request.
+        // openai.js already slices to 14,000 chars internally; trimming here means
+        // only one smaller copy exists when both downstream calls run.
+        // 15,000 chars preserves all real governance content (average page is ~6,000).
+        if (combined_text.length > 15000) {
+            combined_text = combined_text.slice(0, 15000) + '... [trimmed for memory]';
+            console.log('[HAI] combined_text trimmed to 15000 chars for memory efficiency');
         }
 
         // ── Step 3: OpenAI key guard ───────────────────────────────────────
