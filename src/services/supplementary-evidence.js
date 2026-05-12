@@ -685,7 +685,7 @@ async function fetchSupplementaryEvidence(companyName, companyUrl, industry, opt
         // Phase 6: execution
         executionGapCount:        execGapCriteria.length,
         verifiedExecutionCount:   verifiedExecCount,
-        executionGapCriteria,
+        executionGapCriteria:     execGapCriteria,
     };
 
     // ── Return supplementary_signals shape (matches frontend expectations) ─
