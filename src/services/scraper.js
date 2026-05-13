@@ -32,20 +32,14 @@ const GOVERNANCE_KEYWORDS = [
 ];
 
 const FORCED_PATHS = [
-    // Original governance paths
-    '/privacy', '/terms', '/ai-policy',
-    '/responsible-ai', '/trust', '/ethics', '/governance',
-    // Corporate responsibility and ESG
-    '/about', '/about-us', '/corporate-responsibility',
-    '/responsibility', '/esg', '/sustainability',
-    // Risk and compliance
-    '/risk', '/compliance', '/regulatory',
-    // AI and technology
-    '/ai', '/artificial-intelligence', '/technology',
-    // Investor and public accountability
-    '/investor-relations', '/newsroom', '/public-policy',
+    // ── High-specificity AI governance paths — fetched first to ensure
+    //    they land inside the MAX_CHARS window before lower-value pages
+    //    (e.g. /privacy at 39K chars) consume the budget.
+    '/responsible-ai', '/ai-policy', '/ai-governance', '/ethics',
+    '/trust', '/governance', '/responsibility', '/corporate-responsibility',
+    '/esg', '/sustainability', '/risk', '/compliance', '/regulatory',
+    '/about', '/about-us',
     // Locale-prefixed paths used by large enterprises (Microsoft, Google, etc.)
-    // microsoft.com/responsible-ai redirects to a wall; the real content is at:
     '/en-us/ai/responsible-ai',
     '/en-us/corporate-responsibility',
     '/en-us/about/responsible-ai',
@@ -61,6 +55,12 @@ const FORCED_PATHS = [
     // workaround for IBM and similar enterprise sites.
     '/impact',
     '/topics/ai-ethics',
+    // ── Lower-priority paths — large/boilerplate pages that are useful for
+    //    signal detection but should not consume the governance content budget.
+    //    Placed last so they are capped and/or truncated before AI ethics content.
+    '/ai', '/artificial-intelligence', '/technology',
+    '/investor-relations', '/newsroom', '/public-policy',
+    '/privacy', '/terms',
 ];
 
 // Pages whose URL paths strongly suggest non-governance content.
@@ -91,6 +91,14 @@ const BLOCK_KEYWORDS = [
 const BLOCK_STATUS_CODES    = [403, 406, 429, 503];
 const MAX_DISCOVERED_LINKS  = 5;
 const MAX_CHARS             = 30000;
+// Per-page contribution cap: limits how many chars a single page can add to
+// combinedText before the global MAX_CHARS truncation.  Without this, one
+// large page (e.g. a 39,313-char privacy policy) can consume the entire
+// window, causing high-value governance pages fetched later to be truncated
+// out entirely.  5,000 chars preserves substantive governance content from
+// AI ethics, trust, and responsibility pages while preventing runaway budget
+// consumption from boilerplate-heavy pages like privacy policies and terms.
+const MAX_PAGE_CHARS        = 5000;
 const LIMITED_ACCESS_THRESHOLD = 1000;
 
 // Minimum real (non-stub) text required for a valid evaluation.
@@ -191,10 +199,27 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     // ----------------------------------------------------------------
     // Step 3: Build page list
     // ----------------------------------------------------------------
-    const pagesToScrape = [targetUrl];
+    // Priority order: FORCED_PATHS first, then homepage, then discovered links.
+    //
+    // Rationale: combinedText is truncated to MAX_CHARS after all pages are
+    // concatenated. With the homepage first, a large page (e.g. IBM's privacy
+    // page at 39,313 chars) consumes most of the budget before governance-
+    // specific paths are appended — causing high-value content like
+    // /topics/ai-ethics (21,522 chars) to be truncated out entirely.
+    //
+    // Placing FORCED_PATHS first ensures governance-specific paths land inside
+    // the OpenAI window. The homepage moves to second position and is still
+    // fetched for signal detection and discovered-link context.
+    const pagesToScrape = [];
 
     for (const path of FORCED_PATHS) {
         pagesToScrape.push(baseOrigin + path);
+    }
+
+    // Homepage after FORCED_PATHS — deprioritised in concatenation order
+    // but still included for signal detection and as a fallback.
+    if (!pagesToScrape.includes(targetUrl)) {
+        pagesToScrape.push(targetUrl);
     }
 
     const discoveredLinks = discoverGovernanceLinks(homepageHtml, targetUrl, baseOrigin, baseHost);
@@ -357,7 +382,22 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
                 }
             }
             // ── End low-value page filter ─────────────────────────────────────
-            combinedText   += `\n\n--- Content from ${pageUrl} ---\n\n` + cleanText;
+
+            // ── Per-page contribution cap ─────────────────────────────────────
+            // Prevents a single large page from consuming the entire MAX_CHARS
+            // budget.  The most common offender is the /privacy page which can
+            // exceed 39,000 chars of legal boilerplate.  Capping at MAX_PAGE_CHARS
+            // preserves budget for governance-specific pages fetched later.
+            // The URL stub is always written so signal detection still works.
+            const cappedText = cleanText.length > MAX_PAGE_CHARS
+                ? cleanText.slice(0, MAX_PAGE_CHARS) + '... [page capped]'
+                : cleanText;
+            if (cleanText.length > MAX_PAGE_CHARS) {
+                console.log(`[scraper] Capped ${cleanText.length} → ${MAX_PAGE_CHARS} chars — ${pageUrl}`);
+            }
+            // ── End per-page contribution cap ─────────────────────────────────
+
+            combinedText   += `\n\n--- Content from ${pageUrl} ---\n\n` + cappedText;
             successfulPages.push(pageUrl);
             console.log(`[scraper] OK ${pageUrl} (${cleanText.length} chars)`);
 
