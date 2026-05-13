@@ -876,6 +876,11 @@ INTERPRETATION FRAME (MANDATORY — follow exactly):
 - Executive summary frame: "${frame.executive_frame}"
 - FORBIDDEN phrases (do NOT use any of these): ${frame.forbidden_phrases.map(p => `"${p}"`).join(', ')}
 - Pillars with available evidence MUST receive status_label of "Developing" or better.
+  IMPORTANT CONSTRAINT: "Developing" is the MAXIMUM status_label permitted when all
+  criteria in that pillar are at level 1 (even if a signal is present). A status_label
+  of "Progressing" or "Strong" requires at least one criterion above level 1. Signal
+  presence alone (URL slug detected, rubric depth unconfirmed) justifies "Developing"
+  at most — it does not justify "Progressing".
 - The executive_summary MUST describe what the evidence supports — NOT how many signals were found.
 - The evidence_summary.summary MUST use evidence-based language (e.g. "publicly available evidence supports...") — NOT "signals identified".
 - Do NOT use the word "signals" in executive_summary, confidence_explanation, or certification_statement.
@@ -937,7 +942,11 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     //     scraper stubs — real governance content < 500 chars.
     //     Without this flag, stub-heavy pages pass as valid, OpenAI receives no
     //     usable text, returns all criteria at level 1, and confPercent = 100.
-    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess || ctx.contentEmpty);
+    //   - scrapeStatus 'limited': scraper returned content but hit >= 3 redirect
+    //     walls — real governance pages were not reached. Marking partial ensures
+    //     the narrative acknowledges incomplete evidence and confidence is lowered.
+    const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess || ctx.contentEmpty ||
+                               ctx.scrapeStatus === 'limited');
     const evalState      = determineEvaluationState(signals, isPartial);
 
     console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
