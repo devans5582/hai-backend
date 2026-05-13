@@ -152,34 +152,64 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     // ----------------------------------------------------------------
     // Step 1: Fetch the homepage
     // ----------------------------------------------------------------
+    // Timeout increased to 25s (from 15s): large enterprise sites served
+    // through global CDNs can add latency from Railway's network environment
+    // that exceeds 15s, causing systematic fallback-mode evaluations with
+    // zero real content (raw_score=0, score=calibration floor only).
+    //
+    // One retry on timeout/network failure: CDN latency spikes are often
+    // transient. A single retry with a 2s delay recovers most cases without
+    // meaningfully increasing evaluation time for sites that do succeed on
+    // the first attempt.  Retry is NOT attempted for firewall/captcha blocks
+    // or empty bodies — those are deterministic failures, not transient ones.
     let homepageHtml;
-    try {
-        const resp = await axios.get(targetUrl, {
-            timeout: 15000,
-            headers: { 'User-Agent': USER_AGENT },
-            validateStatus: () => true,
-            maxRedirects: 5
-        });
+    let homepageFetchError = null;
 
-        const body = resp.data ? String(resp.data) : '';
-        if (!body || body.trim().length === 0) {
-            console.warn(`[scraper] Homepage returned empty body — ${targetUrl}`);
-            // Return minimal fallback with forced-path stubs rather than hard block.
-            // Signal detection can still classify slugs from FORCED_PATHS.
-            return buildFallbackResult(targetUrl, 'Homepage returned empty body.');
+    for (let _attempt = 1; _attempt <= 2; _attempt++) {
+        homepageFetchError = null;
+        try {
+            const resp = await axios.get(targetUrl, {
+                timeout: 25000,
+                headers: { 'User-Agent': USER_AGENT },
+                validateStatus: () => true,
+                maxRedirects: 5
+            });
+
+            const body = resp.data ? String(resp.data) : '';
+            if (!body || body.trim().length === 0) {
+                console.warn(`[scraper] Homepage returned empty body — ${targetUrl}`);
+                // Empty body is deterministic — do not retry.
+                return buildFallbackResult(targetUrl, 'Homepage returned empty body.');
+            }
+            // Firewall/captcha is deterministic — do not retry.
+            if (isBlockedPage(body)) {
+                console.warn(`[scraper] Homepage blocked by firewall — ${targetUrl}`);
+                return buildFallbackResult(targetUrl, 'Homepage blocked by firewall or CAPTCHA.');
+            }
+            homepageHtml = body;
+            break; // Success — exit retry loop
+        } catch (err) {
+            const isTimeout = err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT';
+            const isNetwork = !isTimeout; // covers ECONNREFUSED, ENOTFOUND, etc.
+
+            if (_attempt === 1 && (isTimeout || isNetwork)) {
+                // Transient failure — retry once after a short delay
+                const reason = isTimeout ? `timed out (25s)` : `failed (${err.code || err.message})`;
+                console.warn(`[scraper] Homepage fetch ${reason} — ${targetUrl}`);
+                console.log(`[scraper] Homepage fetch retry 1/1 — waiting 2s before retry`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                continue;
+            }
+            // Second attempt failed — record error and fall through to fallback
+            homepageFetchError = err;
         }
-        // Check for firewall/captcha on homepage itself
-        if (isBlockedPage(body)) {
-            console.warn(`[scraper] Homepage blocked by firewall — ${targetUrl}`);
-            return buildFallbackResult(targetUrl, 'Homepage blocked by firewall or CAPTCHA.');
-        }
-        homepageHtml = body;
-    } catch (err) {
-        if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-            console.warn(`[scraper] Homepage fetch timed out (15s) — ${targetUrl}`);
-        } else {
-            console.warn(`[scraper] Homepage fetch failed (${err.code || err.message}) — ${targetUrl}`);
-        }
+    }
+
+    if (!homepageHtml) {
+        const err = homepageFetchError;
+        const isTimeout = err && (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT');
+        console.warn(`[scraper] Homepage fetch failed after retry — ${targetUrl}` +
+                     (err ? ` (${err.code || err.message})` : ''));
         return buildFallbackResult(targetUrl, 'Homepage could not be fetched.');
     }
 
