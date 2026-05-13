@@ -55,6 +55,12 @@ const FORCED_PATHS = [
     '/en/responsible-ai',
     '/en/ai-governance',
     '/en-us/trust-center',
+    // IBM-specific — tactical addition; IBM's primary governance content is not
+    // at standard paths.  Long-term fix is semantic homepage link discovery.
+    // Direct URL submission (options.directUrls) is the preferred user-facing
+    // workaround for IBM and similar enterprise sites.
+    '/impact',
+    '/topics/ai-ethics',
 ];
 
 // Pages whose URL paths strongly suggest non-governance content.
@@ -297,19 +303,30 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
             const cleanText = extractText(pageHtml);
 
             // ── Redirect/wall detection ──────────────────────────────────────
-            // Some sites return HTTP 200 with a generic "sign in", "access denied",
-            // or redirect page for every protected URL.  These pages are identical
-            // in length across completely different paths — a strong signal that
-            // the content is not real governance text.
+            // Some sites return HTTP 200 with a generic shell page for every
+            // protected URL — short "sign in" walls AND full-length marketing
+            // shells (e.g. IBM returns its 5,701-char homepage for every
+            // locale-prefixed governance path).  Both produce identical clean-text
+            // lengths across completely different paths, which is the reliable
+            // signal here.
             //
             // Detection: if this page's clean text length exactly matches a
-            // previously seen page length AND it's suspiciously short (< 2000 chars),
-            // treat it as a redirect wall, log it, and add a stub instead.
+            // previously seen page length, treat it as a redirect wall regardless
+            // of size.  The only guard is cleanText.length > 0 to avoid false
+            // positives on genuinely empty pages (caught earlier by the < 300
+            // raw HTML check, but defensive here too).
+            //
+            // The previous < 2000 ceiling was intentional for short walls but
+            // caused large marketing shells to pass through unchecked.  Removing
+            // it is safe because legitimate sites very rarely serve two different
+            // governance pages with exactly the same extracted text length, and
+            // any false positive (a real page coincidentally matching a prior
+            // length) would at worst drop one page from a run that already has
+            // sufficient other content.
             //
             // We track lengths in a Set rather than full content hashes to keep
             // memory overhead low and avoid hashing 30 KB strings per page.
             const isLikelyRedirectWall = (
-                cleanText.length < 2000 &&
                 seenPageLengths.has(cleanText.length) &&
                 cleanText.length > 0
             );
