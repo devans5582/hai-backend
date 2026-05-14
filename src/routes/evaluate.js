@@ -330,6 +330,12 @@ router.post('/', async (req, res) => {
                 scraper_blocked:  scrape_status === 'blocked',
                 scrape_status,
                 premiumReport, evaluation_state: evaluationState, calibration,
+                // benchmark_eligible: false when confirmed_high===0 and raw_score===0
+                // (homepage timeout, firewall block, pure stub run).
+                // bundle.js reads this to skip the /benchmark POST and show
+                // access-limited UI instead of a normal benchmark position.
+                benchmark_eligible: (premiumReport && premiumReport.benchmark_eligible === false)
+                    ? false : true,
                 supplementary_signals: supplementarySignals,
                 entityProfile,
             }
