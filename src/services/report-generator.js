@@ -353,9 +353,62 @@ const LOW_URL_SLUGS = [
 //
 // A signal is counted ONCE per unique pattern/slug match.
 // A URL and a body-text match for the same concept count as one
-// hit (URL wins first; text patterns skip if already matched).
-// This prevents double-counting "responsible-ai" URL + body text.
+// hit (URL wins first; text patterns skip if already matched).\n// This prevents double-counting \"responsible-ai\" URL + body text.
 // ---------------------------------------------------------------
+//
+// Signal quality classification
+// ──────────────────────────────
+// Each URL signal is classified as either 'confirmed' or 'surface':
+//
+//   confirmed — the URL slug was detected AND the content block
+//               immediately following that URL header in scrapedText
+//               contains real body text (not a stub annotation).
+//               These count at full weight in classifySignalTier().
+//
+//   surface   — the URL slug was detected BUT the content block is
+//               a stub: [page restricted], [page not retrieved],
+//               [page empty], [page low-value], [page capped], etc.
+//               The governance path exists and was attempted, but body
+//               content never reached OpenAI. These count at reduced
+//               weight (0.4) in classifySignalTier().
+//
+// Text-body matches (source: 'text') are always confirmed — they
+// matched real body content by definition.
+//
+// The distinction is used only in calibration tiering — it does NOT
+// affect GPT rubric scoring, confidence, or the evaluation gate.
+// ---------------------------------------------------------------
+
+// Stub annotation prefixes written by scraper.js for blocked/empty pages.
+// Any content block whose trimmed text starts with one of these is a stub.
+const STUB_PREFIXES = [
+    '[page restricted',
+    '[page not retrieved',
+    '[page empty',
+    '[page low-value',
+    '[page capped',
+    '[fallback evaluation',
+    '[homepage:',
+];
+
+/**
+ * Given the full scrapedText and a URL, returns true if the content
+ * block for that URL contains real body text (not a stub annotation).
+ */
+function isBodyConfirmed(scrapedText, url) {
+    // Find the header for this URL
+    const escapedUrl = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const headerRe = new RegExp(
+        '---\\s*Content from\\s+' + escapedUrl + '\\s*---\\s*([\\s\\S]*?)(?:---\\s*Content from|$)',
+        'i'
+    );
+    const m = scrapedText.match(headerRe);
+    if (!m || !m[1]) return false;
+    const block = m[1].trim().toLowerCase();
+    if (!block) return false;
+    return !STUB_PREFIXES.some(prefix => block.startsWith(prefix.toLowerCase()));
+}
+
 function detectGovernanceSignals(scrapedText) {
     if (!scrapedText || typeof scrapedText !== 'string') {
         return { high_signals: 0, medium_signals: 0, low_signals: 0, enterprise_signals: 0, matched_phrases: [] };
@@ -363,6 +416,7 @@ function detectGovernanceSignals(scrapedText) {
 
     const matched = [];
     let high = 0, medium = 0, low = 0, enterprise = 0;
+    let confirmed_high = 0, surface_high = 0;  // signal quality split
 
     // ── Pass 1: URL slug classification ──────────────────────────
     const urls = [];
@@ -375,12 +429,16 @@ function detectGovernanceSignals(scrapedText) {
     const urlMatchedConcepts = new Set();
 
     for (const url of urls) {
+        const bodyConfirmed = isBodyConfirmed(scrapedText, url);
+
         // High: AI-specific slugs
         for (const slug of HIGH_URL_SLUGS) {
             if (url.includes(slug) && !urlMatchedConcepts.has('high:' + slug)) {
                 urlMatchedConcepts.add('high:' + slug);
                 high++;
-                matched.push({ tier: 'high', phrase: slug + ' (url)', source: 'url' });
+                if (bodyConfirmed) confirmed_high++;
+                else               surface_high++;
+                matched.push({ tier: 'high', phrase: slug + ' (url)', source: 'url', confirmed: bodyConfirmed });
                 break;
             }
         }
@@ -389,7 +447,7 @@ function detectGovernanceSignals(scrapedText) {
             if (url.includes(slug) && !urlMatchedConcepts.has('medium:' + slug)) {
                 urlMatchedConcepts.add('medium:' + slug);
                 medium++;
-                matched.push({ tier: 'medium', phrase: slug + ' (url)', source: 'url' });
+                matched.push({ tier: 'medium', phrase: slug + ' (url)', source: 'url', confirmed: bodyConfirmed });
                 break;
             }
         }
@@ -399,7 +457,7 @@ function detectGovernanceSignals(scrapedText) {
                 urlMatchedConcepts.add('enterprise:' + slug);
                 enterprise++;
                 medium++;  // enterprise signals count as medium so evaluation gate passes
-                matched.push({ tier: 'enterprise', phrase: slug + ' (url)', source: 'url' });
+                matched.push({ tier: 'enterprise', phrase: slug + ' (url)', source: 'url', confirmed: bodyConfirmed });
                 break;
             }
         }
@@ -408,13 +466,14 @@ function detectGovernanceSignals(scrapedText) {
             if (url.includes(slug) && !urlMatchedConcepts.has('low:' + slug)) {
                 urlMatchedConcepts.add('low:' + slug);
                 low++;
-                matched.push({ tier: 'low', phrase: slug + ' (url)', source: 'url' });
+                matched.push({ tier: 'low', phrase: slug + ' (url)', source: 'url', confirmed: bodyConfirmed });
                 break;
             }
         }
     }
 
     // ── Pass 2: text-body pattern matching ───────────────────────
+    // Text matches are always 'confirmed' — they matched real body content.
     for (const p of HIGH_TEXT_PATTERNS) {
         const hit = scrapedText.match(p);
         if (hit) {
@@ -425,7 +484,8 @@ function detectGovernanceSignals(scrapedText) {
             );
             if (!alreadyCounted) {
                 high++;
-                matched.push({ tier: 'high', phrase, source: 'text' });
+                confirmed_high++;  // text matches are always confirmed
+                matched.push({ tier: 'high', phrase, source: 'text', confirmed: true });
             }
         }
     }
@@ -480,7 +540,12 @@ function detectGovernanceSignals(scrapedText) {
         medium_signals:     medium,  // includes enterprise contributions
         low_signals:        low,
         enterprise_signals: enterprise,
-        matched_phrases:    matched
+        matched_phrases:    matched,
+        // Signal quality split — used by classifySignalTier() only.
+        // confirmed_high: URL slug + real body content retrieved.
+        // surface_high:   URL slug only; body was stub/wall/blocked.
+        confirmed_high,
+        surface_high,
     };
 }
 
@@ -558,20 +623,39 @@ function classifySignalTier(signals, evaluationData, confPercent) {
     const { high_signals, medium_signals } = signals;
     const pillarsWithEvidence = countPillarsWithEvidence(evaluationData);
 
-    // Tier 4: high signals AND broad pillar coverage
-    // Tier 3.5 downgrade: qualifies for Tier4 by signal count but confidence is low,
-    // suggesting URL slugs exist without confirmed deep body evidence.
-    // Treated as Tier3 for uplift; multi-pillar bonus suppressed.
-    if (high_signals >= 4 && pillarsWithEvidence >= 4) {
+    // ── Signal quality weighting ──────────────────────────────────────────────
+    // confirmed_high: slug matched AND body content was retrieved (full weight)
+    // surface_high:   slug matched BUT body was stub/wall (reduced weight: 0.4)
+    // Text-body matches are always confirmed (counted in confirmed_high).
+    //
+    // Rationale: a company whose governance paths all return redirect walls
+    // should not reach the same calibration tier as a company whose governance
+    // page bodies were actually read by OpenAI. Surface signals confirm that
+    // governance infrastructure exists but not that it was assessable.
+    //
+    // Anti-inflation cap: if confirmed_high === 0 (no body content confirmed
+    // at all — fallback stubs or pure firewall blocks), maximum tier is 2
+    // regardless of how many surface signals exist. This prevents a company
+    // with 50 redirect walls from reaching Tier 3/4 uplift.
+    const SURFACE_WEIGHT = 0.4;
+    const confirmedH = typeof signals.confirmed_high === 'number' ? signals.confirmed_high : high_signals;
+    const surfaceH   = typeof signals.surface_high   === 'number' ? signals.surface_high   : 0;
+    const eff_high   = confirmedH + (surfaceH * SURFACE_WEIGHT);
+    const maxTier    = confirmedH === 0 ? 2 : 4;
+
+    // ── Tier 4: high signals AND broad pillar coverage ────────────────────────
+    // Tier 3.5 downgrade: qualifies for Tier4 by signal count but confidence is
+    // low, suggesting URL slugs exist without confirmed deep body evidence.
+    if (eff_high >= 4 && pillarsWithEvidence >= 4 && maxTier >= 4) {
         const conf = typeof confPercent === 'number' ? confPercent : 100;
         if (conf < EVIDENCE_CAP_THRESHOLD) {
             return { tier: 3, pillarsWithEvidence, downgraded: true };
         }
         return { tier: 4, pillarsWithEvidence, downgraded: false };
     }
-    if (high_signals >= 3) return { tier: 3, pillarsWithEvidence, downgraded: false };
-    if (high_signals >= 1) return { tier: 2, pillarsWithEvidence, downgraded: false };
-    if (medium_signals >= 1) return { tier: 1, pillarsWithEvidence, downgraded: false };
+    if (eff_high >= 3 && maxTier >= 3) return { tier: 3, pillarsWithEvidence, downgraded: false };
+    if (eff_high >= 1)                  return { tier: Math.min(2, maxTier), pillarsWithEvidence, downgraded: false };
+    if (medium_signals >= 1)            return { tier: 1, pillarsWithEvidence, downgraded: false };
     return { tier: 0, pillarsWithEvidence, downgraded: false };
 }
 
@@ -876,11 +960,6 @@ INTERPRETATION FRAME (MANDATORY — follow exactly):
 - Executive summary frame: "${frame.executive_frame}"
 - FORBIDDEN phrases (do NOT use any of these): ${frame.forbidden_phrases.map(p => `"${p}"`).join(', ')}
 - Pillars with available evidence MUST receive status_label of "Developing" or better.
-  IMPORTANT CONSTRAINT: "Developing" is the MAXIMUM status_label permitted when all
-  criteria in that pillar are at level 1 (even if a signal is present). A status_label
-  of "Progressing" or "Strong" requires at least one criterion above level 1. Signal
-  presence alone (URL slug detected, rubric depth unconfirmed) justifies "Developing"
-  at most — it does not justify "Progressing".
 - The executive_summary MUST describe what the evidence supports — NOT how many signals were found.
 - The evidence_summary.summary MUST use evidence-based language (e.g. "publicly available evidence supports...") — NOT "signals identified".
 - Do NOT use the word "signals" in executive_summary, confidence_explanation, or certification_statement.
@@ -943,13 +1022,21 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     //     Without this flag, stub-heavy pages pass as valid, OpenAI receives no
     //     usable text, returns all criteria at level 1, and confPercent = 100.
     //   - scrapeStatus 'limited': scraper returned content but hit >= 3 redirect
-    //     walls — real governance pages were not reached. Marking partial ensures
-    //     the narrative acknowledges incomplete evidence and confidence is lowered.
+    //     walls — real governance pages were not reached.
     const isPartial      = !!(ctx.partialScrape || ctx.limitedAccess || ctx.contentEmpty ||
                                ctx.scrapeStatus === 'limited');
     const evalState      = determineEvaluationState(signals, isPartial);
 
-    console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} state:${evalState} partial:${isPartial}`);
+    // ── Access-limited classification ─────────────────────────────────────────
+    // A run is access_limited when no confirmed body content reached OpenAI AND
+    // GPT-4o found no rubric evidence. Covers homepage timeouts, firewall blocks,
+    // and pure stub runs. These still produce a report but are excluded from
+    // benchmark averages and receive distinct labelling.
+    const rawScoreProxyForClassification = deriveRawScoreProxy(evaluationData);
+    const confirmedHighCount = typeof signals.confirmed_high === 'number' ? signals.confirmed_high : signals.high_signals;
+    const isAccessLimited    = (confirmedHighCount === 0 && rawScoreProxyForClassification === 0);
+
+    console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} confirmed_high:${signals.confirmed_high||0} surface_high:${signals.surface_high||0} state:${evalState} partial:${isPartial} access_limited:${isAccessLimited}`);
 
     // Step 2: Insufficient evidence gate — only fires when no signals at all,
     // even after fallback URL stubs are included in scrapedText.
@@ -1021,19 +1108,25 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     }
 
     // Step 5: Attach evaluation metadata
-    report.evaluation_state = (evalState === 'partial_evaluation') ? 'partial_evaluation' : 'valid';
+    // access_limited overrides partial_evaluation when no body content was confirmed
+    const finalEvalState = isAccessLimited
+        ? 'access_limited'
+        : (evalState === 'partial_evaluation') ? 'partial_evaluation' : 'valid';
+
+    report.evaluation_state  = finalEvalState;
+    report.benchmark_eligible = !isAccessLimited;
+
     report.signal_profile   = {
-        high_signals: signals.high_signals, medium_signals: signals.medium_signals,
-        low_signals: signals.low_signals, tier,
+        high_signals:   signals.high_signals,
+        medium_signals: signals.medium_signals,
+        low_signals:    signals.low_signals,
+        tier,
+        confirmed_high: signals.confirmed_high || 0,
+        surface_high:   signals.surface_high   || 0,
         matched_phrases: signals.matched_phrases.slice(0, 10)
     };
     report.calibration = {
         tier,
-        // uplift_midpoint: the base uplift for this tier BEFORE confidence
-        // modifiers are applied.  bundle.js applies those modifiers with the
-        // exact confPercent and is the single source of truth for the final
-        // verified score.  Do NOT read uplift_midpoint as the final uplift —
-        // bundle.js may reduce it (e.g. 20% reduction when confPercent < 50).
         uplift_midpoint:        upliftMidpoint,
         multi_pillar_bonus:     multiPillarBonus,
         raw_score_proxy:        rawScoreProxy,
@@ -1043,6 +1136,34 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
         downgraded:             downgraded,
         partial_evaluation:     isPartial
     };
+
+    // ── Access-limited report overrides ───────────────────────────────────────
+    // When confirmed_high === 0 and raw_score === 0, the report was produced from
+    // stub content only (homepage timeout, firewall block, etc.). Override key
+    // framing fields so the PDF clearly communicates the assessment limitation
+    // and prompts the user to resubmit with direct governance URLs.
+    // The pillar narratives and gap analysis from GPT-4o are still included —
+    // they provide useful structural guidance even without body content.
+    if (isAccessLimited) {
+        report.executive_summary =
+            'ACCESS-LIMITED ASSESSMENT — This evaluation could not retrieve governance ' +
+            'page content from this organisation\'s website. The score below is an ' +
+            'access-limited estimate based on detected governance URL structure only, ' +
+            'not on verified page content. For a full assessment, re-run using the ' +
+            '"Add governance URLs" option and paste direct links to the organisation\'s ' +
+            'responsible AI, ethics, or governance pages.';
+
+        report.certification_statement =
+            'Full certification assessment requires accessible governance page content. ' +
+            'This access-limited run has been excluded from benchmark calculations. ' +
+            'Re-run with direct governance URLs to receive a scored, benchmark-eligible assessment.';
+
+        if (report.snapshot) {
+            report.snapshot.certification_status = 'Access-Limited — Not Benchmark Eligible';
+        }
+
+        console.log('[report-generator] access_limited — report framing overridden, benchmark_eligible=false');
+    }
 
     return report;
 }

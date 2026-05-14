@@ -100,6 +100,11 @@ async function writeLog({ analysisId, targetUrl, reqBody, scrapeResult, premiumR
             // Evaluation state
             evaluation_state:    (premiumReport && premiumReport.evaluation_state) || 'unknown',
 
+            // Benchmark eligibility — false for access_limited runs (no confirmed body content).
+            // Excluded from industry average calculations.
+            benchmark_eligible:  (premiumReport && premiumReport.benchmark_eligible === false)
+                                      ? false : true,
+
             // Signal counts
             high_signals:        typeof sp.high_signals   === 'number' ? sp.high_signals   : 0,
             medium_signals:      typeof sp.medium_signals === 'number' ? sp.medium_signals : 0,
@@ -161,9 +166,6 @@ async function patchLog(analysisId, fields) {
             'industry',
             'stage',
             'size',
-            // calibrated_score moved from Phase 1 INSERT to Phase 2 PATCH (Fix 4):
-            // the authoritative calibration is now computed once in bundle.js
-            // with the exact confPercent, then written here.
             'calibrated_score',
             'final_score',
             'evidence_strength',
@@ -171,6 +173,7 @@ async function patchLog(analysisId, fields) {
             'certification_status',
             'benchmark_average',
             'benchmark_position',
+            'benchmark_eligible',
             'pdf_generated_status',
             'email_delivery_status'
         ];

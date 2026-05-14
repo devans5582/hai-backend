@@ -44,12 +44,15 @@ async function insertBenchmark(record) {
     const resp = await axios.post(
         restUrl(TABLE),
         {
-            company_domain: record.company_domain,
-            industry:       record.industry,
-            stage:          record.stage,
-            size_band:      record.size_band,
-            score:          record.score,
-            confidence:     record.confidence
+            company_domain:     record.company_domain,
+            industry:           record.industry,
+            stage:              record.stage,
+            size_band:          record.size_band,
+            score:              record.score,
+            confidence:         record.confidence,
+            // benchmark_eligible: false for access_limited runs — excluded from averages.
+            // Defaults to true when not supplied (backwards-compatible with existing rows).
+            benchmark_eligible: record.benchmark_eligible !== false
         },
         {
             headers:        supabaseHeaders(),
