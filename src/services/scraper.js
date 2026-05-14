@@ -35,29 +35,39 @@ const FORCED_PATHS = [
     // ── High-specificity AI governance paths — fetched first to ensure
     //    they land inside the MAX_CHARS window before lower-value pages
     //    (e.g. /privacy at 39K chars) consume the budget.
-    '/responsible-ai', '/ai-policy', '/ai-governance', '/ethics',
-    '/trust', '/governance', '/responsibility', '/corporate-responsibility',
-    '/esg', '/sustainability', '/risk', '/compliance', '/regulatory',
-    '/about', '/about-us',
-    // Locale-prefixed paths used by large enterprises (Microsoft, Google, etc.)
+    // ── 1. AI-specific governance paths — highest priority ───────────────────
+    // Fetched first so their content lands inside the 15,000-char OpenAI window
+    // before broad corporate pages (sustainability, about) consume the budget.
+    // Locale-prefixed variants for large enterprises (Microsoft, Google, etc.)
+    // are included here because they carry the richest AI governance content.
     '/en-us/ai/responsible-ai',
-    '/en-us/corporate-responsibility',
-    '/en-us/about/responsible-ai',
     '/en-us/ai/principles-and-approach',
-    // Common locale variants for other large enterprises
     '/en-gb/ai/responsible-ai',
     '/en/responsible-ai',
     '/en/ai-governance',
     '/en-us/trust-center',
+    '/en-us/about/responsible-ai',
+    '/en-us/corporate-responsibility',
+    '/responsible-ai',
+    '/ai-governance',
+    '/ai-policy',
+    '/ethics',
+    '/trust',
     // IBM-specific — tactical addition; IBM's primary governance content is not
     // at standard paths.  Long-term fix is semantic homepage link discovery.
     // Direct URL submission (options.directUrls) is the preferred user-facing
     // workaround for IBM and similar enterprise sites.
     '/impact',
     '/topics/ai-ethics',
-    // ── Lower-priority paths — large/boilerplate pages that are useful for
-    //    signal detection but should not consume the governance content budget.
-    //    Placed last so they are capped and/or truncated before AI ethics content.
+    // ── 2. Risk / compliance / governance pages ───────────────────────────────
+    '/risk', '/compliance', '/regulatory', '/governance',
+    // ── 3. Broad corporate responsibility pages ───────────────────────────────
+    // Placed after AI governance paths so they are truncated by the 15K OpenAI
+    // trim rather than crowding out governance content.
+    '/corporate-responsibility', '/responsibility', '/esg', '/sustainability',
+    // ── 4. Generic pages — lowest priority ───────────────────────────────────
+    // Useful for signal detection but should not consume governance content budget.
+    '/about', '/about-us',
     '/ai', '/artificial-intelligence', '/technology',
     '/investor-relations', '/newsroom', '/public-policy',
     '/privacy', '/terms',
