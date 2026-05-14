@@ -176,11 +176,22 @@ router.post('/', async (req, res) => {
                 partial_scrape = r.partial_scrape || false;
                 content_empty  = r.content_empty  || false;
                 const redirect_walls = r.redirect_wall_count || 0;
-                // Treat as limited access when most forced governance paths were redirect walls
-                // so supplementary evidence triggers and fills the coverage gap
-                if (redirect_walls >= 3 && !limited_access) {
-                    console.log(`[HAI] ${redirect_walls} redirect walls detected — treating as limited_access for supplementary trigger`);
+                // Treat as limited_access when governance paths were redirect walls
+                // AND very few real pages were retrieved — this targets companies
+                // like IBM/Microsoft where walls mean real governance content is
+                // genuinely blocked (scraped_pages near zero).
+                //
+                // The scraped_pages < 5 guard prevents false positives for companies
+                // like Humaital where FORCED_PATHS tries governance URLs that simply
+                // don't exist at that domain (returning 404/redirects counted as walls)
+                // but the homepage and real pages were fully retrieved. Without this
+                // guard, any company with 3+ absent governance paths gets penalised
+                // with a 45% confidence ceiling despite real content being accessible.
+                if (redirect_walls >= 3 && scraped_pages.length < 5 && !limited_access) {
+                    console.log(`[HAI] ${redirect_walls} redirect walls + only ${scraped_pages.length} pages retrieved — treating as limited_access for supplementary trigger`);
                     limited_access = true;
+                } else if (redirect_walls >= 3) {
+                    console.log(`[HAI] ${redirect_walls} redirect walls detected — ${scraped_pages.length} pages retrieved, not marking limited_access`);
                 }
                 console.log(`[HAI] Scrape: status=${scrape_status} pages=${scraped_pages.length} chars=${combined_text.length} content_empty=${content_empty} redirect_walls=${redirect_walls}`);
             } catch (e) {
@@ -330,12 +341,6 @@ router.post('/', async (req, res) => {
                 scraper_blocked:  scrape_status === 'blocked',
                 scrape_status,
                 premiumReport, evaluation_state: evaluationState, calibration,
-                // benchmark_eligible: false when confirmed_high===0 and raw_score===0
-                // (homepage timeout, firewall block, pure stub run).
-                // bundle.js reads this to skip the /benchmark POST and show
-                // access-limited UI instead of a normal benchmark position.
-                benchmark_eligible: (premiumReport && premiumReport.benchmark_eligible === false)
-                    ? false : true,
                 supplementary_signals: supplementarySignals,
                 entityProfile,
             }
