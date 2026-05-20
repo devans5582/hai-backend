@@ -179,7 +179,7 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
         homepageFetchError = null;
         try {
             const resp = await axios.get(targetUrl, {
-                timeout: 25000,
+                timeout: 15000,
                 headers: { 'User-Agent': USER_AGENT },
                 validateStatus: () => true,
                 maxRedirects: 5
@@ -288,7 +288,7 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
         for (const directUrl of directUrls) {
             try {
                 const dresp = await axios.get(directUrl, {
-                    timeout: 10000,
+                    timeout: 6000,
                     headers: { 'User-Agent': USER_AGENT },
                     validateStatus: () => true,
                     maxRedirects: 5,
@@ -324,6 +324,17 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     // ----------------------------------------------------------------
     // Step 4: Fetch each page and extract text
     // ----------------------------------------------------------------
+    // ── Overall scrape budget ─────────────────────────────────────────────────
+    // Prevents large-company scrapes (e.g. Microsoft) from timing out the API.
+    // 40 seconds total wall-clock budget. If hit, we return whatever confirmed
+    // evidence has been collected so far as a partial_scrape result.
+    const OVERALL_BUDGET_MS    = 40000;
+    const CONFIRMED_PAGE_CAP   = 10;   // stop after this many pages with real content
+    const _scrapeStart         = Date.now();
+    let   _budgetReached       = false;
+    let   _pageCapReached      = false;
+    // ── End overall scrape budget ─────────────────────────────────────────────
+
     let combinedText      = '';
     const successfulPages = [];
     // All URLs we attempted, regardless of outcome.
@@ -339,10 +350,27 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     let redirectWallCount  = 0;
 
     for (const pageUrl of uniquePages) {
+        // ── Overall budget check ───────────────────────────────────────────────
+        if (Date.now() - _scrapeStart > OVERALL_BUDGET_MS) {
+            _budgetReached = true;
+            console.log(`[scraper] Overall scrape budget reached (40s) after ${successfulPages.length} confirmed pages — returning partial result`);
+            break;
+        }
+        // ── Confirmed-page cap check ───────────────────────────────────────────
+        if (successfulPages.length >= CONFIRMED_PAGE_CAP) {
+            _pageCapReached = true;
+            console.log(`[scraper] Evidence page target reached (${CONFIRMED_PAGE_CAP} confirmed pages) — stopping early`);
+            break;
+        }
+        // ── MAX_CHARS early exit ───────────────────────────────────────────────
+        if (combinedText.length >= MAX_CHARS) {
+            console.log(`[scraper] MAX_CHARS reached mid-loop — stopping early`);
+            break;
+        }
         attemptedPaths.push(pageUrl); // record every URL tried
         try {
             const resp = await axios.get(pageUrl, {
-                timeout: 10000,
+                timeout: 6000,
                 headers: { 'User-Agent': USER_AGENT },
                 validateStatus: () => true,
                 maxRedirects: 3
@@ -449,7 +477,7 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
         } catch (err) {
             // Per-page errors: still add URL stub for signal detection
             if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-                console.log(`[scraper] Skipped timeout (10s) — ${pageUrl}`);
+                console.log(`[scraper] Skipped timeout (6s) — ${pageUrl}`);
                 combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — timeout]\n`;
             } else {
                 console.log(`[scraper] Skipped fetch error (${err.code || err.message}) — ${pageUrl}`);
@@ -485,8 +513,14 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
 
     console.log(`[scraper] Complete — ${successfulPages.length}/${uniquePages.length} pages OK, ${combinedText.length} total chars, ${realContentChars} real chars, ${redirectWallCount} redirect walls`);
 
+    // partial_scrape is true when the budget or page cap cut the loop short,
+    // or when content was too limited to assess fully.
+    const partialScrape = _budgetReached || _pageCapReached ||
+                          limitedAccess  || contentEmpty;
+
     return {
         scraper_blocked:    false,
+        partial_scrape:     partialScrape,
         combined_text:      combinedText,
         scraped_pages:      successfulPages,
         // All URLs tried — includes both successful pages and failed/blocked attempts.
