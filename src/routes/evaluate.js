@@ -160,7 +160,7 @@ router.post('/', async (req, res) => {
         }
 
         // ── Step 1: Scrape ─────────────────────────────────────────────────
-        let combined_text = '', scraped_pages = [], scrape_status = 'blocked';
+        let combined_text = '', scraped_pages = [], attempted_paths = [], scrape_status = 'blocked';
         let limited_access = false, partial_scrape = false, content_empty = false;
         let scrapeResult = null;
 
@@ -171,6 +171,7 @@ router.post('/', async (req, res) => {
                 scrapeResult   = r;
                 combined_text  = r.combined_text  || '';
                 scraped_pages  = r.scraped_pages  || [];
+                attempted_paths = r.attempted_paths || scraped_pages;
                 scrape_status  = r.scrape_status  || (combined_text.length > 100 ? 'ok' : 'blocked');
                 limited_access = r.limited_access || false;
                 partial_scrape = r.partial_scrape || false;
@@ -331,7 +332,7 @@ router.post('/', async (req, res) => {
             data: {
                 analysis_id: analysisId,
                 evaluation:  evaluation || {},
-                scraped_pages, limited_access, partial_scrape,
+                scraped_pages, attempted_paths, limited_access, partial_scrape,
                 scraper_blocked:  scrape_status === 'blocked',
                 scrape_status,
                 premiumReport, evaluation_state: evaluationState, calibration,
