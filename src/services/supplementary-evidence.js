@@ -299,38 +299,126 @@ async function fetchOecd(companyName) {
     return results;
 }
 
-async function fetchAcademic(companyName) {
+// ── Entity relevance filter for Semantic Scholar results ───────────────────
+// Returns true only if the paper is demonstrably about the assessed company.
+// Generic "responsible AI governance" papers that merely share topic space
+// with the query must not affect score, evidence counts, or confidence.
+//
+// Normalise both the company name and the paper metadata before matching so
+// that casing, punctuation, and common corporate suffixes are not obstacles.
+function normaliseName(name) {
+    if (!name) return '';
+    return name
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        // Remove common suffixes that should not block a match
+        .replace(/\b(inc|llc|ltd|corp|corporation|university|co|the|group|holdings|services)\b/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function isAcademicPaperEntityRelevant(paper, companyName, entityProfile, companyUrl) {
+    // Build the set of name tokens we'll search for
+    const companyNorm   = normaliseName(companyName);
+    const resolvedNorm  = entityProfile?.resolvedName ? normaliseName(entityProfile.resolvedName) : null;
+
+    // Domain token: strip TLD suffix for bare-word matching ('ldww', 'usv')
+    let domainToken = null;
+    if (companyUrl) {
+        try {
+            const hostname = new (require('url').URL)(companyUrl).hostname.replace(/^www\./, '');
+            domainToken = hostname.split('.')[0].toLowerCase(); // e.g. 'ldww', 'usv'
+        } catch (_) { /* ignore malformed URLs */ }
+    }
+
+    // Collect all available paper text fields for matching
+    const title       = (paper.title   || '').toLowerCase();
+    const abstract    = (paper.abstract || '').toLowerCase();
+    const venue       = (paper.venue   || '').toLowerCase();
+    const authorAffil = (paper.authors || [])
+        .flatMap(a => [a.name || '', ...(a.affiliations || []).map(af => af.name || '')])
+        .join(' ')
+        .toLowerCase();
+    const externalMeta = Object.values(paper.externalIds || {}).join(' ').toLowerCase();
+    const allText      = [title, abstract, venue, authorAffil, externalMeta].join(' ');
+
+    // Helper: does any searchable field contain the token?
+    function fieldContains(token) {
+        if (!token || token.length < 2) return false;
+        return allText.includes(token);
+    }
+
+    // Rule 1: company name (normalised) appears in any field
+    if (companyNorm && fieldContains(companyNorm)) return true;
+
+    // Rule 2: resolved entity name (normalised) appears in any field
+    if (resolvedNorm && fieldContains(resolvedNorm)) return true;
+
+    // Rule 3: domain token appears in any field (catches 'ldww', 'usv', etc.)
+    if (domainToken && domainToken.length >= 3 && fieldContains(domainToken)) return true;
+
+    return false;
+}
+
+async function fetchAcademic(companyName, entityProfile, companyUrl) {
     const results = [];
     try {
+        // Request additional fields to enable entity relevance filtering
         const query = encodeURIComponent(`${companyName} responsible AI governance`);
-        const url   = `https://api.semanticscholar.org/graph/v1/paper/search?query=${query}&limit=3&fields=title,year,authors,externalIds`;
+        const url   = `https://api.semanticscholar.org/graph/v1/paper/search?query=${query}&limit=5&fields=title,year,authors,abstract,venue,externalIds,url`;
         const s2Headers = { 'User-Agent': 'HAI-Assessment-Bot/1.0 (humanalignmentindex.com)' };
         if (process.env.SEMANTIC_SCHOLAR_API_KEY) {
             s2Headers['x-api-key'] = process.env.SEMANTIC_SCHOLAR_API_KEY;
         }
-        const res   = await axios.get(url, {
-            timeout: 7000,
-            headers: s2Headers,
-        });
+        const res    = await axios.get(url, { timeout: 7000, headers: s2Headers });
         const papers = res.data?.data || [];
 
-        papers.slice(0, 2).forEach(paper => {
+        console.log(`[HAI:supp] Semantic Scholar query: "${companyName} responsible AI governance" — ${papers.length} papers returned`);
+
+        let accepted = 0;
+        let rejected = 0;
+        const rejectedTitles = [];
+
+        for (const paper of papers) {
+            if (accepted >= 2) break; // cap at 2 accepted papers
+
+            const relevant = isAcademicPaperEntityRelevant(paper, companyName, entityProfile, companyUrl);
+
+            if (!relevant) {
+                rejected++;
+                rejectedTitles.push(paper.title || '(untitled)');
+                continue;
+            }
+
             const title   = paper.title || '';
             const authors = (paper.authors || []).map(a => a.name).join(', ').slice(0, 100);
             const doi     = paper.externalIds?.DOI;
+
             results.push({
-                source:           'ACADEMIC',
-                sourceTier:       'medium',
-                tierWeight:       0.6,
-                text:             `Academic paper: "${title}" (${paper.year || 'undated'}). Authors: ${authors || 'unknown'}.`,
-                url:              doi ? `https://doi.org/${doi}` : 'https://www.semanticscholar.org/',
-                dateIssued:       paper.year ? String(paper.year) : null,
-                relevantPillars:  SOURCE_PILLAR_MAP.ACADEMIC,
+                source:               'ACADEMIC',
+                sourceTier:           'medium',
+                tierWeight:           0.6,
+                text:                 `Academic paper: "${title}" (${paper.year || 'undated'}). Authors: ${authors || 'unknown'}.`,
+                url:                  doi ? `https://doi.org/${doi}` : (paper.url || 'https://www.semanticscholar.org/'),
+                dateIssued:           paper.year ? String(paper.year) : null,
+                relevantPillars:      SOURCE_PILLAR_MAP.ACADEMIC,
                 criterionSpecificFor: mapTextToCriteria(title, SOURCE_PILLAR_MAP.ACADEMIC),
-                evidenceType:     'external',
-                role:             'supports',
+                evidenceType:         'external',
+                role:                 'supports',
+                entityVerified:       true,
             });
-        });
+            accepted++;
+        }
+
+        // Logging summary
+        console.log(`[HAI:supp] Semantic Scholar: ${accepted} accepted, ${rejected} rejected for entity mismatch`);
+        if (rejectedTitles.length > 0) {
+            console.log(`[HAI:supp] Semantic Scholar rejected titles: ${rejectedTitles.map(t => `"${t}"`).join(' | ')}`);
+        }
+        if (accepted === 0) {
+            console.log(`[HAI:supp] Semantic Scholar: no entity-relevant papers found for "${companyName}" — ACADEMIC contributing zero evidence`);
+        }
+
     } catch (err) {
         console.log('[HAI] Academic fetch failed:', err.message);
     }
@@ -614,7 +702,7 @@ async function fetchSupplementaryEvidence(companyName, companyUrl, industry, opt
     const [edgarResults, oecdResults, academicResults, wikiMeta, newsResults] = await Promise.all([
         fetchEdgar(companyName).catch(e => { console.log('[HAI:supp] EDGAR error:', e.message); return []; }),
         fetchOecd(companyName).catch(e  => { console.log('[HAI:supp] OECD error:', e.message);  return []; }),
-        fetchAcademic(companyName).catch(e => { console.log('[HAI:supp] Academic error:', e.message); return []; }),
+        fetchAcademic(companyName, entityProfile, companyUrl).catch(e => { console.log('[HAI:supp] Academic error:', e.message); return []; }),
         fetchWikipediaMeta(companyName).catch(() => ({ isPublicCompany: false })),
         fetchNewsSignals(companyName).catch(e => { console.log('[HAI:supp] News error:', e.message); return []; }),
     ]);

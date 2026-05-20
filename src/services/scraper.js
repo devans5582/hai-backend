@@ -326,6 +326,10 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     // ----------------------------------------------------------------
     let combinedText      = '';
     const successfulPages = [];
+    // All URLs we attempted, regardless of outcome.
+    // Returned so the frontend appendix can label unconfirmed paths as
+    // "Attempted source / no evidence found" rather than "Page scanned".
+    const attemptedPaths  = [];
     // Tracks clean-text lengths of pages already fetched.
     // Used to detect redirect/wall pages that return HTTP 200 but identical
     // content across different URLs (see redirect/wall detection below).
@@ -335,6 +339,7 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     let redirectWallCount  = 0;
 
     for (const pageUrl of uniquePages) {
+        attemptedPaths.push(pageUrl); // record every URL tried
         try {
             const resp = await axios.get(pageUrl, {
                 timeout: 10000,
@@ -484,6 +489,10 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
         scraper_blocked:    false,
         combined_text:      combinedText,
         scraped_pages:      successfulPages,
+        // All URLs tried — includes both successful pages and failed/blocked attempts.
+        // The frontend appendix should label entries NOT in scraped_pages as
+        // "Attempted source / no evidence found" rather than "Evidence identified".
+        attempted_paths:    attemptedPaths,
         limited_access:     limitedAccess,
         content_empty:      contentEmpty,
         real_content_chars: realContentChars,
@@ -519,12 +528,14 @@ function buildFallbackResult(targetUrl, reason) {
         fallbackText += `\n--- Content from ${baseOrigin + path} ---\n[page not retrieved]\n`;
     }
 
+    const fallbackAttempted = FORCED_PATHS.map(p => baseOrigin + p);
     console.log(`[scraper] buildFallbackResult — ${FORCED_PATHS.length} path stubs generated for ${targetUrl}`);
     return {
         scraper_blocked: false,
         partial_scrape:  true,
         combined_text:   fallbackText,
         scraped_pages:   [],
+        attempted_paths: fallbackAttempted,
         limited_access:  true,
         message:         reason
     };
