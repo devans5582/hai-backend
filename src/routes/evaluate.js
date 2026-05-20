@@ -96,7 +96,17 @@ router.post('/', async (req, res) => {
     try {
 
         // ── Deduplication check — reject re-assessment within 7 days ───────
-        if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
+        // To force a fresh run for testing (e.g. to verify a fix was applied),
+        // set DISABLE_DEDUP=true in environment variables OR pass
+        // forceFresh=true in the request body.
+        const forceFresh = req.body.forceFresh === true || req.body.forceFresh === 'true' ||
+                           process.env.DISABLE_DEDUP === 'true';
+
+        if (forceFresh) {
+            console.log(`[HAI] DEDUP_BYPASSED forceFresh=true id=${analysisId} — skipping 7-day window check`);
+        }
+
+        if (!forceFresh && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
             try {
                 let targetDomain = '';
                 try { targetDomain = new URL(url).hostname.replace(/^www\./, ''); } catch (_) {}
@@ -127,6 +137,7 @@ router.post('/', async (req, res) => {
                             day: 'numeric', month: 'long', year: 'numeric'
                         });
                         const score = prior.final_score != null ? ` (score: ${prior.final_score})` : '';
+                        console.log(`[HAI] REUSED_PRIOR_ANALYSIS=true priorAnalysisId=${prior.analysis_id} domain=${targetDomain} assessedOn=${priorDate}`);
                         console.log(`[HAI] DEDUP block — ${targetDomain} assessed ${priorDate}, id=${prior.analysis_id}`);
                         return res.json({
                             success: false,
@@ -143,6 +154,10 @@ router.post('/', async (req, res) => {
         // ── End deduplication check ────────────────────────────────────────
 
         // ── Step 0: Entity resolution (non-blocking) ───────────────────────
+        // Log that this is a genuine fresh execution — not served from cache or dedup
+        let targetDomainForLog = '';
+        try { targetDomainForLog = new URL(url).hostname.replace(/^www\./, ''); } catch (_) {}
+        console.log(`[HAI] FRESH_RUN=true analysisId=${analysisId} targetDomain=${targetDomainForLog}`);
         let entityProfile = { inputName: company, inputUrl: url, resolvedName: company,
             resolvedDomain: null, wikidataId: null, lei: null, cik: null,
             isPublicCompany: false, resolvedIndustry: null, nameMatchScore: 0,
