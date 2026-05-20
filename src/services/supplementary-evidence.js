@@ -870,6 +870,16 @@ async function fetchSupplementaryEvidence(companyName, companyUrl, industry, opt
     };
 
     // ── Return supplementary_signals shape (matches frontend expectations) ─
+    // ── Final debug: confirm exactly what academic evidence reached the return ─
+    const _academicTitles = academicResults.map(i => i.text.slice(0, 120));
+    const _academicInAll  = allEvidence.filter(i => i.source === 'ACADEMIC').length;
+    console.log(`[HAI:FINAL_APPENDIX] academicEvidenceCount=${academicResults.length} inAllEvidence=${_academicInAll}`);
+    if (_academicTitles.length > 0) {
+        console.log(`[HAI:FINAL_APPENDIX] academicTitles=${JSON.stringify(_academicTitles)}`);
+    } else {
+        console.log('[HAI:FINAL_APPENDIX] academicTitles=[] — no entity-relevant papers accepted');
+    }
+
     return {
         impact,
         edgarSignals:    edgarResults.length,
@@ -883,6 +893,10 @@ async function fetchSupplementaryEvidence(companyName, companyUrl, industry, opt
         isPublicCompany: wikiMeta.isPublicCompany || entityProfile?.isPublicCompany || false,
         evidence:        allEvidence,
         sourceBreakdown: impact.sourceCounts,
+        semanticScholarDebug: {
+            acceptedCount:  academicResults.length,
+            acceptedTitles: _academicTitles,
+        },
     };
 }
 
