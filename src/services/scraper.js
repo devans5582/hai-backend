@@ -69,6 +69,17 @@ const FORCED_PATHS = [
     // workaround for IBM and similar enterprise sites.
     '/impact',
     '/topics/ai-ethics',
+    // ── 1b. Governance content paths — scoring methodology and rating frameworks
+    // These paths target governance-focused organisations that publish their
+    // evaluation methodology, scoring rationale, and rating frameworks at
+    // product-specific URL slugs rather than standard /responsible-ai paths.
+    // /rating-scoring/ is the primary methodology page for Humaital.
+    '/rating-scoring',
+    '/rating-scoring/',
+    '/how-it-works',
+    '/our-methodology',
+    '/about/scoring',
+    '/about/rating',
     // ── 2. Risk / compliance / governance pages ───────────────────────────────
     '/risk', '/compliance', '/regulatory', '/governance',
     // ── 3. Broad corporate responsibility pages ───────────────────────────────
@@ -149,6 +160,7 @@ const GOVERNANCE_EXEMPT_SLUGS = [
     'ai-governance',  'ai-ethics',     'ethical-ai',
     'ai-safety',      'ai-policy',     'human-alignment',
     'trustworthy-ai', 'responsible-technology', 'trust-center',
+    'rating-scoring', 'how-it-works',  'our-methodology',
 ];
 
 const BLOCK_KEYWORDS = [
@@ -472,6 +484,24 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
 
             const cleanText = extractText(pageHtml);
 
+            // ── Minimum clean text threshold ──────────────────────────────────
+            // JavaScript-rendered sites (Next.js/React CSR) return HTTP 200 with
+            // a valid HTML scaffold (passes the 300-char raw HTML check above) but
+            // extractText() returns only 100–300 chars of actual text content —
+            // the app shell before JS hydration.  These pages consume a confirmed-
+            // page slot without contributing governance content.
+            //
+            // Threshold: if cleanText is under 250 chars after extraction, treat
+            // as a shell page stub.  250 chars is approximately 3–4 sentences —
+            // enough to distinguish real governance content from a JS scaffold.
+            // URL stub is still written so signal detection works on the slug.
+            if (cleanText.trim().length < 250) {
+                console.log(`[scraper] Skipped JS shell (${cleanText.length} clean chars) — ${pageUrl}`);
+                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — JS shell]\n`;
+                continue;
+            }
+            // ── End minimum clean text threshold ─────────────────────────────
+
             // ── Redirect/wall detection ──────────────────────────────────────
             // Some sites return HTTP 200 with a generic shell page for every
             // protected URL — short sign-in walls AND full-length marketing
@@ -632,6 +662,13 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
                 }
 
                 const fClean = extractText(fHtml);
+
+                // Apply same JS shell check as main loop
+                if (fClean.trim().length < 250) {
+                    console.log(`[scraper] Foundational JS shell (${fClean.length} chars) — ${fPageUrl}`);
+                    combinedText += `\n\n--- Content from ${fPageUrl} ---\n[page restricted — JS shell]\n`;
+                    continue;
+                }
 
                 // Redirect-wall fingerprint check (same logic as main loop)
                 const fUrlLower    = fPageUrl.toLowerCase();

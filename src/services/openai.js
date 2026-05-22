@@ -199,6 +199,53 @@ The absence of the following does NOT justify level 1 when foundational evidence
 - Annual reports or investor governance disclosures
 These are enterprise-scale artefacts not expected from early-stage organisations.
 
+ENTERPRISE PUBLIC GOVERNANCE INTERPRETATION:
+When the governance text contains published AI principles, named governance roles, model cards,
+external framework alignment, safety evaluations, or structured responsible AI documentation
+from an established organisation, do NOT assign level 1 to criteria that are directly supported
+by that evidence. Evaluate based on what IS publicly documented.
+
+Specifically — if the text contains the following, assign AT LEAST level 2 to the criteria listed:
+
+Published AI principles or responsible AI framework with named commitments:
+  → trust_ethical_intent (level 2–3)
+  → purpose_mission_clarity (level 2–3)
+  → accountability_governance_and_oversight (level 2–3)
+
+Named responsible AI team, officer, council, or oversight body:
+  → accountability_governance_and_oversight (level 3)
+  → accountability_ownership_of_outcomes (level 2–3)
+  → trust_ethical_intent (level 2–3)
+
+Published model card, system card, or AI system technical disclosure:
+  → transparency_explainability (level 3)
+  → safety_risk_mitigation (level 2–3)
+  → trust_user_confidence (level 2–3)
+
+Explicit alignment to external framework (OECD, NIST AI RMF, EU AI Act, ISO 42001, IEEE):
+  → accountability_governance_and_oversight (level 3)
+  → safety_long_term_societal_safety (level 2)
+  → trust_ethical_intent (level 3)
+
+Red-teaming, safety evaluation, or adversarial testing described:
+  → safety_risk_mitigation (level 3)
+  → safety_user_protection_mechanisms (level 2)
+
+Published trust center, transparency report, or data governance policy:
+  → transparency_data_disclosure (level 2–3)
+  → transparency_communication_honesty (level 2)
+
+Published corporate responsibility or sustainability report with AI section:
+  → impact_positive_human_outcomes (level 2)
+  → impact_shared_human_benefit (level 2)
+  → purpose_alignment_words_actions (level 2)
+
+IMPORTANT: These criteria apply to enterprises AND startups — the presence of public
+documentation is the trigger, not company size. Level 3 requires structured documentation
+with multiple named commitments. Level 2 requires a basic documented commitment or policy
+reference. Level 1 is only appropriate when the specific criterion has NO supporting
+public evidence at all — not merely because internal documentation was not provided.
+
 OUTPUT FORMAT:
 Return a single valid JSON object only. No prose, no markdown, no preamble.
 Each criterion must be a key in the object with this exact structure:
