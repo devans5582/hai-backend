@@ -45,18 +45,6 @@ const FORCED_PATHS = [
     // ── High-specificity AI governance paths — fetched first to ensure
     //    they land inside the MAX_CHARS window before lower-value pages
     //    (e.g. /privacy at 39K chars) consume the budget.
-    // ── 0. Governance methodology paths — HIGHEST PRIORITY ───────────────────
-    // These paths are fetched FIRST because governance-focused organisations
-    // (e.g. Humaital) publish their methodology at product-specific slugs that
-    // would otherwise be reached after the 10-page cap fires on ghost paths.
-    // Placing them first guarantees they are attempted before any locale-prefixed
-    // enterprise paths that return empty shells on non-enterprise sites.
-    '/rating-scoring',
-    '/rating-scoring/',
-    '/how-it-works',
-    '/our-methodology',
-    '/about/scoring',
-    '/about/rating',
     // ── 1. AI-specific governance paths — highest priority ───────────────────
     // Fetched first so their content lands inside the 15,000-char OpenAI window
     // before broad corporate pages (sustainability, about) consume the budget.
@@ -111,6 +99,20 @@ const FORCED_PATHS = [
 // foundational stubs in a fallback run add no signal value and pollute the
 // fallback text unnecessarily.
 const FOUNDATIONAL_PATHS = [
+    // ── Governance methodology slugs — specific to governance-focused organisations
+    // that publish methodology, scoring rationale, and evaluation frameworks at
+    // product-specific URLs rather than standard /responsible-ai paths.
+    // /rating-scoring/ is the primary methodology page for Humaital.
+    // These are attempted AFTER main FORCED_PATHS so enterprise sites like
+    // Microsoft (which may have a /rating-scoring page unrelated to governance)
+    // do not have non-governance content confirmed before their actual AI
+    // governance pages are reached.
+    '/rating-scoring',
+    '/rating-scoring/',
+    '/how-it-works',
+    '/our-methodology',
+    '/about/scoring',
+    '/about/rating',
     '/methodology',
     '/scoring',
     '/framework',
