@@ -45,6 +45,18 @@ const FORCED_PATHS = [
     // ── High-specificity AI governance paths — fetched first to ensure
     //    they land inside the MAX_CHARS window before lower-value pages
     //    (e.g. /privacy at 39K chars) consume the budget.
+    // ── 0. Governance methodology paths — HIGHEST PRIORITY ───────────────────
+    // These paths are fetched FIRST because governance-focused organisations
+    // (e.g. Humaital) publish their methodology at product-specific slugs that
+    // would otherwise be reached after the 10-page cap fires on ghost paths.
+    // Placing them first guarantees they are attempted before any locale-prefixed
+    // enterprise paths that return empty shells on non-enterprise sites.
+    '/rating-scoring',
+    '/rating-scoring/',
+    '/how-it-works',
+    '/our-methodology',
+    '/about/scoring',
+    '/about/rating',
     // ── 1. AI-specific governance paths — highest priority ───────────────────
     // Fetched first so their content lands inside the 15,000-char OpenAI window
     // before broad corporate pages (sustainability, about) consume the budget.
@@ -69,17 +81,6 @@ const FORCED_PATHS = [
     // workaround for IBM and similar enterprise sites.
     '/impact',
     '/topics/ai-ethics',
-    // ── 1b. Governance content paths — scoring methodology and rating frameworks
-    // These paths target governance-focused organisations that publish their
-    // evaluation methodology, scoring rationale, and rating frameworks at
-    // product-specific URL slugs rather than standard /responsible-ai paths.
-    // /rating-scoring/ is the primary methodology page for Humaital.
-    '/rating-scoring',
-    '/rating-scoring/',
-    '/how-it-works',
-    '/our-methodology',
-    '/about/scoring',
-    '/about/rating',
     // ── 2. Risk / compliance / governance pages ───────────────────────────────
     '/risk', '/compliance', '/regulatory', '/governance',
     // ── 3. Broad corporate responsibility pages ───────────────────────────────
@@ -485,19 +486,20 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
             const cleanText = extractText(pageHtml);
 
             // ── Minimum clean text threshold ──────────────────────────────────
-            // JavaScript-rendered sites (Next.js/React CSR) return HTTP 200 with
-            // a valid HTML scaffold (passes the 300-char raw HTML check above) but
-            // extractText() returns only 100–300 chars of actual text content —
-            // the app shell before JS hydration.  These pages consume a confirmed-
-            // page slot without contributing governance content.
+            // WordPress sites that return a redirect-to-homepage for unknown paths
+            // serve the full nav + footer chrome but NO page body content. After
+            // extractText() strips HTML tags, these pages return ~1,156 chars of
+            // navigation and footer text — enough to pass the 300-char raw HTML
+            // check but containing zero governance content.
             //
-            // Threshold: if cleanText is under 250 chars after extraction, treat
-            // as a shell page stub.  250 chars is approximately 3–4 sentences —
-            // enough to distinguish real governance content from a JS scaffold.
+            // Threshold raised to 1,500 chars to reject these ghost pages.
+            // 1,156 chars = WordPress ghost page (nav + footer only)
+            // 1,500+ chars = any page with at least minimal body content
+            // Real governance pages return 2,000–30,000 chars after extraction.
             // URL stub is still written so signal detection works on the slug.
-            if (cleanText.trim().length < 250) {
-                console.log(`[scraper] Skipped JS shell (${cleanText.length} clean chars) — ${pageUrl}`);
-                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — JS shell]\n`;
+            if (cleanText.trim().length < 1500) {
+                console.log(`[scraper] Skipped thin content (${cleanText.length} clean chars) — ${pageUrl}`);
+                combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — thin content]\n`;
                 continue;
             }
             // ── End minimum clean text threshold ─────────────────────────────
@@ -663,10 +665,10 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
 
                 const fClean = extractText(fHtml);
 
-                // Apply same JS shell check as main loop
-                if (fClean.trim().length < 250) {
-                    console.log(`[scraper] Foundational JS shell (${fClean.length} chars) — ${fPageUrl}`);
-                    combinedText += `\n\n--- Content from ${fPageUrl} ---\n[page restricted — JS shell]\n`;
+                // Apply same thin content check as main loop
+                if (fClean.trim().length < 1500) {
+                    console.log(`[scraper] Foundational thin content (${fClean.length} chars) — ${fPageUrl}`);
+                    combinedText += `\n\n--- Content from ${fPageUrl} ---\n[page restricted — thin content]\n`;
                     continue;
                 }
 
