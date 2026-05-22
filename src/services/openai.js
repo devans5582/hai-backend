@@ -246,6 +246,24 @@ with multiple named commitments. Level 2 requires a basic documented commitment 
 reference. Level 1 is only appropriate when the specific criterion has NO supporting
 public evidence at all — not merely because internal documentation was not provided.
 
+CRITICAL — ITEMS ARRAY MUST REFLECT EVIDENCE:
+When you assign level 2 or level 3 to a criterion based on public governance evidence,
+you MUST also confirm the relevant _O item IDs in the items array for that criterion.
+Assigning a level without confirming observable items defeats the evidence confirmation
+system and will suppress the confidence score.
+
+For example:
+- If you assign trust_ethical_intent = level 3 because published AI principles exist,
+  you MUST include T3_O1 (published principles with named commitments) in items[].
+- If you assign accountability_governance_and_oversight = level 3 because a named
+  governance body is visible, you MUST include A3_O2 in items[].
+- If you assign transparency_explainability = level 3 because model cards exist,
+  you MUST include TR1_O1 in items[].
+
+The rule: every level 2 or level 3 assignment MUST have at least one confirmed item ID
+in the items array — either a _R, _S, _G, or _O item. An empty items[] with level 2+
+is an inconsistent response.
+
 OUTPUT FORMAT:
 Return a single valid JSON object only. No prose, no markdown, no preamble.
 Each criterion must be a key in the object with this exact structure:
