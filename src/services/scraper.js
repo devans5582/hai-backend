@@ -75,12 +75,30 @@ const FORCED_PATHS = [
     // Placed after AI governance paths so they are truncated by the 15K OpenAI
     // trim rather than crowding out governance content.
     '/corporate-responsibility', '/responsibility', '/esg', '/sustainability',
-    // ── 3b. Foundational governance methodology paths ──────────────────────────
-    // Recognises governance-focused organisations that publish scoring frameworks,
-    // certification methodology, accountability architecture, and trust frameworks
-    // on paths that do not match standard enterprise governance slugs.
-    // Inserted here (after AI-specific paths, before generic /about) so content
-    // lands inside the 15K OpenAI window before low-value pages consume budget.
+    // ── 4. Generic pages — lowest priority ───────────────────────────────────
+    // Useful for signal detection but should not consume governance content budget.
+    '/about', '/about-us',
+    '/ai', '/artificial-intelligence', '/technology',
+    '/investor-relations', '/newsroom', '/public-policy',
+    '/privacy', '/terms',
+];
+
+// ── Foundational governance methodology paths ────────────────────────────────
+// These paths are specific to governance-focused emerging organisations and
+// reliably 404 or slow-redirect on enterprise sites, consuming wall-clock budget
+// before genuine enterprise governance paths complete.
+//
+// They are NOT included in FORCED_PATHS. Instead they are attempted in a
+// conditional post-loop pass (see Step 4b in scrapeCompanyPages) only when:
+//   - at least 8 seconds of the overall budget remain, AND
+//   - the confirmed-page cap has not been reached.
+// Each foundational path uses a reduced 3-second timeout (vs 6s for main paths)
+// so that enterprise CDN slow-timeouts fail fast rather than consuming budget.
+//
+// buildFallbackResult intentionally uses only FORCED_PATHS for stub generation —
+// foundational stubs in a fallback run add no signal value and pollute the
+// fallback text unnecessarily.
+const FOUNDATIONAL_PATHS = [
     '/methodology',
     '/scoring',
     '/framework',
@@ -92,12 +110,6 @@ const FORCED_PATHS = [
     '/responsible-deployment',
     '/about/methodology',
     '/about/governance',
-    // ── 4. Generic pages — lowest priority ───────────────────────────────────
-    // Useful for signal detection but should not consume governance content budget.
-    '/about', '/about-us',
-    '/ai', '/artificial-intelligence', '/technology',
-    '/investor-relations', '/newsroom', '/public-policy',
-    '/privacy', '/terms',
 ];
 
 // Pages whose URL paths strongly suggest non-governance content.
@@ -123,6 +135,20 @@ const AI_GOVERNANCE_TERMS = [
     'scoring methodology', 'certification methodology', 'governance architecture',
     'human alignment', 'evidence-based scoring', 'trust framework',
     'evaluation framework', 'alignment scoring', 'governance taxonomy',
+];
+
+// High-value governance URL slugs that are EXEMPT from redirect-wall detection.
+// A false positive on these slugs (dropping a real governance page) is a more
+// serious error than a false negative (passing a redirect wall through to GPT-4o,
+// which simply assigns level 1 to unrecognised content — the same result as a stub).
+// Pages whose URL contains any of these terms bypass the fingerprint-duplicate check.
+// Their fingerprint is still recorded so subsequent non-governance pages can be
+// compared against it.
+const GOVERNANCE_EXEMPT_SLUGS = [
+    'responsible-ai', 'ai-principles', 'principles-and-approach',
+    'ai-governance',  'ai-ethics',     'ethical-ai',
+    'ai-safety',      'ai-policy',     'human-alignment',
+    'trustworthy-ai', 'responsible-technology', 'trust-center',
 ];
 
 const BLOCK_KEYWORDS = [
@@ -338,9 +364,10 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
                     if (dClean.length >= 200) {
                         combinedText += `\n\n--- Content from ${directUrl} ---\n\n` + dClean;
                         successfulPages.push(directUrl);
-                        // Record length so redirect-wall detection doesn't later flag
-                        // a coincidentally same-length FORCED_PATH page.
-                        seenPageLengths.add(dClean.length);
+                        // Record fingerprint so redirect-wall detection doesn't later flag
+                        // a coincidentally similar FORCED_PATH page.
+                        const _dFp = dClean.slice(50, 200).toLowerCase().replace(/\s+/g, ' ');
+                        seenPageFingerprints.add(_dFp);
                         console.log(`[scraper] Direct URL OK ${directUrl} (${dClean.length} chars)`);
                     } else {
                         console.log(`[scraper] Direct URL body too short (${dClean.length} chars) — ${directUrl}`);
@@ -359,9 +386,11 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     // ----------------------------------------------------------------
     // ── Overall scrape budget ─────────────────────────────────────────────────
     // Prevents large-company scrapes (e.g. Microsoft) from timing out the API.
-    // 40 seconds total wall-clock budget. If hit, we return whatever confirmed
-    // evidence has been collected so far as a partial_scrape result.
-    const OVERALL_BUDGET_MS    = 40000;
+    // 50 seconds total wall-clock budget (increased from 40s to provide headroom
+    // for the conditional foundational-path pass that runs after the main loop).
+    // If hit, we return whatever confirmed evidence has been collected so far
+    // as a partial_scrape result.
+    const OVERALL_BUDGET_MS    = 50000;
     const CONFIRMED_PAGE_CAP   = 10;   // stop after this many pages with real content
     const _scrapeStart         = Date.now();
     let   _budgetReached       = false;
@@ -374,10 +403,20 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     // Returned so the frontend appendix can label unconfirmed paths as
     // "Attempted source / no evidence found" rather than "Page scanned".
     const attemptedPaths  = [];
-    // Tracks clean-text lengths of pages already fetched.
+    // Tracks content fingerprints of pages already fetched.
     // Used to detect redirect/wall pages that return HTTP 200 but identical
     // content across different URLs (see redirect/wall detection below).
-    const seenPageLengths  = new Set();
+    //
+    // Fingerprint = chars 50–200 of cleaned text, lowercased, whitespace-normalised.
+    // Skipping the first 50 chars avoids triggering on shared navigation chrome
+    // (e.g. "Skip to main content") that many enterprise pages share at the very
+    // beginning. Characters 50–200 reliably reach the first body-specific content.
+    //
+    // This replaces the previous cleanText.length approach, which produced false
+    // positives on enterprise sites where two genuine governance pages happen to
+    // produce the same total character count after HTML stripping (e.g. Google's
+    // locale-prefixed AI governance pages share heavy navigation/footer chrome).
+    const seenPageFingerprints = new Set();
     // Count of pages detected as redirect walls — used to trigger supplementary
     // evidence when most forced governance paths are blocked.
     let redirectWallCount  = 0;
@@ -435,36 +474,44 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
 
             // ── Redirect/wall detection ──────────────────────────────────────
             // Some sites return HTTP 200 with a generic shell page for every
-            // protected URL — short "sign in" walls AND full-length marketing
-            // shells (e.g. IBM returns its 5,701-char homepage for every
-            // locale-prefixed governance path).  Both produce identical clean-text
-            // lengths across completely different paths, which is the reliable
-            // signal here.
+            // protected URL — short sign-in walls AND full-length marketing
+            // shells (e.g. IBM returns its homepage for every locale-prefixed
+            // governance path). Both produce identical content across different
+            // paths, which is the reliable detection signal.
             //
-            // Detection: if this page's clean text length exactly matches a
-            // previously seen page length, treat it as a redirect wall regardless
-            // of size.  The only guard is cleanText.length > 0 to avoid false
-            // positives on genuinely empty pages (caught earlier by the < 300
-            // raw HTML check, but defensive here too).
+            // Detection method: content fingerprint (chars 50–200 of cleaned text,
+            // lowercased, whitespace-normalised). Skipping the first 50 chars avoids
+            // false positives from shared navigation chrome ("Skip to main content").
+            // Characters 50–200 reliably reach the first body-specific content.
             //
-            // The previous < 2000 ceiling was intentional for short walls but
-            // caused large marketing shells to pass through unchecked.  Removing
-            // it is safe because legitimate sites very rarely serve two different
-            // governance pages with exactly the same extracted text length, and
-            // any false positive (a real page coincidentally matching a prior
-            // length) would at worst drop one page from a run that already has
-            // sufficient other content.
+            // This replaces the previous cleanText.length approach which caused false
+            // positives on enterprise sites where two genuine governance pages produce
+            // the same total character count after HTML stripping (e.g. Google's
+            // locale-prefixed AI governance pages sharing heavy nav/footer chrome).
             //
-            // We track lengths in a Set rather than full content hashes to keep
-            // memory overhead low and avoid hashing 30 KB strings per page.
-            const isLikelyRedirectWall = (
-                seenPageLengths.has(cleanText.length) &&
-                cleanText.length > 0
+            // Governance-exempt bypass: pages whose URL contains a known high-value
+            // governance slug are never dropped as redirect walls. A false positive
+            // on /en-us/ai/responsible-ai is a more serious error than a false
+            // negative (a shell page reaching GPT-4o, which assigns level 1 —
+            // the same result as a stub). The fingerprint is still recorded so
+            // subsequent non-governance pages can be compared against it.
+            const pageUrlLowerForWall = pageUrl.toLowerCase();
+            const isGovernanceExempt  = GOVERNANCE_EXEMPT_SLUGS.some(slug =>
+                pageUrlLowerForWall.includes(slug)
             );
-            seenPageLengths.add(cleanText.length);
+
+            const fingerprint = cleanText.slice(50, 200).toLowerCase().replace(/\s+/g, ' ');
+            const isLikelyRedirectWall = (
+                !isGovernanceExempt &&
+                fingerprint.length > 0 &&
+                seenPageFingerprints.has(fingerprint)
+            );
+            // Always record the fingerprint — even exempt pages contribute to the
+            // seen-fingerprint set so subsequent non-exempt pages can be checked.
+            seenPageFingerprints.add(fingerprint);
 
             if (isLikelyRedirectWall) {
-                console.log(`[scraper] Skipped redirect/wall (duplicate length ${cleanText.length}) — ${pageUrl}`);
+                console.log(`[scraper] Skipped redirect/wall (duplicate fingerprint, len=${cleanText.length}) — ${pageUrl}`);
                 combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — redirect wall]\n`;
                 redirectWallCount++;
                 continue;
@@ -476,8 +523,7 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
             // governance content. Accept them only if they mention at least one
             // AI governance term — otherwise add as a URL stub only so the slug
             // contributes to signal detection without polluting OpenAI's context.
-            const pageUrlLower = pageUrl.toLowerCase();
-            const isLowValuePath = LOW_VALUE_PATH_PATTERNS.some(p => pageUrlLower.includes(p));
+            const isLowValuePath = LOW_VALUE_PATH_PATTERNS.some(p => pageUrlLowerForWall.includes(p));
             if (isLowValuePath) {
                 const cleanLower = cleanText.toLowerCase();
                 const hasGovernanceTerm = AI_GOVERNANCE_TERMS.some(t => cleanLower.includes(t));
@@ -517,6 +563,110 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
                 combinedText += `\n\n--- Content from ${pageUrl} ---\n[page restricted — fetch error]\n`;
             }
         }
+    }
+
+    // ----------------------------------------------------------------
+    // Step 4b: Conditional foundational-path pass
+    // ----------------------------------------------------------------
+    // FOUNDATIONAL_PATHS are startup-oriented slugs (/methodology, /scoring,
+    // /framework, etc.) that reliably 404 or slow-redirect on enterprise sites,
+    // consuming wall-clock budget before genuine enterprise governance paths
+    // complete when placed in the main FORCED_PATHS queue unconditionally.
+    //
+    // They are attempted here — after the main loop — only when:
+    //   1. At least 8 seconds of the overall budget remain (prevents foundational
+    //      paths from causing the total scrape to exceed the budget envelope).
+    //   2. The confirmed-page cap has not been reached (no additional pages needed).
+    //   3. The MAX_CHARS budget has not been exhausted.
+    //
+    // Each path uses a 3-second timeout (vs 6s for main paths) so that enterprise
+    // CDN slow-timeouts fail fast rather than consuming budget. Startup sites that
+    // actually have these pages respond well within 3 seconds.
+    //
+    // The redirect-wall fingerprint check and governance-exempt bypass apply
+    // exactly as in the main loop.
+    const _foundationalBudgetRemaining = OVERALL_BUDGET_MS - (Date.now() - _scrapeStart);
+    const _foundationalCanRun = (
+        _foundationalBudgetRemaining >= 8000 &&
+        successfulPages.length < CONFIRMED_PAGE_CAP &&
+        combinedText.length < MAX_CHARS
+    );
+
+    if (_foundationalCanRun) {
+        console.log(`[scraper] Foundational path pass — ${_foundationalBudgetRemaining}ms remaining, attempting ${FOUNDATIONAL_PATHS.length} paths`);
+        for (const fPath of FOUNDATIONAL_PATHS) {
+            // Re-check budget and cap on each iteration
+            if (Date.now() - _scrapeStart > OVERALL_BUDGET_MS - 1000) {
+                console.log(`[scraper] Foundational pass budget exhausted — stopping`);
+                break;
+            }
+            if (successfulPages.length >= CONFIRMED_PAGE_CAP) break;
+            if (combinedText.length >= MAX_CHARS) break;
+
+            const fPageUrl = baseOrigin + fPath;
+            if (uniquePages.includes(fPageUrl)) continue; // already attempted in main loop
+
+            attemptedPaths.push(fPageUrl);
+            try {
+                const fResp = await axios.get(fPageUrl, {
+                    timeout: 3000,   // reduced timeout — fail fast on enterprise CDN stalls
+                    headers: { 'User-Agent': USER_AGENT },
+                    validateStatus: () => true,
+                    maxRedirects: 3
+                });
+
+                const fStatus = fResp.status;
+                const fHtml   = fResp.data ? String(fResp.data) : '';
+
+                if (BLOCK_STATUS_CODES.includes(fStatus)) {
+                    combinedText += `\n\n--- Content from ${fPageUrl} ---\n[page restricted — HTTP ${fStatus}]\n`;
+                    continue;
+                }
+                if (isBlockedPage(fHtml)) {
+                    combinedText += `\n\n--- Content from ${fPageUrl} ---\n[page restricted — firewall]\n`;
+                    continue;
+                }
+                if (fHtml.trim().length < 300) {
+                    combinedText += `\n\n--- Content from ${fPageUrl} ---\n[page empty]\n`;
+                    continue;
+                }
+
+                const fClean = extractText(fHtml);
+
+                // Redirect-wall fingerprint check (same logic as main loop)
+                const fUrlLower    = fPageUrl.toLowerCase();
+                const fIsExempt    = GOVERNANCE_EXEMPT_SLUGS.some(slug => fUrlLower.includes(slug));
+                const fFingerprint = fClean.slice(50, 200).toLowerCase().replace(/\s+/g, ' ');
+                const fIsWall      = !fIsExempt && fFingerprint.length > 0 && seenPageFingerprints.has(fFingerprint);
+                seenPageFingerprints.add(fFingerprint);
+
+                if (fIsWall) {
+                    console.log(`[scraper] Foundational skipped redirect/wall — ${fPageUrl}`);
+                    combinedText += `\n\n--- Content from ${fPageUrl} ---\n[page restricted — redirect wall]\n`;
+                    redirectWallCount++;
+                    continue;
+                }
+
+                const fCapped = fClean.length > MAX_PAGE_CHARS
+                    ? fClean.slice(0, MAX_PAGE_CHARS) + '... [page capped]'
+                    : fClean;
+
+                combinedText += `\n\n--- Content from ${fPageUrl} ---\n\n` + fCapped;
+                successfulPages.push(fPageUrl);
+                console.log(`[scraper] Foundational OK ${fPageUrl} (${fClean.length} chars)`);
+
+            } catch (fErr) {
+                if (fErr.code === 'ECONNABORTED' || fErr.code === 'ETIMEDOUT') {
+                    console.log(`[scraper] Foundational timeout (3s) — ${fPageUrl}`);
+                } else {
+                    console.log(`[scraper] Foundational fetch error (${fErr.code || fErr.message}) — ${fPageUrl}`);
+                }
+                combinedText += `\n\n--- Content from ${fPageUrl} ---\n[page restricted — timeout]\n`;
+            }
+        }
+        console.log(`[scraper] Foundational pass complete — ${successfulPages.length} total confirmed pages`);
+    } else {
+        console.log(`[scraper] Foundational pass skipped — budget=${_foundationalBudgetRemaining}ms pages=${successfulPages.length}/${CONFIRMED_PAGE_CAP} chars=${combinedText.length}/${MAX_CHARS}`);
     }
 
     // ----------------------------------------------------------------
