@@ -42,27 +42,95 @@ const RUBRIC_CRITERIA = [
 // ── Evidence item IDs per criterion ────────────────────────────────────────
 // Used in the prompt to tell GPT-4o which evidence IDs are checkable.
 // Mirrors the rubric evidence structure in bundle.js.
+//
+// Phase 2: _O (observable) items added to every criterion.
+// These are publicly verifiable governance signals — published frameworks,
+// named roles, external framework alignment, structured policy commitments.
+// GPT-4o checks these when public evidence directly supports them.
+//
+// Note: T3_G2 removed — it does not exist in the bundle.js rubric schema.
 const CRITERION_EVIDENCE_IDS = {
-    trust_user_confidence:                  ['T1_R1','T1_R2','T1_R3','T1_S1','T1_S2','T1_S3','T1_G1','T1_G2'],
-    trust_consistency_of_behavior:          ['T2_R1','T2_R2','T2_R3','T2_S1','T2_S2','T2_S3','T2_G1'],
-    trust_ethical_intent:                   ['T3_R1','T3_R2','T3_R3','T3_S1','T3_S2','T3_S3','T3_G1','T3_G2'],
-    trust_absence_of_manipulation:          ['T4_R1','T4_R2','T4_R3','T4_S1','T4_S2','T4_G1'],
-    accountability_ownership_of_outcomes:   ['A1_R1','A1_R2','A1_R3','A1_S1','A1_S2','A1_S3','A1_G1'],
-    accountability_corrective_action:       ['A2_R1','A2_R2','A2_R3','A2_S1','A2_S2','A2_G1'],
-    accountability_governance_and_oversight:['A3_R1','A3_R2','A3_R3','A3_S1','A3_S2','A3_S3','A3_G1'],
-    purpose_mission_clarity:                ['P1_R1','P1_R2','P1_R3','P1_S1','P1_S2','P1_G1','P1_G2'],
-    purpose_human_centered_intent:          ['P2_R1','P2_R2','P2_R3','P2_S1','P2_S2','P2_G1'],
-    purpose_alignment_words_actions:        ['P3_R1','P3_R2','P3_R3','P3_S1','P3_S2','P3_G1'],
-    safety_risk_mitigation:                 ['S1_R1','S1_R2','S1_R3','S1_S1','S1_S2','S1_S3','S1_G1'],
-    safety_user_protection_mechanisms:      ['S2_R1','S2_R2','S2_R3','S2_S1','S2_S2','S2_G1'],
-    safety_long_term_societal_safety:       ['S3_R1','S3_R2','S3_R3','S3_S1','S3_S2','S3_G1'],
-    transparency_explainability:            ['TR1_R1','TR1_R2','TR1_R3','TR1_S1','TR1_S2','TR1_G1'],
-    transparency_data_disclosure:           ['TR2_R1','TR2_R2','TR2_R3','TR2_S1','TR2_S2','TR2_S3','TR2_G1'],
-    transparency_communication_honesty:     ['TR3_R1','TR3_R2','TR3_R3','TR3_S1','TR3_S2','TR3_G1'],
-    impact_positive_human_outcomes:         ['I1_R1','I1_R2','I1_R3','I1_S1','I1_S2','I1_S3','I1_G1'],
-    impact_shared_human_benefit:            ['I2_R1','I2_R2','I2_R3','I2_S1','I2_S2','I2_G1'],
-    impact_measurability_of_impact:         ['I3_R1','I3_R2','I3_R3','I3_S1','I3_S2','I3_G1'],
-    impact_durability_of_impact:            ['I4_R1','I4_R2','I4_R3','I4_S1','I4_G1'],
+    trust_user_confidence: [
+        'T1_R1','T1_R2','T1_R3','T1_S1','T1_S2','T1_S3','T1_G1','T1_G2',
+        'T1_O1','T1_O2','T1_O3','T1_O4',
+    ],
+    trust_consistency_of_behavior: [
+        'T2_R1','T2_R2','T2_R3','T2_S1','T2_S2','T2_S3','T2_G1',
+        'T2_O1','T2_O2','T2_O3','T2_O4',
+    ],
+    trust_ethical_intent: [
+        // T3_G2 removed — not present in bundle.js rubric schema
+        'T3_R1','T3_R2','T3_R3','T3_S1','T3_S2','T3_S3','T3_G1',
+        'T3_O1','T3_O2','T3_O3','T3_O4','T3_O5',
+    ],
+    trust_absence_of_manipulation: [
+        'T4_R1','T4_R2','T4_R3','T4_S1','T4_S2','T4_G1',
+        'T4_O1','T4_O2','T4_O3','T4_O4',
+    ],
+    accountability_ownership_of_outcomes: [
+        'A1_R1','A1_R2','A1_R3','A1_S1','A1_S2','A1_S3','A1_G1',
+        'A1_O1','A1_O2','A1_O3','A1_O4',
+    ],
+    accountability_corrective_action: [
+        'A2_R1','A2_R2','A2_R3','A2_S1','A2_S2','A2_G1',
+        'A2_O1','A2_O2','A2_O3','A2_O4',
+    ],
+    accountability_governance_and_oversight: [
+        'A3_R1','A3_R2','A3_R3','A3_S1','A3_S2','A3_S3','A3_G1',
+        'A3_O1','A3_O2','A3_O3','A3_O4','A3_O5','A3_O6',
+    ],
+    purpose_mission_clarity: [
+        'P1_R1','P1_R2','P1_R3','P1_S1','P1_S2','P1_G1','P1_G2',
+        'P1_O1','P1_O2','P1_O3','P1_O4',
+    ],
+    purpose_human_centered_intent: [
+        'P2_R1','P2_R2','P2_R3','P2_S1','P2_S2','P2_G1',
+        'P2_O1','P2_O2','P2_O3','P2_O4',
+    ],
+    purpose_alignment_words_actions: [
+        'P3_R1','P3_R2','P3_R3','P3_S1','P3_S2','P3_G1',
+        'P3_O1','P3_O2','P3_O3','P3_O4',
+    ],
+    safety_risk_mitigation: [
+        'S1_R1','S1_R2','S1_R3','S1_S1','S1_S2','S1_S3','S1_G1',
+        'S1_O1','S1_O2','S1_O3','S1_O4','S1_O5',
+    ],
+    safety_user_protection_mechanisms: [
+        'S2_R1','S2_R2','S2_R3','S2_S1','S2_S2','S2_G1',
+        'S2_O1','S2_O2','S2_O3','S2_O4',
+    ],
+    safety_long_term_societal_safety: [
+        'S3_R1','S3_R2','S3_R3','S3_S1','S3_S2','S3_G1',
+        'S3_O1','S3_O2','S3_O3','S3_O4',
+    ],
+    transparency_explainability: [
+        'TR1_R1','TR1_R2','TR1_R3','TR1_S1','TR1_S2','TR1_G1',
+        'TR1_O1','TR1_O2','TR1_O3','TR1_O4',
+    ],
+    transparency_data_disclosure: [
+        'TR2_R1','TR2_R2','TR2_R3','TR2_S1','TR2_S2','TR2_S3','TR2_G1',
+        'TR2_O1','TR2_O2','TR2_O3','TR2_O4','TR2_O5',
+    ],
+    transparency_communication_honesty: [
+        'TR3_R1','TR3_R2','TR3_R3','TR3_S1','TR3_S2','TR3_G1',
+        'TR3_O1','TR3_O2','TR3_O3','TR3_O4',
+    ],
+    impact_positive_human_outcomes: [
+        'I1_R1','I1_R2','I1_R3','I1_S1','I1_S2','I1_S3','I1_G1',
+        'I1_O1','I1_O2','I1_O3','I1_O4',
+    ],
+    impact_shared_human_benefit: [
+        'I2_R1','I2_R2','I2_R3','I2_S1','I2_S2','I2_G1',
+        'I2_O1','I2_O2','I2_O3','I2_O4',
+    ],
+    impact_measurability_of_impact: [
+        'I3_R1','I3_R2','I3_R3','I3_S1','I3_S2','I3_G1',
+        'I3_O1','I3_O2','I3_O3','I3_O4',
+    ],
+    impact_durability_of_impact: [
+        'I4_R1','I4_R2','I4_R3','I4_S1','I4_G1',
+        'I4_O1','I4_O2','I4_O3','I4_O4',
+    ],
 };
 
 // ── Build system prompt ─────────────────────────────────────────────────────
@@ -89,6 +157,26 @@ CRITERIA TO EVALUATE:
 ${criteriaList}
 
 ${OPENAI_EXECUTION_INSTRUCTION}
+
+OBSERVABLE EVIDENCE ITEMS (suffix _O):
+Items ending in _O are publicly verifiable governance signals. They represent evidence
+that can be confirmed directly from publicly available text — published frameworks,
+named governance roles, stated external framework alignment, structured policy
+commitments, model cards, transparency reports, and specific governance disclosures.
+
+Rules for checking _O items:
+- CHECK an _O item when the text contains clear, specific public evidence supporting it.
+  Example: "T3_O2" (named responsible AI role) should be checked when the text names a
+  specific role such as "Chief AI Officer", "Responsible AI Lead", or "AI Ethics Council".
+- DO NOT check an _O item for vague aspirational language.
+  "We are committed to responsible AI" does NOT confirm any _O item.
+  "We have published AI principles covering fairness, interpretability, and privacy" DOES
+  confirm T3_O1 (published principles with named distinct commitments).
+- _O items do not require internal documentation to confirm. They are confirmed when
+  the public text directly and specifically supports the item label.
+- An _O item confirmed is meaningful evidence. It supports a level 2 or level 3 assignment
+  for the corresponding criterion. Do not assign level 1 to a criterion where one or more
+  _O items are confirmed.
 
 MATURITY-AWARE EVALUATION INSTRUCTION:
 When the governance text contains published methodology, evaluation architecture, accountability
