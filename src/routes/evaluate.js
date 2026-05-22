@@ -294,7 +294,6 @@ router.post('/', async (req, res) => {
                     }
                 );
                 console.log('[HAI] Report raw return type:', typeof r, '| keys:', r ? Object.keys(r).join(',') : 'null');
-
                 // Handle both possible return shapes:
                 // Shape A: { premiumReport: {...}, evaluationState: '...', calibration: {...} }
                 // Shape B: the premiumReport object directly (has 'snapshot', 'pillars', etc.)
@@ -315,6 +314,12 @@ router.post('/', async (req, res) => {
                 }
 
                 console.log(`[HAI] Report resolved: state=${evaluationState} hasReport=${!!premiumReport} reportKeys=${premiumReport ? Object.keys(premiumReport).join(',') : 'none'}`);
+                // Foundational governance observability — logs the new signal category
+                // for monitoring during Phase 5 testing. No functional effect.
+                if (premiumReport && premiumReport.signal_profile) {
+                    const _sp = premiumReport.signal_profile;
+                    console.log(`[HAI] Foundational governance: count=${_sp.foundational_governance||0} pages=${_sp.foundational_pages||0} domains=[${(_sp.foundational_domains||[]).join(',')}] maturity=${premiumReport.governance_maturity||'unknown'}`);
+                }
             } catch (e) {
                 console.error('[HAI] Premium report FAILED:', e.message);
                 console.error('[HAI] Report stack:', e.stack);
