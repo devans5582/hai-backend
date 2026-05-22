@@ -90,6 +90,27 @@ ${criteriaList}
 
 ${OPENAI_EXECUTION_INSTRUCTION}
 
+MATURITY-AWARE EVALUATION INSTRUCTION:
+When the governance text contains published methodology, evaluation architecture, accountability
+frameworks, scoring systems, or governance taxonomy language, do NOT assign level 1 to related
+criteria solely because enterprise-only artefacts are absent. Evaluate based on what IS present.
+
+Specifically:
+- Published scoring methodology or evaluation framework → supports level 2–3 on
+  accountability_governance_and_oversight, transparency_explainability, purpose_alignment_words_actions
+- Published accountability architecture or independent accountability positioning → supports
+  level 2–3 on accountability_ownership_of_outcomes, accountability_governance_and_oversight
+- Published human-alignment principles or framework → supports level 2–3 on
+  trust_ethical_intent, purpose_human_centered_intent
+- Published certification methodology → supports level 2–3 on
+  transparency_explainability, accountability_governance_and_oversight
+
+The absence of the following does NOT justify level 1 when foundational evidence is present:
+- SEC filings, proxy statements, board committee minutes
+- ISO certifications or formal third-party audit reports
+- Annual reports or investor governance disclosures
+These are enterprise-scale artefacts not expected from early-stage organisations.
+
 OUTPUT FORMAT:
 Return a single valid JSON object only. No prose, no markdown, no preamble.
 Each criterion must be a key in the object with this exact structure:

@@ -29,6 +29,16 @@ const GOVERNANCE_KEYWORDS = [
     'technology', 'innovation', 'digital',
     'accountability', 'oversight', 'board',
     'investor relations', 'newsroom', 'press',
+    // Foundational governance methodology vocabulary — enables semantic
+    // link discovery for governance-focused organisations that publish
+    // methodology, scoring frameworks, and accountability architecture
+    // on pages with non-standard URL slugs.
+    'scoring methodology', 'governance architecture', 'accountability architecture',
+    'certification methodology', 'human alignment', 'trust framework',
+    'evidence-based', 'governance framework', 'alignment scoring',
+    'governance taxonomy', 'responsible deployment', 'ethical infrastructure',
+    'evaluation framework', 'governance playbook', 'measurable standards',
+    'independent accountability', 'alignment framework',
 ];
 
 const FORCED_PATHS = [
@@ -65,6 +75,23 @@ const FORCED_PATHS = [
     // Placed after AI governance paths so they are truncated by the 15K OpenAI
     // trim rather than crowding out governance content.
     '/corporate-responsibility', '/responsibility', '/esg', '/sustainability',
+    // ── 3b. Foundational governance methodology paths ──────────────────────────
+    // Recognises governance-focused organisations that publish scoring frameworks,
+    // certification methodology, accountability architecture, and trust frameworks
+    // on paths that do not match standard enterprise governance slugs.
+    // Inserted here (after AI-specific paths, before generic /about) so content
+    // lands inside the 15K OpenAI window before low-value pages consume budget.
+    '/methodology',
+    '/scoring',
+    '/framework',
+    '/certification',
+    '/governance-framework',
+    '/trust-framework',
+    '/accountability-framework',
+    '/alignment',
+    '/responsible-deployment',
+    '/about/methodology',
+    '/about/governance',
     // ── 4. Generic pages — lowest priority ───────────────────────────────────
     // Useful for signal detection but should not consume governance content budget.
     '/about', '/about-us',
@@ -90,6 +117,12 @@ const AI_GOVERNANCE_TERMS = [
     'automated decision', 'governance', 'responsible', 'ethics',
     'accountability', 'oversight', 'compliance', 'risk management',
     'data ethics', 'fairness', 'transparency', 'human rights',
+    // Foundational governance methodology terms — ensures pages containing
+    // evaluation frameworks, scoring systems, and accountability architecture
+    // are not discarded by the low-value page filter.
+    'scoring methodology', 'certification methodology', 'governance architecture',
+    'human alignment', 'evidence-based scoring', 'trust framework',
+    'evaluation framework', 'alignment scoring', 'governance taxonomy',
 ];
 
 const BLOCK_KEYWORDS = [

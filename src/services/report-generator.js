@@ -89,6 +89,7 @@ The frontend will populate them from verified score calculations.
     "core_governance": "",
     "operational_evidence": "",
     "external_validation": "",
+    "foundational_governance": "",
     "summary": ""
   },
   "certification_statement": ""
@@ -143,6 +144,13 @@ EVIDENCE SUMMARY:
 - core_governance: one of: Strong | Emerging | Limited | None
 - operational_evidence: one of: Strong | Emerging | Limited | None
 - external_validation: one of: Strong | Limited | None
+- foundational_governance: one of: Strong | Emerging | Limited | None
+  - Strong: published governance methodology, evaluation architecture, or accountability
+    framework with measurable structure found across multiple pages with distinct concepts
+  - Emerging: some governance methodology language present but limited in scope, depth,
+    or page coverage (single page or single concept domain)
+  - Limited: governance intent visible but no structured methodology published
+  - None: no foundational governance evidence found
 - summary: 1 short sentence
 
 CERTIFICATION STATEMENT:
@@ -292,6 +300,64 @@ const LOW_TEXT_PATTERNS = [
     /legal[\s\-_]notice/i,
     /disclaimer/i,
     /copyright[\s\-_]notice/i,
+];
+
+// ---------------------------------------------------------------
+// FOUNDATIONAL GOVERNANCE TEXT PATTERNS
+//
+// Recognises published governance methodology, evaluation architecture,
+// and accountability structure — the kind of governance artefacts a
+// serious early-stage organisation produces before it has audit
+// infrastructure.
+//
+// Design rules:
+//  - Every pattern requires multi-word structural vocabulary.
+//    Single-word sentiment ("responsible", "accountable") does NOT match.
+//  - Generic marketing phrases ("we care about AI ethics", "human-centered
+//    values") do NOT match any pattern here.
+//  - Each pattern is annotated with a CONCEPT DOMAIN used by the
+//    multi-page independence + conceptual diversity check.
+//
+// Concept domains:
+//   METHODOLOGY    — evaluation systems, scoring, measurement structure
+//   ACCOUNTABILITY — structural accountability and oversight architecture
+//   FRAMEWORK      — published governance structures and taxonomies
+//   DEPLOYMENT     — operational governance intent for AI deployment
+//   ALIGNMENT      — human-alignment with operational structure
+//   CERTIFICATION  — certification logic and formal evaluation standards
+// ---------------------------------------------------------------
+const FOUNDATIONAL_GOVERNANCE_PATTERNS = [
+    // METHODOLOGY domain
+    { pattern: /scoring[\s\-_]methodology/i,                                                              domain: 'METHODOLOGY'    },
+    { pattern: /evidence[\s\-_]based[\s\-_]scoring/i,                                                    domain: 'METHODOLOGY'    },
+    { pattern: /alignment[\s\-_]scoring/i,                                                                domain: 'METHODOLOGY'    },
+    { pattern: /ai[\s\-_]measurement/i,                                                                   domain: 'METHODOLOGY'    },
+    { pattern: /evaluation[\s\-_](?:framework|architecture|methodology)/i,                                domain: 'METHODOLOGY'    },
+    // ACCOUNTABILITY domain
+    { pattern: /accountability[\s\-_]architecture/i,                                                      domain: 'ACCOUNTABILITY' },
+    { pattern: /independent[\s\-_]accountability/i,                                                       domain: 'ACCOUNTABILITY' },
+    { pattern: /governance[\s\-_]taxonomy/i,                                                              domain: 'ACCOUNTABILITY' },
+    // FRAMEWORK domain
+    { pattern: /governance[\s\-_](?:architecture|framework)/i,                                            domain: 'FRAMEWORK'      },
+    { pattern: /governance[\s\-_]playbook/i,                                                              domain: 'FRAMEWORK'      },
+    { pattern: /transparency[\s\-_]framework/i,                                                           domain: 'FRAMEWORK'      },
+    // DEPLOYMENT domain
+    { pattern: /responsible[\s\-_](?:ai[\s\-_])?deployment[\s\-_](?:methodology|framework|standards?)/i, domain: 'DEPLOYMENT'     },
+    { pattern: /ethical[\s\-_]infrastructure/i,                                                           domain: 'DEPLOYMENT'     },
+    // ALIGNMENT domain
+    { pattern: /human[\s\-_]alignment[\s\-_](?:principles?|framework|scoring|index)/i,                   domain: 'ALIGNMENT'      },
+    { pattern: /measurable[\s\-_]standards?/i,                                                            domain: 'ALIGNMENT'      },
+    // CERTIFICATION domain
+    { pattern: /certification[\s\-_]methodology/i,                                                        domain: 'CERTIFICATION'  },
+];
+
+// URL slugs that suggest foundational governance methodology pages.
+// Only counted when isBodyConfirmed returns true (same gate as all other signals).
+const FOUNDATIONAL_GOVERNANCE_URL_SLUGS = [
+    '/methodology', '/scoring', '/framework', '/certification',
+    '/governance-framework', '/accountability-framework',
+    '/trust-framework', '/alignment', '/hai-score',
+    '/about/methodology', '/about/governance', '/responsible-deployment',
 ];
 
 // ---------------------------------------------------------------
@@ -597,12 +663,145 @@ function detectGovernanceSignals(scrapedText) {
         }
     }
 
+    // ── Pass 3: Foundational governance pattern matching ─────────────────
+    //
+    // Foundational governance signals recognise published methodology,
+    // evaluation architecture, and accountability structure. They require
+    // multi-word structural phrases — generic sentiment vocabulary does
+    // not match.
+    //
+    // Gate rules (enforced below, after all matches are collected):
+    //
+    //   medium_signals contribution:
+    //     Requires BOTH page diversity (matches across >= 2 distinct URLs)
+    //     AND concept diversity (matches span >= 2 distinct concept domains).
+    //     Single dense pages, and two pages repeating the same concept, do
+    //     not qualify. Contributes at most +1 to medium_signals regardless
+    //     of match count.
+    //
+    //   high_signals contribution:
+    //     A foundational match on a page that also contains at least one
+    //     existing HIGH_TEXT_PATTERNS match on the same confirmed page.
+    //     Contributes at most +1 to high_signals.
+    //     Rationale: HIGH co-occurrence confirms the page is unambiguously
+    //     a governance methodology page, not a general about-page that
+    //     incidentally contains structural vocabulary.
+    //
+    // All matches run against bodyOnlyText (confirmed body content only).
+    // Deduplication: a phrase already captured by HIGH or MEDIUM patterns
+    // does not also count as foundational.
+
+    // Build a per-page HIGH-match index so the HIGH co-occurrence check
+    // can be done efficiently.
+    const highMatchedPages = new Set();
+    for (const m of matched) {
+        if (m.tier === 'high' && m.source === 'text' && m.pageUrl) {
+            highMatchedPages.add(m.pageUrl);
+        }
+    }
+    // Also index HIGH url-confirmed matches by their URL
+    for (const m of matched) {
+        if (m.tier === 'high' && m.source === 'url' && m.confirmed && m.phrase) {
+            // Reconstruct the page URL from the slug phrase embedded in the match
+            // We cannot recover the full URL here, so we use a broader check below.
+        }
+    }
+
+    // Walk bodyOnlyText section by section to track which page each match comes from.
+    // We rebuild a per-page map: pageUrl → { matches: [{phrase, domain}] }
+    const foundationalByPage = {};  // pageUrl → { phrases: Set, domains: Set }
+    const seenFoundational = new Set();
+
+    const sectionRe2 = /---\s*Content from\s+(https?:\/\/\S+?)\s*---/gi;
+    const sectionParts2 = scrapedText.split(/---\s*Content from\s+https?:\/\/\S+?\s*---/gi);
+    const sectionHeaders2 = [...scrapedText.matchAll(/---\s*Content from\s+(https?:\/\/\S+?)\s*---/gi)];
+
+    // Build confirmed-body page text map
+    const confirmedPageTexts = {};
+    sectionHeaders2.forEach((hdr, i) => {
+        const pageUrl2 = hdr[1];
+        const block2   = sectionParts2[i + 1] || '';
+        const blockTrimmed2 = block2.trim().toLowerCase();
+        const isStub2 = STUB_PREFIXES.some(pfx => blockTrimmed2.startsWith(pfx.toLowerCase()));
+        if (!isStub2) {
+            confirmedPageTexts[pageUrl2] = block2;
+        }
+    });
+
+    // Also check whether a page's content contains a HIGH text pattern
+    // (used for the HIGH co-occurrence check).
+    const pagesWithHighMatch = new Set();
+    for (const [pageUrl2, pageText2] of Object.entries(confirmedPageTexts)) {
+        for (const hp of HIGH_TEXT_PATTERNS) {
+            if (hp.test(pageText2)) {
+                pagesWithHighMatch.add(pageUrl2);
+                break;
+            }
+        }
+    }
+
+    // Now match foundational patterns against each confirmed page
+    let foundationalHighAdded = false;
+    for (const [pageUrl2, pageText2] of Object.entries(confirmedPageTexts)) {
+        for (const { pattern, domain } of FOUNDATIONAL_GOVERNANCE_PATTERNS) {
+            const hit2 = pageText2.match(pattern);
+            if (!hit2) continue;
+            const phrase2 = hit2[0].trim().toLowerCase();
+
+            // Deduplication: skip if already captured by HIGH or MEDIUM pattern
+            const alreadyHighOrMedium = matched.some(m =>
+                (m.tier === 'high' || m.tier === 'medium') && m.source === 'text' &&
+                phrase2.includes(m.phrase.replace(/[\s_]/g, ' '))
+            );
+            if (alreadyHighOrMedium) continue;
+            if (seenFoundational.has(phrase2)) continue;
+            seenFoundational.add(phrase2);
+
+            // Record match for this page
+            if (!foundationalByPage[pageUrl2]) {
+                foundationalByPage[pageUrl2] = { phrases: new Set(), domains: new Set() };
+            }
+            foundationalByPage[pageUrl2].phrases.add(phrase2);
+            foundationalByPage[pageUrl2].domains.add(domain);
+
+            matched.push({ tier: 'foundational', phrase: phrase2, source: 'text', domain, pageUrl: pageUrl2, confirmed: true });
+
+            // HIGH co-occurrence check: foundational match on a page that also has a HIGH match
+            if (!foundationalHighAdded && pagesWithHighMatch.has(pageUrl2)) {
+                high++;
+                confirmed_high++;
+                foundationalHighAdded = true;
+                console.log(`[report-generator] Foundational HIGH co-occurrence on ${pageUrl2}: "${phrase2}"`);
+            }
+        }
+    }
+
+    // Aggregate foundational stats
+    const foundational_governance = seenFoundational.size;
+    const allFoundationalDomains = new Set();
+    const allFoundationalPages   = new Set(Object.keys(foundationalByPage));
+    Object.values(foundationalByPage).forEach(p => p.domains.forEach(d => allFoundationalDomains.add(d)));
+
+    // Multi-page + concept diversity gate for medium_signals contribution.
+    // Requires: >= 2 distinct confirmed pages AND >= 2 distinct concept domains.
+    const meetsPageDiversity    = allFoundationalPages.size >= 2;
+    const meetsConceptDiversity = allFoundationalDomains.size >= 2;
+    if (meetsPageDiversity && meetsConceptDiversity) {
+        medium++;
+        console.log(`[report-generator] Foundational MEDIUM gate passed: pages=${allFoundationalPages.size} domains=[${[...allFoundationalDomains].join(',')}]`);
+    } else if (foundational_governance > 0) {
+        console.log(`[report-generator] Foundational gate NOT met: pages=${allFoundationalPages.size} domains=${allFoundationalDomains.size} — framing only, no medium_signals contribution`);
+    }
+
     return {
-        high_signals:       high,
-        medium_signals:     medium,  // includes enterprise contributions
-        low_signals:        low,
-        enterprise_signals: enterprise,
-        matched_phrases:    matched,
+        high_signals:           high,
+        medium_signals:         medium,  // includes enterprise contributions
+        low_signals:            low,
+        enterprise_signals:     enterprise,
+        foundational_governance,          // new counter — used for maturity-aware framing
+        foundational_pages:     allFoundationalPages.size,
+        foundational_domains:   [...allFoundationalDomains],
+        matched_phrases:        matched,
         // Signal quality split — used by classifySignalTier() only.
         // confirmed_high: URL slug + real body content retrieved.
         // surface_high:   URL slug only; body was stub/wall/blocked.
@@ -625,6 +824,50 @@ function determineEvaluationState(signals, isPartial) {
         return 'partial_evaluation';
     }
     return 'valid';
+}
+
+
+// ---------------------------------------------------------------
+// GOVERNANCE MATURITY CLASSIFICATION
+//
+// Maps stage + size inputs to a governance maturity label:
+//   emerging     — early-stage organisations building governance foundations
+//   scaling      — growth-stage organisations developing operational evidence
+//   institutional — mature organisations with full governance infrastructure expected
+//
+// Uses governance maturity terminology, not financial stage terminology.
+// When stage and size conflict, the more conservative (higher maturity)
+// classification wins — prevents large organisations claiming emerging status.
+// ---------------------------------------------------------------
+function classifyGovernanceMaturity(scrapeContext) {
+    const ctx   = scrapeContext || {};
+    const stage = (ctx.stage || '').toLowerCase().trim();
+    const size  = (ctx.size  || '').toLowerCase().trim();
+
+    // Stage → maturity mapping
+    let stageMaturity = 'scaling';  // default conservative middle
+    if (/startup|early.stage|seed|pre.seed/.test(stage))       stageMaturity = 'emerging';
+    else if (/growth|series.a|series.b|scale.?up/.test(stage)) stageMaturity = 'scaling';
+    else if (/enterprise|public|large|institutional/.test(stage)) stageMaturity = 'institutional';
+
+    // Size → maturity override (prevents large orgs claiming emerging status)
+    let sizeMaturity = null;
+    if (/^1.10$|^11.50$/.test(size))   sizeMaturity = 'emerging';
+    else if (/^51.200$/.test(size))     sizeMaturity = 'scaling';
+    else if (/200\+|1000\+/.test(size)) sizeMaturity = 'institutional';
+    // Also catch numeric ranges like "200+" written differently
+    const sizeNum = parseInt(size.replace(/[^0-9]/g, ''), 10);
+    if (!isNaN(sizeNum)) {
+        if (sizeNum >= 200 && sizeMaturity !== 'institutional') sizeMaturity = 'institutional';
+        else if (sizeNum >= 51 && sizeMaturity === 'emerging')  sizeMaturity = 'scaling';
+    }
+
+    // Conservative merge: take the higher maturity when they conflict
+    const MATURITY_ORDER = { emerging: 0, scaling: 1, institutional: 2 };
+    if (sizeMaturity && MATURITY_ORDER[sizeMaturity] > MATURITY_ORDER[stageMaturity]) {
+        return sizeMaturity;
+    }
+    return stageMaturity;
 }
 
 
@@ -856,6 +1099,7 @@ function getInterpretationFrame(signalProfile) {
     if (!signalProfile) return null;
     const h = signalProfile.high_signals || 0;
     const m = signalProfile.medium_signals || 0;
+    const fg = signalProfile.foundational_governance || 0;
     const total = h + m;
 
     if (h >= 3) {
@@ -882,6 +1126,17 @@ function getInterpretationFrame(signalProfile) {
             pillar_baseline:   'Foundational enterprise governance documentation is publicly available. AI-specific governance documentation would significantly strengthen this assessment.',
             forbidden_phrases: ['no governance', 'absence of governance', 'no evidence of any governance', 'governance signals', 'signals identified'],
             executive_frame:   'Enterprise governance documentation is publicly available. The assessment reflects the absence of explicit AI-specific documentation, not the absence of governance overall.',
+        };
+    }
+    // Foundational governance only — methodology and architecture present but no AI-specific signals
+    // This handles governance-focused emerging organisations whose methodology pages are
+    // detected by the foundational gate but whose content hasn't yet generated standard high signals.
+    if (fg >= 2 && total === 0) {
+        return {
+            evidence_language: 'Published governance methodology identified',
+            pillar_baseline:   'Governance methodology and accountability architecture documentation is publicly available. Publishing explicit AI-specific governance commitments would strengthen this assessment.',
+            forbidden_phrases: ['no governance', 'absence of governance', 'no evidence found', 'governance signals', 'signals identified'],
+            executive_frame:   'Published governance methodology and accountability architecture documentation was found. The assessment reflects the depth and operational coverage of publicly available governance documentation.',
         };
     }
     if (total >= 1) {
@@ -953,10 +1208,16 @@ function deriveRawScoreProxy(evaluationData) {
 // ---------------------------------------------------------------
 // buildUserPrompt
 // ---------------------------------------------------------------
-function buildUserPrompt(evaluationData, scrapedText, signalProfile, isPartial) {
+function buildUserPrompt(evaluationData, scrapedText, signalProfile, isPartial, scrapeContext) {
     const LEVEL_LABELS = { 1: 'Not Present', 2: 'Initial', 3: 'Developing', 4: 'Established', 5: 'Advanced' };
     let pillarSummaries = '';
     let totalItems = 0, pillarsWithEvidence = 0;
+
+    // Governance maturity classification — used for maturity-aware framing
+    const governanceMaturity = classifyGovernanceMaturity(scrapeContext || {});
+    const fg = (signalProfile && signalProfile.foundational_governance) || 0;
+    const fgPages   = (signalProfile && signalProfile.foundational_pages)   || 0;
+    const fgDomains = (signalProfile && signalProfile.foundational_domains) || [];
 
     // Pillars evidenced by URL signals — these must not be described as "no evidence"
     // even when rubric item counts are zero (blocked page bodies).
@@ -989,6 +1250,7 @@ function buildUserPrompt(evaluationData, scrapedText, signalProfile, isPartial) 
         ? `High-specificity governance evidence items: ${signalProfile.high_signals}
 Medium-specificity governance evidence items: ${signalProfile.medium_signals}
 Enterprise governance documentation items: ${signalProfile.enterprise_signals || 0}
+Foundational governance methodology items: ${fg} (across ${fgPages} pages, domains: ${fgDomains.join(', ') || 'none'})
 Low-specificity items: ${signalProfile.low_signals}
 Evidence quality description: ${frame ? frame.evidence_language : 'Limited publicly available governance documentation'}
 Pillars with available evidence: ${evidencedPillarList}
@@ -1005,6 +1267,36 @@ PARTIAL EVALUATION NOTE (MANDATORY):
 - Use language like: "Based on available signals, further documentation would strengthen this assessment."
 ` : '';
 
+    // Maturity-aware instruction block.
+    // Activates only for 'emerging' organisations with >= 2 foundational governance items.
+    // For all other maturity levels this block is empty — no framing change.
+    const maturityNote = (governanceMaturity === 'emerging' && fg >= 2) ? `
+GOVERNANCE MATURITY CONTEXT (MANDATORY — applies to this evaluation):
+- This organisation is at the EMERGING stage of governance maturity.
+- Enterprise-only artefacts listed below are NOT expected at this stage. Do NOT penalise
+  their absence or list them as immediate actions. They belong in long_term_strengthening only.
+  - SEC filings, proxy statements, investor governance filings
+  - Formal third-party audit reports and ISO certifications
+  - Board committee documentation and board oversight minutes
+  - Enterprise compliance reports and SOX documentation
+- Instead, evaluate the quality of: published governance methodology, accountability architecture,
+  measurable standards, scoring frameworks, and certification logic.
+- Foundational governance evidence items found: ${fg} (across ${fgPages} distinct pages, concept domains: ${fgDomains.join(', ')})
+- The confidence_explanation MUST include this sentence (verbatim or closely paraphrased, max 2 sentences):
+  "At this stage of organisational maturity, the evaluation emphasised published governance methodology
+  and accountability architecture rather than enterprise-scale audit infrastructure. Missing enterprise
+  artefacts such as formal audits, ISO certifications, and board committee documentation are not treated
+  as governance failures at this maturity level."
+- Do NOT repeat the maturity context in executive_summary or certification_statement — once only, in confidence_explanation.
+- Do NOT create a new section or heading for this context — embed it in confidence_explanation.
+- evidence_summary.foundational_governance must be "Emerging" or "Strong" given the evidence found.
+` : `
+GOVERNANCE MATURITY CONTEXT:
+- Governance maturity level for this organisation: ${governanceMaturity.toUpperCase()}
+- Foundational governance methodology items found: ${fg}
+${governanceMaturity === 'institutional' ? '- This is an institutional organisation. Enterprise-scale governance artefacts (audits, certifications, board oversight) are expected and their absence should be noted as gaps.' : ''}
+`;
+
     const interpretationSection = frame ? `
 INTERPRETATION FRAME (MANDATORY — follow exactly):
 - Evidence language to use: "${frame.evidence_language}"
@@ -1015,10 +1307,12 @@ INTERPRETATION FRAME (MANDATORY — follow exactly):
 - The executive_summary MUST describe what the evidence supports — NOT how many signals were found.
 - The evidence_summary.summary MUST use evidence-based language (e.g. "publicly available evidence supports...") — NOT "signals identified".
 - Do NOT use the word "signals" in executive_summary, confidence_explanation, or certification_statement.
+${maturityNote}
 ${partialNote}` : `
 INTERPRETATION FRAME:
 - Limited publicly available governance documentation was found. Use "Limited publicly available governance documentation" in evidence_summary.
 - Do not claim complete absence of governance — state that public documentation is limited.
+${maturityNote}
 ${partialNote}`;
 
     const textPreview = scrapedText
@@ -1088,7 +1382,7 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     const confirmedHighCount = typeof signals.confirmed_high === 'number' ? signals.confirmed_high : signals.high_signals;
     const isAccessLimited    = (confirmedHighCount === 0 && rawScoreProxyForClassification === 0);
 
-    console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} low:${signals.low_signals} confirmed_high:${signals.confirmed_high||0} surface_high(diagnostic_only):${signals.surface_high||0} state:${evalState} partial:${isPartial} access_limited:${isAccessLimited}`);
+    console.log(`[report-generator] Signals — high:${signals.high_signals} medium:${signals.medium_signals} enterprise:${signals.enterprise_signals||0} foundational:${signals.foundational_governance||0}(pages:${signals.foundational_pages||0} domains:${(signals.foundational_domains||[]).join(',')}) low:${signals.low_signals} confirmed_high:${signals.confirmed_high||0} surface_high(diagnostic_only):${signals.surface_high||0} state:${evalState} partial:${isPartial} access_limited:${isAccessLimited}`);
 
     // Step 2: Insufficient evidence gate — only fires when no signals at all,
     // even after fallback URL stubs are included in scrapedText.
@@ -1112,7 +1406,7 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     console.log(`[report-generator] Tier:${tier} rawProxy:${rawScoreProxy} upliftMidpoint:${upliftMidpoint} partial:${isPartial}`);
 
     // Step 4: Generate narrative report
-    const userPrompt = buildUserPrompt(evaluationData, scrapedText, signals, isPartial);
+    const userPrompt = buildUserPrompt(evaluationData, scrapedText, signals, isPartial, ctx);
 
     let response;
     try {
@@ -1169,14 +1463,18 @@ async function generatePremiumReport(evaluationData, scrapedText, scrapeContext)
     report.benchmark_eligible = !isAccessLimited;
 
     report.signal_profile   = {
-        high_signals:   signals.high_signals,
-        medium_signals: signals.medium_signals,
-        low_signals:    signals.low_signals,
+        high_signals:           signals.high_signals,
+        medium_signals:         signals.medium_signals,
+        low_signals:            signals.low_signals,
+        foundational_governance: signals.foundational_governance || 0,
+        foundational_pages:      signals.foundational_pages      || 0,
+        foundational_domains:    signals.foundational_domains    || [],
         tier,
-        confirmed_high: signals.confirmed_high || 0,
-        surface_high:   signals.surface_high   || 0,
-        matched_phrases: signals.matched_phrases.slice(0, 10)
+        confirmed_high:          signals.confirmed_high || 0,
+        surface_high:            signals.surface_high   || 0,
+        matched_phrases:         signals.matched_phrases.slice(0, 10)
     };
+    report.governance_maturity = classifyGovernanceMaturity(ctx);
     report.calibration = {
         tier,
         uplift_midpoint:        upliftMidpoint,
