@@ -132,6 +132,7 @@ const FOUNDATIONAL_PATHS = [
 // still scraped, but they only count toward real content if they contain
 // at least one AI_GOVERNANCE_TERM (below).
 const LOW_VALUE_PATH_PATTERNS = [
+    '/privacy', '/terms', '/cookie-policy', '/legal',
     '/fraud', '/scam', '/phishing', '/security-alert',
     '/opt-out', '/cookie', '/sitemap', '/careers',
     '/investor', '/press-release', '/news/',
