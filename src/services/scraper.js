@@ -80,7 +80,7 @@ const FORCED_PATHS = [
     '/about', '/about-us',
     '/ai', '/artificial-intelligence', '/technology',
     '/investor-relations', '/newsroom', '/public-policy',
-    '/privacy', '/terms',
+
 ];
 
 // ── Foundational governance methodology paths ────────────────────────────────
@@ -132,10 +132,18 @@ const FOUNDATIONAL_PATHS = [
 // still scraped, but they only count toward real content if they contain
 // at least one AI_GOVERNANCE_TERM (below).
 const LOW_VALUE_PATH_PATTERNS = [
-    '/privacy', '/terms', '/cookie-policy', '/legal',
+    '/privacy', '/terms',
+ '/cookie-policy', '/legal',
     '/fraud', '/scam', '/phishing', '/security-alert',
     '/opt-out', '/cookie', '/sitemap', '/careers',
     '/investor', '/press-release', '/news/',
+];
+
+// Paths that are NEVER governance content — hard-skipped regardless of page text.
+// These consume char budget without contributing scoreable evidence.
+const HARD_SKIP_PATHS = [
+    '/privacy', '/terms', '/cookie-policy', '/legal', '/cookie',
+    '/sitemap', '/careers', '/investor-relations', '/press-release',
 ];
 
 // At least one of these terms must appear in a low-value page's clean text
@@ -559,6 +567,18 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
             // governance content. Accept them only if they mention at least one
             // AI governance term — otherwise add as a URL stub only so the slug
             // contributes to signal detection without polluting OpenAI's context.
+            // Hard skip — these paths are never governance content
+            const isHardSkip = HARD_SKIP_PATHS.some(p => pageUrlLowerForWall.includes(p));
+            if (isHardSkip) {
+                console.log(`[scraper] Hard-skipped non-governance path — ${pageUrl}`);
+                combinedText += `
+
+--- Content from ${pageUrl} ---
+[page skipped — non-governance path]
+`;
+                continue;
+            }
+
             const isLowValuePath = LOW_VALUE_PATH_PATTERNS.some(p => pageUrlLowerForWall.includes(p));
             if (isLowValuePath) {
                 const cleanLower = cleanText.toLowerCase();
