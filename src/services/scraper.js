@@ -70,7 +70,7 @@ const FORCED_PATHS = [
     '/impact',
     '/topics/ai-ethics',
     // ── 2. Risk / compliance / governance pages ───────────────────────────────
-    '/risk', '/compliance', '/regulatory', '/governance',
+    '/risk', '/compliance', '/regulatory',
     // ── 3. Broad corporate responsibility pages ───────────────────────────────
     // Placed after AI governance paths so they are truncated by the 15K OpenAI
     // trim rather than crowding out governance content.
@@ -124,6 +124,7 @@ const FOUNDATIONAL_PATHS = [
     '/responsible-deployment',
     '/about/methodology',
     '/about/governance',
+    '/governance',
 ];
 
 // Pages whose URL paths strongly suggest non-governance content.
