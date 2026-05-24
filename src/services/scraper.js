@@ -189,14 +189,10 @@ const MAX_CHARS             = 30000;
 // combinedText before the global MAX_CHARS truncation.  Without this, one
 // large page (e.g. a 39,313-char privacy policy) can consume the entire
 // window, causing high-value governance pages fetched later to be truncated
-// out entirely.  Reduced from 5,000 to 3,000 so that FORCED_PATHS pages
-// (/ai, homepage, etc.) each consume less of the 14,000-char OpenAI window,
-// leaving more budget available for FOUNDATIONAL_PATHS pages (e.g.
-// /rating-scoring/) which arrive later in the foundational pass.
-// At 3,000 chars per page: /ai (3,000) + homepage (3,000) = 6,000 chars used
-// before /rating-scoring/ arrives, leaving ~8,000 chars for methodology content.
-// Previously at 5,000: /ai (4,327) + homepage (3,810) = 8,137 chars used first.
-const MAX_PAGE_CHARS        = 3000;
+// out entirely.  5,000 chars preserves substantive governance content from
+// AI ethics, trust, and responsibility pages while preventing runaway budget
+// consumption from boilerplate-heavy pages like privacy policies and terms.
+const MAX_PAGE_CHARS        = 4000;
 const LIMITED_ACCESS_THRESHOLD = 1000;
 
 // Minimum real (non-stub) text required for a valid evaluation.
