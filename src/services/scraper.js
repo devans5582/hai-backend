@@ -42,6 +42,16 @@ const GOVERNANCE_KEYWORDS = [
 ];
 
 const FORCED_PATHS = [
+    // ── 0. Foundational methodology paths — highest priority ─────────────────
+    // /rating-scoring and /rating-scoring/ are the primary governance content
+    // pages for governance-focused organisations (e.g. Humaital). Placing them
+    // first ensures their content leads combinedText and arrives before the
+    // 14,000-char OpenAI window is consumed by other pages.
+    // These 404 silently on enterprise sites (Microsoft, Google) so there is
+    // no cost to listing them first — they simply skip and the main AI
+    // governance paths follow immediately after.
+    '/rating-scoring/',
+    '/rating-scoring',
     // ── High-specificity AI governance paths — fetched first to ensure
     //    they land inside the MAX_CHARS window before lower-value pages
     //    (e.g. /privacy at 39K chars) consume the budget.
