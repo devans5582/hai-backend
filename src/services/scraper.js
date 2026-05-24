@@ -769,8 +769,6 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
     const partialScrape = _budgetReached || limitedAccess || contentEmpty;
 
     // ── DIAGNOSTIC LOGGING — remove after calibration stabilises ─────────────
-    // Logs the exact reason(s) each company receives partial_evaluation state
-    // so the Railway log can be used to populate the diagnostic comparison table.
     const _partialReasons = [];
     if (_budgetReached)   _partialReasons.push('budget_reached');
     if (_pageCapReached)  _partialReasons.push('page_cap_reached(NOT_partial)');
