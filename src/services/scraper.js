@@ -42,16 +42,6 @@ const GOVERNANCE_KEYWORDS = [
 ];
 
 const FORCED_PATHS = [
-    // ── 0. Foundational methodology paths — highest priority ─────────────────
-    // /rating-scoring and /rating-scoring/ are the primary governance content
-    // pages for governance-focused organisations (e.g. Humaital). Placing them
-    // first ensures their content leads combinedText and arrives before the
-    // 14,000-char OpenAI window is consumed by other pages.
-    // These 404 silently on enterprise sites (Microsoft, Google) so there is
-    // no cost to listing them first — they simply skip and the main AI
-    // governance paths follow immediately after.
-    '/rating-scoring/',
-    '/rating-scoring',
     // ── High-specificity AI governance paths — fetched first to ensure
     //    they land inside the MAX_CHARS window before lower-value pages
     //    (e.g. /privacy at 39K chars) consume the budget.
@@ -199,10 +189,14 @@ const MAX_CHARS             = 30000;
 // combinedText before the global MAX_CHARS truncation.  Without this, one
 // large page (e.g. a 39,313-char privacy policy) can consume the entire
 // window, causing high-value governance pages fetched later to be truncated
-// out entirely.  5,000 chars preserves substantive governance content from
-// AI ethics, trust, and responsibility pages while preventing runaway budget
-// consumption from boilerplate-heavy pages like privacy policies and terms.
-const MAX_PAGE_CHARS        = 5000;
+// out entirely.  Reduced from 5,000 to 3,000 so that FORCED_PATHS pages
+// (/ai, homepage, etc.) each consume less of the 14,000-char OpenAI window,
+// leaving more budget available for FOUNDATIONAL_PATHS pages (e.g.
+// /rating-scoring/) which arrive later in the foundational pass.
+// At 3,000 chars per page: /ai (3,000) + homepage (3,000) = 6,000 chars used
+// before /rating-scoring/ arrives, leaving ~8,000 chars for methodology content.
+// Previously at 5,000: /ai (4,327) + homepage (3,810) = 8,137 chars used first.
+const MAX_PAGE_CHARS        = 3000;
 const LIMITED_ACCESS_THRESHOLD = 1000;
 
 // Minimum real (non-stub) text required for a valid evaluation.
