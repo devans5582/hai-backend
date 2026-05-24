@@ -759,10 +759,34 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
 
     console.log(`[scraper] Complete — ${successfulPages.length}/${uniquePages.length} pages OK, ${combinedText.length} total chars, ${realContentChars} real chars, ${redirectWallCount} redirect walls`);
 
-    // partial_scrape is true when the budget or page cap cut the loop short,
-    // or when content was too limited to assess fully.
-    const partialScrape = _budgetReached || _pageCapReached ||
-                          limitedAccess  || contentEmpty;
+    // ── Fix 1: page cap no longer marks evaluation as partial ────────────────
+    // _pageCapReached means the scraper found CONFIRMED_PAGE_CAP high-quality
+    // pages — that is a successful full scrape, not an incomplete one.
+    // Marking it partial triggered the 69% confPercent ceiling in bundle.js,
+    // collapsing scores for evidence-rich companies (e.g. Microsoft) to 65.
+    // _budgetReached, limitedAccess, and contentEmpty still trigger partial
+    // because those represent genuinely incomplete or low-quality evidence.
+    const partialScrape = _budgetReached || limitedAccess || contentEmpty;
+
+    // ── DIAGNOSTIC LOGGING — remove after calibration stabilises ─────────────
+    // Logs the exact reason(s) each company receives partial_evaluation state
+    // so the Railway log can be used to populate the diagnostic comparison table.
+    const _partialReasons = [];
+    if (_budgetReached)   _partialReasons.push('budget_reached');
+    if (_pageCapReached)  _partialReasons.push('page_cap_reached(NOT_partial)');
+    if (limitedAccess)    _partialReasons.push('limited_access');
+    if (contentEmpty)     _partialReasons.push('content_empty');
+    console.log(
+        `[scraper:diag] partial_scrape=${partialScrape}` +
+        ` | budgetReached=${_budgetReached}` +
+        ` | pageCapReached=${_pageCapReached}` +
+        ` | limitedAccess=${limitedAccess}` +
+        ` | contentEmpty=${contentEmpty}` +
+        ` | realContentChars=${realContentChars}` +
+        ` | confirmedPages=${successfulPages.length}` +
+        ` | reasons=[${_partialReasons.join(',') || 'none'}]`
+    );
+    // ── END DIAGNOSTIC LOGGING ────────────────────────────────────────────────
 
     return {
         scraper_blocked:    false,
