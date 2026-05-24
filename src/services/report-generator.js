@@ -116,19 +116,37 @@ PILLARS:
 - Exactly 6 pillars in this order: Trust, Accountability, Purpose, Safety, Transparency, Impact
 - Each must include:
   - status_label: one of: Strong | Progressing | Developing | Needs Attention
-  - what_we_found: 1\u20132 short sentences based on the criterion levels and evidence provided
+  - what_we_found: 1\u20132 short sentences — MUST describe what was specifically found, not a generic template
   - why_it_matters: 1 sentence
   - next_step: 1 sentence starting with an action verb
+
+OBSERVABLE EVIDENCE DESCRIPTION STANDARD (MANDATORY):
+- what_we_found fields MUST describe what was actually found in the evidence, not restate a gap.
+- NEVER use these generic templates in what_we_found:
+  "Governance intent is established in publicly accessible policy materials..."
+  "Partial governance documentation was identified in accessible sources..."
+  "Published materials confirm that governance intent exists for this criterion..."
+  "Policy-level documentation addressing this criterion was identified..."
+- INSTEAD describe the specific evidence type found. Examples:
+  BAD: "Governance intent is established in publicly accessible policy materials on the company's website."
+  GOOD: "A published scoring methodology covering six governance pillars was identified on the company's website."
+  BAD: "Partial governance documentation was identified in accessible sources."
+  GOOD: "The company's published rating framework addresses accountability structures but does not document a corrective action process."
+- For improvement areas: what_we_found must name the specific gap, not describe the absence of a template.
+  BAD: "No AI-specific risk assessment, safety framework, or harm mitigation documentation was identified."
+  GOOD: "The published governance framework defines safety as a scored pillar but does not include a published risk assessment or harm mitigation process."
 
 STRENGTHS:
 - 2\u20133 items minimum
 - Must be grounded in the evidence data provided
+- Must name the specific evidence that constitutes the strength — not generic praise
 
 IMPROVEMENT AREAS:
 - 3\u20135 items
 - Each must include what_we_found, why_it_matters, what_to_do_next
 - what_to_do_next must start with an action verb
 - No sentence over 20 words
+- what_we_found must describe the specific gap, not use generic absence language
 
 ACTION PLAN:
 - immediate_actions: 0\u201330 days
@@ -139,6 +157,22 @@ ACTION PLAN:
 CONFIDENCE EXPLANATION:
 - 3\u20134 sentences
 - Must explain that confidence reflects evidence visibility, not internal practice quality
+- Use these calibration templates based on evidence depth:
+  FOUNDATIONAL ONLY (methodology/framework found, no operational execution evidence):
+    "Evidence confidence reflects the visibility of publicly available governance documentation.
+    Published governance methodology and framework documentation was found, supporting foundational
+    practices. Confidence is moderate because execution evidence — monitoring records, enforcement
+    logs, and operational proof — was not identified in public sources. This does not mean those
+    practices are absent internally; it means they have not yet been made publicly verifiable."
+  POLICY LEVEL (policy documents found, no execution or validation):
+    "Evidence confidence reflects how much publicly available documentation was found and verified.
+    Policy-level governance documentation was identified, but no operational execution evidence or
+    external validation was confirmed. Higher confidence requires published processes, monitoring
+    records, or independent audits — not just stated commitments."
+  STRONG (policy + execution + validation found):
+    "Evidence confidence reflects the depth and breadth of publicly verifiable governance documentation.
+    Policy commitments, operational processes, and external validation evidence were all identified.
+    This level of confidence reflects comprehensive public documentation, not just stated intent."
 
 EVIDENCE SUMMARY:
 - core_governance: one of: Strong | Emerging | Limited | None
@@ -156,7 +190,19 @@ EVIDENCE SUMMARY:
 CERTIFICATION STATEMENT:
 - 2\u20133 sentences
 - Neutral and professional
-- Must reflect readiness direction and encourage improvement
+- MUST use two-tier credibility language based on evidence depth:
+  FOUNDATIONAL ONLY: "This assessment identified published governance methodology and framework
+    documentation. Certification requires evidence that governance commitments are being executed
+    and monitored — not just defined. Publishing operational evidence and inviting independent
+    validation are the clearest paths to certification readiness."
+  POLICY LEVEL: "Publicly available governance documentation establishes intent across key pillars.
+    Certification requires a minimum verified score of 70 with documented evidence of governance
+    in practice — not just policy statements. Strengthening public documentation of processes,
+    outcomes, and accountability structures will advance certification readiness."
+  CERTIFIED: "This organisation has demonstrated publicly verifiable governance practices across
+    the HAI pillars at the level required for certification. Maintaining and strengthening this
+    documentation — and seeking independent validation — will sustain certification standing."
+- Do NOT use: "encouraging progress", "continued improvement is encouraged", or other generic filler
 
 -------------------------------------
 WRITING STYLE RULES
@@ -202,7 +248,11 @@ Before returning:
 - Ensure language is simple and clear
 - Ensure narrative language reflects evidence quality, not signal counts
 - Ensure pillars marked [SIGNAL PRESENT] have status_label of "Developing" or better
-- Ensure executive_summary, confidence_explanation, and certification_statement do NOT use the word "signals"`;
+- Ensure executive_summary, confidence_explanation, and certification_statement do NOT use the word "signals"
+- Ensure NO what_we_found field uses the generic boilerplate templates listed in OBSERVABLE EVIDENCE DESCRIPTION STANDARD
+- Ensure confidence_explanation uses the calibration template appropriate to the evidence depth
+- Ensure certification_statement uses the two-tier credibility language appropriate to evidence depth
+- Ensure strengths name specific evidence — not generic praise like "commitment to responsible AI"`;
 
 
 // ---------------------------------------------------------------
