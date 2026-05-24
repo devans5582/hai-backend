@@ -192,6 +192,16 @@ Specifically:
   trust_ethical_intent, purpose_human_centered_intent
 - Published certification methodology → supports level 2–3 on
   transparency_explainability, accountability_governance_and_oversight
+- A published multi-pillar governance scoring system that includes Safety, Transparency, and
+  Impact as explicit evaluated pillars → supports level 2 on safety_risk_mitigation,
+  safety_user_protection_mechanisms, safety_long_term_societal_safety,
+  transparency_explainability, transparency_data_disclosure, transparency_communication_honesty,
+  impact_positive_human_outcomes, impact_shared_human_benefit, impact_measurability_of_impact,
+  impact_durability_of_impact, trust_user_confidence, trust_consistency_of_behavior,
+  trust_absence_of_manipulation, accountability_corrective_action
+  Rationale: a company that publicly evaluates others on these criteria, and publishes the
+  methodology by which they are scored, has made a documented policy-level commitment to those
+  same standards. This is equivalent to a published AI principles page for each pillar covered.
 
 The absence of the following does NOT justify level 1 when foundational evidence is present:
 - SEC filings, proxy statements, board committee minutes
