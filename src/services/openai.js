@@ -198,10 +198,14 @@ Specifically:
   transparency_explainability, transparency_data_disclosure, transparency_communication_honesty,
   impact_positive_human_outcomes, impact_shared_human_benefit, impact_measurability_of_impact,
   impact_durability_of_impact, trust_user_confidence, trust_consistency_of_behavior,
-  trust_absence_of_manipulation, accountability_corrective_action
+  trust_absence_of_manipulation, accountability_corrective_action,
+  accountability_ownership_of_outcomes
   Rationale: a company that publicly evaluates others on these criteria, and publishes the
   methodology by which they are scored, has made a documented policy-level commitment to those
   same standards. This is equivalent to a published AI principles page for each pillar covered.
+  Specifically: a published scoring rubric that evaluates data transparency in others confirms
+  transparency_data_disclosure at level 2; a published rubric that scores corrective action and
+  accountability confirms accountability_corrective_action at level 2.
 
 The absence of the following does NOT justify level 1 when foundational evidence is present:
 - SEC filings, proxy statements, board committee minutes
