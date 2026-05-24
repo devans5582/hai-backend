@@ -660,7 +660,24 @@ async function scrapeCompanyPages(targetUrl, options = {}) {
             if (combinedText.length >= MAX_CHARS) break;
 
             const fPageUrl = baseOrigin + fPath;
-            if (uniquePages.includes(fPageUrl)) continue; // already attempted in main loop
+
+            // ── Trailing-slash dedup ──────────────────────────────────────────
+            // uniquePages and successfulPages may contain the same resource with
+            // a different trailing-slash form (e.g. /rating-scoring/ vs /rating-scoring).
+            // A simple includes() check misses these variants and causes the page
+            // to be fetched and added to combinedText a second time — wasting up
+            // to 4000 chars of the 14,000-char OpenAI window on duplicate content.
+            //
+            // Fix: strip trailing slash from both sides before comparing.
+            // Both attempted (uniquePages) and confirmed (successfulPages) are checked
+            // so the guard catches pages that were fetched but produced no content too.
+            const fPageUrlNorm = fPageUrl.replace(/\/$/, '');
+            const alreadyAttempted = uniquePages.some(u => u.replace(/\/$/, '') === fPageUrlNorm);
+            const alreadyConfirmed = successfulPages.some(u => u.replace(/\/$/, '') === fPageUrlNorm);
+            if (alreadyAttempted || alreadyConfirmed) {
+                console.log(`[scraper] Foundational skipped duplicate (slash-normalised) — ${fPageUrl}`);
+                continue;
+            }
 
             attemptedPaths.push(fPageUrl);
             try {
