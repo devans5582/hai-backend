@@ -177,6 +177,7 @@ router.post('/', async (req, res) => {
         // ── Step 1: Scrape ─────────────────────────────────────────────────
         let combined_text = '', scraped_pages = [], attempted_paths = [], scrape_status = 'blocked';
         let limited_access = false, partial_scrape = false, content_empty = false;
+        let redirect_walls = 0, real_content_chars = 0;
         let scrapeResult = null;
 
         if (doScrape) {
@@ -191,8 +192,8 @@ router.post('/', async (req, res) => {
                 limited_access = r.limited_access || false;
                 partial_scrape = r.partial_scrape || false;
                 content_empty  = r.content_empty  || false;
-                const redirect_walls     = r.redirect_wall_count  || 0;
-                const real_content_chars = r.real_content_chars   || 0;
+                redirect_walls     = r.redirect_wall_count  || 0;
+                real_content_chars = r.real_content_chars   || 0;
                 // Treat as limited_access when 3+ governance paths returned redirect walls.
                 // This ensures supplementary evidence triggers to fill the coverage gap.
                 // The partial_evaluation dampening this causes is now handled separately
