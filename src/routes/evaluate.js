@@ -191,7 +191,8 @@ router.post('/', async (req, res) => {
                 limited_access = r.limited_access || false;
                 partial_scrape = r.partial_scrape || false;
                 content_empty  = r.content_empty  || false;
-                const redirect_walls = r.redirect_wall_count || 0;
+                const redirect_walls     = r.redirect_wall_count  || 0;
+                const real_content_chars = r.real_content_chars   || 0;
                 // Treat as limited_access when 3+ governance paths returned redirect walls.
                 // This ensures supplementary evidence triggers to fill the coverage gap.
                 // The partial_evaluation dampening this causes is now handled separately
@@ -353,6 +354,9 @@ router.post('/', async (req, res) => {
                 analysis_id: analysisId,
                 evaluation:  evaluation || {},
                 scraped_pages, attempted_paths, limited_access, partial_scrape,
+                redirect_wall_count: redirect_walls,
+                real_content_chars,
+                content_empty,
                 scraper_blocked:  scrape_status === 'blocked',
                 scrape_status,
                 premiumReport, evaluation_state: evaluationState, calibration,
