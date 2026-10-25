@@ -1,0 +1,192 @@
+# Evidence sources. A new source is a row here plus a connector class; it is not
+# an ontology change. `publisher_type` is the default publisher type for documents
+# the connector returns (the pipeline may refine it from the URL). Paths and
+# keywords marked Phase 6 are carried from legacy/express-api/src/services/*.
+version: 1
+
+defaults:
+  timeout_seconds: 15
+  max_retries: 2
+  min_interval_seconds: 0.5
+  respect_robots: true
+  max_document_bytes: 3000000
+
+connectors:
+  - code: WEBSITE
+    name: Organization website
+    enabled: true
+    publisher_type: org_disclosure
+    access_terms: Public pages of the organization's own website; robots.txt is honoured.
+    limits: { pages: 25, time_seconds: 60 }
+    max_discovered_links: 10
+    # Phase 6 FORCED_PATHS (scraper.js:44-84), minus Humaital-specific slugs
+    seed_paths:
+      - /responsible-ai
+      - /ai-governance
+      - /ai-policy
+      - /ai-principles
+      - /ai-ethics
+      - /ethics
+      - /trust
+      - /trust-center
+      - /transparency
+      - /en/responsible-ai
+      - /en/ai-governance
+      - /en-us/ai/responsible-ai
+      - /en-us/ai/principles-and-approach
+      - /en-us/trust-center
+      - /en-us/about/responsible-ai
+      - /en-us/corporate-responsibility
+      - /risk
+      - /compliance
+      - /regulatory
+      - /corporate-responsibility
+      - /responsibility
+      - /esg
+      - /sustainability
+      - /about
+      - /about-us
+      - /ai
+      - /artificial-intelligence
+      - /technology
+      - /newsroom
+      - /public-policy
+      - /impact
+      - /governance
+    # Phase 6 GOVERNANCE_KEYWORDS (scraper.js:15-31), matched as whole words in link text or href
+    link_keywords:
+      - privacy
+      - trust
+      - security
+      - governance
+      - compliance
+      - transparency
+      - ethic*
+      - principle*
+      - legal
+      - policy
+      - terms of use
+      - terms of service
+      - responsible
+      - responsibility
+      - corporate responsibility
+      - artificial intelligence
+      - ai policy
+      - ai governance
+      - machine learning
+      - algorithm*
+      - automated
+      - risk
+      - risk management
+      - esg
+      - sustainability
+      - annual report
+      - public policy
+      - regulatory
+      - about us
+      - our values
+      - mission
+      - purpose
+      - human rights
+      - data ethics
+      - fairness
+      - accountability
+      - oversight
+      - board
+      - investor relations
+      - newsroom
+    # Phase 6 HARD_SKIP_PATHS (scraper.js:144-147)
+    skip_paths: [/privacy, /terms, /cookie-policy, /legal, /cookie, /sitemap, /careers, /press-release]
+    # Phase 6 BLOCK_KEYWORDS and status codes (scraper.js:179-185)
+    block_markers:
+      - Just a moment...
+      - Cloudflare
+      - Access Denied
+      - Security challenge
+      - Please enable JS
+      - enable JavaScript
+      - Not Acceptable
+      - Attention Required!
+      - Pardon Our Interruption
+    block_status_codes: [403, 406, 451]
+    min_text_chars: 300
+
+  - code: DIRECT_URL
+    name: Requester-supplied governance pages
+    enabled: true
+    publisher_type: org_disclosure
+    access_terms: URLs supplied with the assessment request; fetched once each.
+    limits: { pages: 10, time_seconds: 30 }
+
+  - code: EDGAR
+    name: SEC EDGAR full-text search
+    enabled: true
+    publisher_type: regulator_record
+    access_terms: SEC fair-access policy; identify with a User-Agent that names the operator.
+    search_url: https://efts.sec.gov/LATEST/search-index
+    archive_url: https://www.sec.gov/Archives/edgar/data
+    forms: ["10-K", "DEF 14A", "8-K", "20-F"]
+    query_terms: artificial intelligence governance responsible
+    max_filings: 3
+    limits: { pages: 6, time_seconds: 40 }
+
+  - code: NEWS
+    name: Google News RSS
+    enabled: true
+    publisher_type: press
+    access_terms: Public RSS; article pages fetched with robots.txt honoured.
+    rss_url: https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en
+    queries: ['"{name}" AI governance', '"{name}" AI lawsuit OR investigation OR fine']
+    max_items: 8
+    fetch_articles: true
+    limits: { pages: 12, time_seconds: 60 }
+
+  - code: GITHUB
+    name: GitHub organization repositories
+    enabled: true
+    publisher_type: org_repository
+    access_terms: GitHub REST API; unauthenticated rate limit unless HAI_GITHUB_TOKEN is set.
+    api_url: https://api.github.com
+    requires_verified_handle: true
+    repo_terms: [responsible-ai, ai-ethics, ai-governance, model-card, fairness, safety, transparency]
+    max_repos: 3
+    limits: { pages: 6, time_seconds: 30 }
+
+  - code: ACADEMIC
+    name: Semantic Scholar
+    enabled: true
+    publisher_type: academic_research
+    access_terms: Semantic Scholar Graph API; optional HAI_SEMANTIC_SCHOLAR_API_KEY.
+    api_url: https://api.semanticscholar.org/graph/v1/paper/search
+    query: "{name} responsible AI governance"
+    fields: title,year,authors,authors.affiliations,abstract,venue,externalIds,url,publicationDate
+    max_papers: 3
+    limits: { pages: 4, time_seconds: 30 }
+
+  - code: WAYBACK
+    name: Internet Archive Wayback Machine
+    enabled: true
+    publisher_type: archive
+    access_terms: archive.org availability API, then the archived page itself.
+    availability_url: https://archive.org/wayback/available?url={url}
+    snapshot_url: https://web.archive.org/web/{timestamp}id_/{url}
+    # Phase 6 GOVERNANCE_PATHS (supplementary-evidence.js:430-435)
+    paths: [/responsible-ai, /ai-governance, /ai-ethics, /ai-principles, /trust, /trust-center, /ethics, /governance, /transparency, /responsible-technology]
+    max_paths: 5
+    min_year: 2015
+    limits: { pages: 10, time_seconds: 45 }
+
+  - code: UPLOAD
+    name: Evidence portal uploads
+    enabled: true
+    publisher_type: org_disclosure
+    access_terms: Documents submitted by the organization; enter as claims.
+    limits: { pages: 50, time_seconds: 30 }
+
+  - code: ISO_42001
+    name: ISO/IEC 42001 certificate registry
+    enabled: true
+    publisher_type: standards_registry
+    access_terms: Configurable registry lookup; records an empty run when no registry URL is configured.
+    registry_url: null
+    limits: { pages: 2, time_seconds: 20 }

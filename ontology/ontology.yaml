@@ -248,7 +248,7 @@ entities:
       - { name: valid_from, type: date, description: "When the content was true in the world." }
       - { name: valid_to, type: date, description: "When it stopped being true." }
     unique:
-      - [canonical_url, sha256]
+      - [canonical_url, sha256, connector_run_id]
 
   - name: SourceCluster
     table: source_clusters
