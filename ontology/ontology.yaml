@@ -526,6 +526,7 @@ entities:
       - { name: review_triggers, type: array, items: text, description: "Review triggers fired." }
       - { name: ruleset_version, type: text, required: true, description: "Ruleset that produced the result." }
       - { name: result_sha256, type: text, required: true, description: "Hash of the canonical result for replay comparison." }
+      - { name: trace, type: json, description: "Assessment-scope rule trace: scoring, caps, gates, with state before and after each rule." }
 
   - name: CertificationDecision
     table: certification_decisions

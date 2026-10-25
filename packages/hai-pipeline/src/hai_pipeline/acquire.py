@@ -134,6 +134,7 @@ class AcquisitionService:
             transport=self.transport,
             block_markers=markers,
             block_status_codes=codes,
+            retry_backoff_seconds=0.0 if self.transport is not None else 2.0,
         )
 
     # ------------------------------------------------------------------- entry

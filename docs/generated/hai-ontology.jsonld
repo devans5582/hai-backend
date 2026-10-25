@@ -15,7 +15,7 @@
       "rdfs:comment": "Domain model for the Human Alignment Index (HAI Score) from source document to certification decision.",
       "owl:versionInfo": "1.0.0",
       "hai:methodologyVersion": "1.0.0",
-      "hai:manifestHash": "4982a954e6281e84aaa456bd6531fcf660d4cab6aaa1c003f11ef682af8e0964"
+      "hai:manifestHash": "eaf14d2ceab0f74df7e4b6a1025ee2d259884dadf2c22ad2997198aeb01dd2e5"
     },
     {
       "@id": "https://humaital.com/ontology/hai#layer/subject",
@@ -3187,6 +3187,18 @@
       "@type": "rdf:Property",
       "rdfs:label": "result_sha256",
       "rdfs:comment": "Hash of the canonical result for replay comparison.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#AssessmentResult"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#AssessmentResult/trace",
+      "@type": "rdf:Property",
+      "rdfs:label": "trace",
+      "rdfs:comment": "Assessment-scope rule trace: scoring, caps, gates, with state before and after each rule.",
       "rdfs:domain": {
         "@id": "https://humaital.com/ontology/hai#AssessmentResult"
       },

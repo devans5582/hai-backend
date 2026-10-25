@@ -72,7 +72,9 @@ def gate_coverage(ctx: CriterionContext, state: CriterionState, params: dict[str
     primary = [str(c) for c in params.get("primary_connectors", [])]
     primary_runs = ctx.runs(primary)
     succeeded_any = any(r.succeeded and r.items_returned > 0 for r in ctx.connector_runs)
-    primary_down = bool(primary_runs) and all(r.failed_or_blocked and not r.succeeded for r in primary_runs)
+    # a primary source that had nothing to fetch (no direct URLs) says nothing about reachability
+    considered = [r for r in primary_runs if r.failed_or_blocked or r.items_returned > 0]
+    primary_down = bool(considered) and all(r.failed_or_blocked and not r.succeeded for r in considered)
     all_down = bool(ctx.connector_runs) and not any(r.succeeded for r in ctx.connector_runs)
     if (primary_down or all_down) and any(r.failed_or_blocked for r in ctx.connector_runs):
         state.coverage_state = CoverageState.UNAVAILABLE.value

@@ -61,6 +61,11 @@ ignore = [
 "tests/**" = ["S", "ARG", "T20"]
 "conftest.py" = ["S"]
 "**/cli.py" = ["T20"]
+"services/api/src/hai_api/routers/*.py" = ["E501"]
+"packages/hai-core/src/hai_core/reviews.py" = ["E501"]
+"packages/hai-core/src/hai_core/webhooks.py" = ["E501"]
+"packages/hai-core/src/hai_core/monitoring.py" = ["E501"]
+"services/worker/src/hai_worker/jobs.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["hai_ontology", "hai_core", "hai_pipeline", "hai_engine", "hai_api", "hai_worker"]

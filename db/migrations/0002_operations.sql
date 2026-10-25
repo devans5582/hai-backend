@@ -68,7 +68,7 @@ CREATE TABLE hai_ops.webhook_deliveries (
     created_at timestamptz NOT NULL DEFAULT now()
 );
 GRANT SELECT, INSERT, UPDATE ON hai_ops.webhook_subscriptions, hai_ops.webhook_deliveries
-    TO hai_api, hai_engine, hai_pipeline, hai_admin;
+    TO hai_api, hai_engine, hai_pipeline, hai_reviewer, hai_admin;
 
 -- Review queue tasks (the reviewable rows live in hai.*; tasks track the queue)
 CREATE TABLE hai_ops.review_tasks (

@@ -174,7 +174,7 @@ class JobQueue:
     ) -> list[Job]:
         rows = conn.execute(
             text(
-                "SELECT * FROM hai_ops.jobs WHERE (:state IS NULL OR state = :state) AND (:kind IS NULL OR kind = :kind) "  # noqa: E501
+                "SELECT * FROM hai_ops.jobs WHERE (CAST(:state AS text) IS NULL OR state = :state) AND (CAST(:kind AS text) IS NULL OR kind = :kind) "  # noqa: E501
                 "ORDER BY created_at DESC LIMIT :limit"
             ),
             {"state": state, "kind": kind, "limit": limit},

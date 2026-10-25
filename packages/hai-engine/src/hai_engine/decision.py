@@ -410,6 +410,7 @@ class DecisionService:
             review_triggers=list(st.review_triggers),
             ruleset_version=assessment.ruleset_version,
             result_sha256=result_hash,
+            trace={"rules": [t.as_dict() for t in engine_result.trace], "overlay": overlay.as_dict()},
         )
         prev_result = self.latest_result(store, assessment.id)
         stored = (

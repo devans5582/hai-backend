@@ -90,6 +90,7 @@ class Fetcher:
         block_markers: tuple[str, ...] = (),
         block_status_codes: frozenset[int] = BLOCK_STATUS,
         sleep: object | None = None,
+        retry_backoff_seconds: float = 2.0,
     ) -> None:
         self.user_agent = user_agent
         self.timeout = timeout_seconds
@@ -111,6 +112,7 @@ class Fetcher:
         self._last_hit: dict[str, float] = {}
         self._robots: dict[str, robotparser.RobotFileParser | None] = {}
         self._sleep = sleep if sleep is not None else asyncio.sleep
+        self.retry_backoff = retry_backoff_seconds
         self.requests_made = 0
 
     async def aclose(self) -> None:
@@ -176,13 +178,13 @@ class Fetcher:
             except httpx.TimeoutException:
                 last_error = "timeout"
                 if attempt <= self.max_retries:
-                    await self._sleep(min(2.0 * attempt, 5.0))  # type: ignore[operator]
+                    await self._sleep(min(self.retry_backoff * attempt, 5.0))  # type: ignore[operator]
                     continue
                 break
             except httpx.HTTPError as exc:
                 last_error = type(exc).__name__.lower()
                 if attempt <= self.max_retries:
-                    await self._sleep(min(2.0 * attempt, 5.0))  # type: ignore[operator]
+                    await self._sleep(min(self.retry_backoff * attempt, 5.0))  # type: ignore[operator]
                     continue
                 break
             elapsed = int((time.monotonic() - started) * 1000)
@@ -212,7 +214,7 @@ class Fetcher:
                 )
             if resp.status_code in RETRYABLE_STATUS and attempt <= self.max_retries:
                 last_error = f"http_{resp.status_code}"
-                await self._sleep(min(2.0 * attempt, 5.0))  # type: ignore[operator]
+                await self._sleep(min(self.retry_backoff * attempt, 5.0))  # type: ignore[operator]
                 continue
             if resp.status_code >= 400:
                 return FetchResult(
