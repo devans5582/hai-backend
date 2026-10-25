@@ -5,7 +5,7 @@ repos:
       - id: trailing-whitespace
         exclude: ^(legacy/|frontend/src/generated/)
       - id: end-of-file-fixer
-        exclude: ^(legacy/|frontend/src/generated/|docs/generated/)
+        exclude: ^(legacy/|frontend/src/generated/|docs/generated/)|py\.typed$
       - id: check-yaml
         args: ["--allow-multiple-documents"]
       - id: check-json
