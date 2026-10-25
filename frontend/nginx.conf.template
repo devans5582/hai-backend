@@ -1,0 +1,21 @@
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options DENY;
+    add_header Referrer-Policy strict-origin-when-cross-origin;
+
+    location /healthz { return 200 'ok'; add_header Content-Type text/plain; }
+
+    location /v1/ { proxy_pass ${API_UPSTREAM}; proxy_set_header Host $host; proxy_set_header X-Request-Id $request_id; proxy_read_timeout 120s; }
+    location /health { proxy_pass ${API_UPSTREAM}; }
+    location /ready { proxy_pass ${API_UPSTREAM}; }
+    location /docs { proxy_pass ${API_UPSTREAM}; }
+    location /openapi.json { proxy_pass ${API_UPSTREAM}; }
+
+    location /assets/ { expires 30d; add_header Cache-Control "public, immutable"; try_files $uri =404; }
+    location / { try_files $uri $uri/ /index.html; }
+}

@@ -28,3 +28,6 @@ hai-platform.bundle
 
 # Legacy service (reference only)
 legacy/express-api/node_modules/
+
+# TypeScript build info
+frontend/*.tsbuildinfo
