@@ -81,7 +81,7 @@ async def _pipeline(db: Database, manifest: Manifest, settings: Settings, net: F
     return org.id, a.id
 
 
-async def test_decide_replay_and_report(clean_db: Database, manifest: Manifest, settings: Settings) -> None:
+async def test_report_lists_only_collected_sources(clean_db: Database, manifest: Manifest, settings: Settings) -> None:
     _org_id, assessment_id = await _pipeline(clean_db, manifest, settings, FakeInternet(inject=True))
     svc = DecisionService(manifest)
     with clean_db.transaction("pytest", "hai_engine") as conn:

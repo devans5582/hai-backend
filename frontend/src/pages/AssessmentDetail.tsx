@@ -6,7 +6,7 @@ import { Badge, CoverageStrip, PillarBars, QueryState, ScoreDial, Tabs } from ".
 import { api, ApiRequestError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { connectorLabel } from "../lib/connectors";
-import { fmtDate, fmtDateTime, fmtNum, label, toneForLifecycle, toneForOutcome } from "../lib/format";
+import { LIFECYCLE_UI, fmtDate, fmtDateTime, fmtNum, label, toneForLifecycle, toneForOutcome } from "../lib/format";
 
 type Tab = "overview" | "criteria" | "sources" | "reviews";
 
@@ -16,7 +16,7 @@ export function AssessmentDetail() {
   const { reviewer } = useAuth();
   const [tab, setTab] = useState<Tab>("overview");
   const [traceCode, setTraceCode] = useState<string | null>(null);
-  const assessment = useQuery({ queryKey: ["assessment", id], queryFn: () => api.getAssessment(id), refetchInterval: (q) => (q.state.data && ["queued", "acquiring", "evaluating"].includes(q.state.data.lifecycle_state) ? 3000 : false) });
+  const assessment = useQuery({ queryKey: ["assessment", id], queryFn: () => api.getAssessment(id), refetchInterval: (q) => (q.state.data && LIFECYCLE_UI[q.state.data.lifecycle_state]?.polling ? 3000 : false) });
   const report = useQuery({ queryKey: ["report", id, assessment.data?.lifecycle_state], queryFn: () => api.getReport(id), enabled: !!assessment.data });
   const runs = useQuery({ queryKey: ["runs", id, assessment.data?.lifecycle_state], queryFn: () => api.getConnectorRuns(id), enabled: !!assessment.data });
   const tasks = useQuery({ queryKey: ["tasks", id], queryFn: () => api.listTasks({ status: "all", assessment_id: id }), enabled: !!assessment.data });
@@ -43,17 +43,17 @@ export function AssessmentDetail() {
               </div>
             </div>
             <div className="actions">
-              {["queued", "acquiring"].includes(a.lifecycle_state) && (
+              {LIFECYCLE_UI[a.lifecycle_state]?.cancel && (
                 <button type="button" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
                   Cancel
                 </button>
               )}
-              {["completed", "completed_unverified", "failed"].includes(a.lifecycle_state) && (
+              {LIFECYCLE_UI[a.lifecycle_state]?.reassess && (
                 <button type="button" onClick={() => reassess.mutate()} disabled={reassess.isPending}>
                   Reassess
                 </button>
               )}
-              {!a.certification_requested && a.lifecycle_state === "completed_unverified" && (
+              {!a.certification_requested && LIFECYCLE_UI[a.lifecycle_state]?.requestCertification && (
                 <button type="button" className="primary" onClick={() => requestCert.mutate()} disabled={requestCert.isPending}>
                   Request certification
                 </button>

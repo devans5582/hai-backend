@@ -1,0 +1,118 @@
+# Local stack: postgres, migrate (wait, migrate, seed, validate), api, worker, frontend.
+# `docker compose --profile ollama up` adds a local model server for the ollama LLM provider.
+name: hai
+
+x-python-build: &python-build
+  context: .
+  dockerfile: docker/python.Dockerfile
+  args:
+    ONTOLOGY_VERSION: ${ONTOLOGY_VERSION:-1.0.0}
+    METHODOLOGY_VERSION: ${METHODOLOGY_VERSION:-1.0.0}
+
+x-hai-env: &hai-env
+  HAI_ENV: ${HAI_ENV:-development}
+  HAI_DATABASE_URL: postgresql://${POSTGRES_USER:-hai}:${POSTGRES_PASSWORD:-hai}@postgres:5432/${POSTGRES_DB:-hai}
+  HAI_ENFORCE_DB_ROLES: ${HAI_ENFORCE_DB_ROLES:-true}
+  HAI_API_KEY_PEPPER: ${HAI_API_KEY_PEPPER:-dev-api-key-pepper-not-for-production-0001}
+  HAI_JWT_SECRET: ${HAI_JWT_SECRET:-dev-jwt-secret-not-for-production-00000001}
+  HAI_CERT_SIGNING_KEY: ${HAI_CERT_SIGNING_KEY:-dev-cert-signing-key-not-for-production-01}
+  HAI_WEBHOOK_SIGNING_KEY: ${HAI_WEBHOOK_SIGNING_KEY:-dev-webhook-signing-key-not-for-prod-0001}
+  HAI_PUBLIC_BASE_URL: ${HAI_PUBLIC_BASE_URL:-http://localhost:8080}
+  HAI_CORS_ORIGINS: ${HAI_CORS_ORIGINS:-["http://localhost:8080","http://localhost:5173"]}
+  HAI_LLM_PROVIDER: ${HAI_LLM_PROVIDER:-heuristic}
+  HAI_LLM_MODEL: ${HAI_LLM_MODEL:-ladder-1}
+  HAI_LLM_BASE_URL: ${HAI_LLM_BASE_URL:-}
+  HAI_LLM_API_KEY: ${HAI_LLM_API_KEY:-}
+  HAI_LOG_LEVEL: ${HAI_LOG_LEVEL:-INFO}
+  HAI_LOG_JSON: ${HAI_LOG_JSON:-true}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hai}
+      POSTGRES_DB: ${POSTGRES_DB:-hai}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hai} -d ${POSTGRES_DB:-hai}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      <<: *python-build
+      target: tools
+    image: hai-tools:local
+    environment:
+      <<: *hai-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # wait, migrate, seed, then validate the manifest against the rule implementations
+    command: >
+      sh -c "hai-db wait --timeout 90 && hai-db migrate && hai-db seed
+      && hai-ontology --ontology /app/ontology validate --implementations hai_engine.rules && hai-db status"
+    restart: "no"
+
+  api:
+    build:
+      <<: *python-build
+      target: api
+    image: hai-api:local
+    environment:
+      <<: *hai-env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - blobs:/var/lib/hai/blobs
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    build:
+      <<: *python-build
+      target: worker
+    image: hai-worker:local
+    environment:
+      <<: *hai-env
+      HAI_WORKER_ID: ${HAI_WORKER_ID:-worker-1}
+      HAI_WORKER_POLL_SECONDS: ${HAI_WORKER_POLL_SECONDS:-2}
+    volumes:
+      - blobs:/var/lib/hai/blobs
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    image: hai-console:local
+    environment:
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "${FRONTEND_PORT:-8080}:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.5.4
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  blobs:
+  ollama:

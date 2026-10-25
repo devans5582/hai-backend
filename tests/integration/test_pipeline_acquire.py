@@ -65,7 +65,7 @@ async def _acquire(
         return await service.acquire(conn, store, assessment_id)
 
 
-async def test_acquisition_end_to_end(clean_db: Database, manifest: Manifest, settings: Settings) -> None:
+async def test_every_connector_runs_and_is_recorded(clean_db: Database, manifest: Manifest, settings: Settings) -> None:
     org_id, assessment_id = _new_assessment(clean_db, manifest, direct_urls=[f"https://{ORG_DOMAIN}/governance"])
     net = FakeInternet(inject=True)
     report = await _acquire(clean_db, manifest, settings, net, assessment_id)

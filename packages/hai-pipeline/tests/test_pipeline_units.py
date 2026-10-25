@@ -276,6 +276,32 @@ def test_incidents_start_conservative(manifest: Manifest) -> None:
     assert said is not None and build_incident("org", said, None, list(manifest.criteria), "x").status == "alleged"
 
 
+def test_one_incident_from_two_articles(manifest: Manifest) -> None:
+    """Two syndicated copies of one lawsuit story with different wording and publishers in the same
+    month share one event key (AT-04)."""
+    m = SignalMatcher(manifest.methodology)
+    first = m.negative(
+        "Acme Corp was sued on Wednesday in a class action lawsuit filed in federal court.", "press", "T3"
+    )
+    second = m.negative(
+        "A class action lawsuit was filed against Acme Corp, the wire service reported.", "aggregator_or_social", "T4"
+    )
+    assert first is not None and second is not None
+    a = build_incident("org-1", first, date(2026, 4, 2), list(manifest.criteria), "sued in a class action")
+    b = build_incident("org-1", second, date(2026, 4, 3), list(manifest.criteria), "lawsuit was filed")
+    assert a.canonical_event_key == b.canonical_event_key
+    assert a.status == "alleged" and b.status == "alleged"
+    # a different organization or a different month is a different event
+    assert (
+        build_incident("org-2", first, date(2026, 4, 2), list(manifest.criteria), "x").canonical_event_key
+        != a.canonical_event_key
+    )
+    assert (
+        build_incident("org-1", first, date(2026, 6, 2), list(manifest.criteria), "x").canonical_event_key
+        != a.canonical_event_key
+    )
+
+
 def test_independence_comes_from_the_publisher_not_the_tier(manifest: Manifest) -> None:
     own = classify_publisher("https://www.acme.example/ethics", org_domain="acme.example")
     assert own.publisher_type is PublisherType.ORG_DISCLOSURE and own.is_organization

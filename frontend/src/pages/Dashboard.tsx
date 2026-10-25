@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
-import { fmtDateTime, toneForLifecycle } from "../lib/format";
+import { LIFECYCLE_STATE_VALUES } from "../generated/ontology";
+import { fmtDateTime, isTerminal, label, toneForLifecycle } from "../lib/format";
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -25,8 +26,13 @@ export function Dashboard() {
           <span className="value">{assessments.data?.total ?? "..."}</span>
         </div>
         <div className="card stat">
-          <span className="muted small">Awaiting review</span>
-          <span className="value">{counts["awaiting_review"] ?? 0}</span>
+          <span className="muted small">In progress</span>
+          <span className="value">{LIFECYCLE_STATE_VALUES.filter((s) => !isTerminal(s)).reduce((n, s) => n + (counts[s] ?? 0), 0)}</span>
+          <span className="muted small">
+            {LIFECYCLE_STATE_VALUES.filter((s) => !isTerminal(s) && (counts[s] ?? 0) > 0)
+              .map((s) => `${label("lifecycle_state", s)} ${counts[s]}`)
+              .join(", ")}
+          </span>
         </div>
         <div className="card stat">
           <span className="muted small">Open review tasks</span>

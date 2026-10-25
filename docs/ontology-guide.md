@@ -1,7 +1,7 @@
 # Ontology Guide
 
 How the manifest under `ontology/` is organised, how to read it, and how to
-change it. The spec it models is `docs/spec/HAI_Ontology_v1_Specification.docx`.
+change it. The spec it models is `HAI_Ontology_v1_Specification (1).docx` at the repository root.
 
 ## Files
 
@@ -122,6 +122,20 @@ frozen link; the classifier set it from the quote and the publisher only.
 | not_tested | yes | Control documented, operation unconfirmed. |
 | failed | yes | The failed result and date. |
 | contradictory | yes, routed to review | Both sides. |
+
+## Acceptance Tests
+
+`ontology.yaml` lists AT-01 to AT-15 with the test functions that prove each
+one. The mapping is checked by `tests/test_acceptance_tests_are_mapped.py` and
+rendered in `docs/architecture.md`.
+
+## Crosswalks
+
+`methodology/crosswalks.yaml` maps each criterion to clauses of the EU AI Act,
+NIST AI RMF and ISO/IEC 42001 with a direction (covers, supports, informs). It
+is a draft (`content_status: draft`, `TODO(humaital)`), is not part of the
+manifest hash, and does not affect scoring. A test checks that every mapping
+names a real criterion and framework.
 
 ## Changing The Manifest
 

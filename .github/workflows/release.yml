@@ -1,0 +1,101 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BASE: ghcr.io/${{ github.repository }}
+
+jobs:
+  publish:
+    name: publish images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read ontology and methodology versions from the manifest
+        id: versions
+        run: |
+          ONTOLOGY=$(python3 -c "import yaml;print(yaml.safe_load(open('ontology/ontology.yaml'))['ontology']['version'])")
+          METHODOLOGY=$(python3 -c "import yaml;print(yaml.safe_load(open('ontology/methodology/methodology.yaml'))['methodology']['version'])")
+          echo "ontology=$ONTOLOGY" >> "$GITHUB_OUTPUT"
+          echo "methodology=$METHODOLOGY" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/python.Dockerfile
+          target: api
+          push: true
+          build-args: |
+            ONTOLOGY_VERSION=${{ steps.versions.outputs.ontology }}
+            METHODOLOGY_VERSION=${{ steps.versions.outputs.methodology }}
+          tags: |
+            ${{ env.IMAGE_BASE }}/hai-api:${{ steps.versions.outputs.tag }}
+            ${{ env.IMAGE_BASE }}/hai-api:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.versions.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.humaital.ontology.version=${{ steps.versions.outputs.ontology }}
+            com.humaital.methodology.version=${{ steps.versions.outputs.methodology }}
+      - name: worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/python.Dockerfile
+          target: worker
+          push: true
+          build-args: |
+            ONTOLOGY_VERSION=${{ steps.versions.outputs.ontology }}
+            METHODOLOGY_VERSION=${{ steps.versions.outputs.methodology }}
+          tags: |
+            ${{ env.IMAGE_BASE }}/hai-worker:${{ steps.versions.outputs.tag }}
+            ${{ env.IMAGE_BASE }}/hai-worker:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.versions.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.humaital.ontology.version=${{ steps.versions.outputs.ontology }}
+            com.humaital.methodology.version=${{ steps.versions.outputs.methodology }}
+      - name: tools
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/python.Dockerfile
+          target: tools
+          push: true
+          build-args: |
+            ONTOLOGY_VERSION=${{ steps.versions.outputs.ontology }}
+            METHODOLOGY_VERSION=${{ steps.versions.outputs.methodology }}
+          tags: |
+            ${{ env.IMAGE_BASE }}/hai-tools:${{ steps.versions.outputs.tag }}
+            ${{ env.IMAGE_BASE }}/hai-tools:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.versions.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.humaital.ontology.version=${{ steps.versions.outputs.ontology }}
+            com.humaital.methodology.version=${{ steps.versions.outputs.methodology }}
+      - name: console
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.IMAGE_BASE }}/hai-console:${{ steps.versions.outputs.tag }}
+            ${{ env.IMAGE_BASE }}/hai-console:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.versions.outputs.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            com.humaital.ontology.version=${{ steps.versions.outputs.ontology }}
+            com.humaital.methodology.version=${{ steps.versions.outputs.methodology }}

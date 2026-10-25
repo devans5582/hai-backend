@@ -9,7 +9,7 @@ files as they stand on `main` (the move does not change content).
 
 Terminology used below: "FIX-n" is the Phase 6 fix number written in the
 legacy file headers. "IC-nn" and "AT-nn" are the integrity constraints and
-acceptance tests from `docs/spec/HAI_Ontology_v1_Specification.docx`.
+acceptance tests from `HAI_Ontology_v1_Specification (1).docx` at the repository root.
 
 ## 1. Carried Over
 
@@ -391,3 +391,12 @@ Regression tests: `test_bad_findings_are_rejected`,
 | 3.14 7-day dedupe returning HTTP 200 with `success: false` | `src/routes/evaluate.js:98-154` | Replaced by `Idempotency-Key` (same key returns the same assessment) and an explicit `/reassess`. Errors use HTTP status codes and the error envelope. |
 | 3.15 Narrative generation by the model with pillar label floors | `src/services/report-generator.js:18-255, 1403-1569` | The report resource is built from decisions, evidence and coverage wording. An optional narrative provider may be added later as a reviewer copilot; it must not touch scores or statuses. |
 | 3.16 Benchmark insert from client values | `src/routes/benchmark.js` | Peers are computed from stored results. |
+
+## 4. The Console
+
+The WordPress plugin and the browser-side scoring (section 2.11) are replaced by
+`frontend/`, a React console that calls the API and renders stored values only.
+It uses `frontend/src/generated/ontology.ts` for every code, label and allowed
+review action, and contract tests check its connector list against
+`config/connectors.yaml` and its review actions against the vocabulary. No
+score, status or coverage wording is computed in the browser.

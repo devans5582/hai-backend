@@ -338,6 +338,77 @@ def test_substantiated_incident_adjustment(manifest: Manifest) -> None:
         assert state.level == expected, severity
 
 
+def test_link_counts_only_for_its_criterion(manifest: Manifest) -> None:
+    """IC-08: links reach only the criterion they name; a strong SAF-01 link never lifts SAF-02 (AT-02)."""
+    from datetime import datetime as _dt
+    from uuid import uuid4 as _uuid
+
+    from hai_core.generated.enums import SizeBand, StageBand
+    from hai_core.generated.models import Assessment, EvidenceSnapshot
+    from hai_engine.decision import ReviewOverlay, build_contexts
+
+    strong = link("SAF-01", "independently_verified", independence="independent", publisher_type="independent_audit")
+    weak = link("SAF-02", "stated_commitment")
+    states = {
+        lk.link_id: {
+            "criterion_code": lk.criterion_code,
+            "polarity": lk.polarity,
+            "admissibility": lk.admissibility,
+            "maturity_rung": lk.maturity_rung,
+            "execution_level": lk.execution_level,
+            "evidence_class": lk.evidence_class,
+            "independence": lk.independence,
+            "source_tier": lk.source_tier,
+            "publisher_type": lk.publisher_type,
+            "publisher_domain": lk.publisher_domain,
+            "cluster_id": lk.cluster_id,
+            "document_id": lk.document_id,
+            "span_id": lk.span_id,
+            "published_at": lk.published_at.isoformat() if lk.published_at else None,
+            "certificate_valid_until": None,
+            "quote": lk.quote,
+            "canonical_url": None,
+            "document_title": None,
+        }
+        for lk in (strong, weak)
+    }
+    org = _uuid()
+    assessment = Assessment(
+        id=_uuid(),
+        org_id=org,
+        requested_by="pytest",
+        submitted_domain="acme.example",
+        stage_band=StageBand.GROWTH,
+        size_band=SizeBand.MID,
+        methodology_version="1.0.0",
+        ruleset_version="1.0.0",
+        prompt_version="1.0.0",
+        model_id="heuristic:ladder-1",
+    )
+    snapshot = EvidenceSnapshot(
+        id=_uuid(),
+        assessment_id=assessment.id,
+        frozen_at=_dt(2026, 10, 24, tzinfo=UTC),
+        manifest_hash="x" * 64,
+        span_ids=[],
+        link_ids=[],
+        link_states=states,
+        incident_states={},
+        connector_runs={"WEBSITE": {"succeeded": True, "failed_or_blocked": False, "items_returned": 2}},
+        version_pins={},
+        snapshot_sha256="y" * 64,
+    )
+    contexts = {c.criterion.code: c for c in build_contexts(manifest, assessment, snapshot, {}, ReviewOverlay())}
+    assert [lk.link_id for lk in contexts["SAF-01"].links] == [strong.link_id]
+    assert [lk.link_id for lk in contexts["SAF-02"].links] == [weak.link_id]
+    assert all(not c.links for code, c in contexts.items() if code not in ("SAF-01", "SAF-02"))
+    engine = RuleEngine(manifest)
+    saf1 = engine.run_criterion(contexts["SAF-01"]).state
+    saf2 = engine.run_criterion(contexts["SAF-02"]).state
+    saf3 = engine.run_criterion(contexts["SAF-03"]).state
+    assert saf1.level == 5 and saf2.level == 2 and saf3.level == 1 and saf3.coverage_state == "missing"
+
+
 def test_incident_adjusts_only_its_target_criterion(manifest: Manifest) -> None:
     inc = incident("ACC-01", "substantiated", "critical")
     # the engine only hands a criterion the incidents whose most material criterion it is; a stray one changes nothing

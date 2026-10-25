@@ -1,0 +1,157 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.9.30"
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  lint:
+    name: ruff and mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-packages --frozen
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: make typecheck
+
+  ontology:
+    name: ontology gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-packages --frozen
+      - name: Validate with rule implementations
+        run: uv run hai-ontology validate --implementations hai_engine.rules --strict
+      - name: Generated files are current
+        run: uv run hai-ontology codegen --check
+      - name: Diff, bump check and migration plan against the base branch
+        run: |
+          BASE_REF="${{ github.base_ref || 'main' }}"
+          git fetch origin "$BASE_REF" --depth=1 || true
+          if git rev-parse --verify "origin/$BASE_REF" >/dev/null 2>&1 && git cat-file -e "origin/$BASE_REF:ontology/ontology.yaml" 2>/dev/null; then
+            uv run hai-ontology diff "git:origin/$BASE_REF" ontology | tee ontology-diff.txt
+            uv run hai-ontology check-bump "git:origin/$BASE_REF" ontology --verbose
+            uv run hai-ontology migrate-plan "git:origin/$BASE_REF" ontology -o migration-plan.sql || true
+          else
+            echo "base branch has no ontology yet; first release" | tee ontology-diff.txt
+            : > migration-plan.sql
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ontology-migration-plan
+          path: |
+            ontology-diff.txt
+            migration-plan.sql
+
+  tests:
+    name: tests (roles ${{ matrix.enforce }})
+    runs-on: ubuntu-latest
+    needs: [lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        enforce: ["false", "true"]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hai
+          POSTGRES_PASSWORD: hai
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hai" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      HAI_TEST_DATABASE_URL: postgresql://hai:hai@localhost:5432/postgres
+      HAI_ENFORCE_DB_ROLES: ${{ matrix.enforce }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --all-packages --frozen
+      - name: Unit, integration and end-to-end tests
+        run: >
+          uv run pytest -q --cov=packages --cov=services --cov-report=xml:coverage-${{ matrix.enforce }}.xml
+          --cov-report=term --junitxml=junit-${{ matrix.enforce }}.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-roles-${{ matrix.enforce }}
+          path: |
+            junit-${{ matrix.enforce }}.xml
+            coverage-${{ matrix.enforce }}.xml
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - run: npm run typecheck
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm run test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  docker:
+    name: images and compose smoke
+    runs-on: ubuntu-latest
+    needs: [lint, ontology]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build images
+        run: docker compose build
+      - name: Start the stack
+        run: docker compose up -d
+      - name: Smoke test /health, /ready and /v1/ontology
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/ready >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/health | tee health.json
+          curl -fsS http://localhost:8000/ready | tee ready.json
+          curl -fsS http://localhost:8080/v1/ontology | head -c 400; echo
+          grep -q '"status": *"ready"' ready.json
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Stop
+        if: always()
+        run: docker compose down -v

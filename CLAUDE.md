@@ -32,6 +32,10 @@ Read `docs/architecture.md`, `docs/ontology-guide.md` and
    JWT can sign a certification.
 7. Plain ASCII in docs: no em dashes, no curly quotes. Title Case headings.
 8. Run every command you claim works. Say explicitly what could not be run.
+9. The console never computes a score or a status. It renders what the API
+   returns and uses `frontend/src/generated/ontology.ts` for every code and
+   label. Status literals in hand-written TypeScript are caught by the guard
+   test; use typed maps keyed by the generated unions instead.
 
 ## Commands
 
@@ -40,21 +44,30 @@ All tasks go through the Makefile. `make help` lists them.
 ```
 make install            uv sync for all packages
 make install-frontend   npm ci in frontend/
+make hooks              install pre-commit hooks
 make ontology-validate  validate the manifest (with rule implementations)
 make codegen            regenerate SQL, Python, TypeScript, JSON Schema, docs
 make codegen-check      fail if generated files are stale
 make check-bump BASE=git:origin/main
-make db                 start a throwaway Postgres 16 in Docker
-make migrate            run migrations against HAI_DATABASE_URL
-make seed               seed methodology and connector rows from YAML
+make ontology-diff / migrate-plan / baseline
+make db                 start a throwaway Postgres 16 in Docker (port 55432)
+make migrate / seed     against HAI_DATABASE_URL
+make api-key NAME=x     create an API key (shown once)
+make verify-audit       verify the audit hash chain
 make test-unit          fast tests, no database
-make test-integration   Postgres-backed tests (HAI_TEST_DATABASE_URL)
-make test               both
-make check              fmt check, lint, typecheck, ontology gate, tests
-make frontend-check     typecheck, lint, test, build
+make test-integration   Postgres-backed tests, roles not enforced (HAI_TEST_DATABASE_URL)
+make test-enforced      Postgres-backed tests with SET LOCAL ROLE enforced
+make test               all three
+make check              fmt check, lint, typecheck, ontology gate, all tests
+make frontend-check     typecheck, lint, vitest, build
 make dev                api, worker and frontend with hot reload
-make up / down          docker compose
+make up / down / logs / reset / smoke    docker compose
+make bundle             git bundle relative to origin/main (push fallback)
 ```
+
+Postgres-backed tests need `HAI_TEST_DATABASE_URL` (an admin URL); the suite
+creates a throwaway database per session. Run them twice, with
+`HAI_ENFORCE_DB_ROLES` false and true, before claiming a phase is green.
 
 ## Layout
 
@@ -100,3 +113,7 @@ and hai-engine, then the services.
    far enough; `make migrate-plan` writes the additive SQL.
 4. Record the change in `ontology/CHANGELOG.md`. Methodology content changes
    need Humaital sign-off before the version is marked approved.
+5. If an acceptance test (`AT-xx`) changes, keep its `tests:` list pointing at
+   real test functions; `tests/test_acceptance_tests_are_mapped.py` checks it.
+6. `ontology/methodology/crosswalks.yaml` is a draft mapping to external
+   frameworks; it is not part of scoring and is tested for valid references only.

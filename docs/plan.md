@@ -1,7 +1,7 @@
 # HAI Platform Build Plan
 
-Written 2026-10-24 from `docs/spec/HAI-Platform-Claude-Code-Prompt.md` (the
-prompt), `docs/spec/HAI_Ontology_v1_Specification.docx` (the spec) and a full
+Written 2026-10-24 from `HAI-Platform-Claude-Code-Prompt.md` (the
+prompt), `HAI_Ontology_v1_Specification (1).docx` (the spec) and a full
 read of the Phase 6 code on `main`. Where the prompt and the spec disagree the
 spec wins; section 3 lists every difference found.
 
@@ -306,7 +306,7 @@ mapped to a passing test.
    file (EU AI Act, NIST AI RMF, ISO 42001) as a draft with `TODO(humaital)`.
 7. Final: regenerate, rebuild a fresh database, run the whole suite, run the
    compose smoke test locally, fetch `origin/main`, confirm the base, push
-   `new-hai-platform-10242026` (bundle fallback).
+   `feature/hai-platform` (bundle fallback).
 
 ### 5.2 Regression Tests To Add Or Confirm
 
@@ -381,21 +381,21 @@ Listed here so the final summary can repeat it. Everything below is marked
 
 ## 8. Task List
 
-- [ ] P0 legacy move, skeleton, porting notes, plan, CLAUDE.md, register,
+- [x] P0 legacy move, skeleton, porting notes, plan, CLAUDE.md, register,
       drafts marked, D3/D7/D10 recorded, commit
-- [ ] P1 manifest audit against spec tables, D2 default, RLS, validator
+- [x] P1 manifest audit against spec tables, D2 default, RLS, validator
       codes, generators, hand-typed-code grep, check-bump first release,
       fresh DB apply, commit
-- [ ] P2 settings, db roles, store, audit, queue, migrations, hai-db,
+- [x] P2 settings, db roles, store, audit, queue, migrations, hai-db,
       entity resolution, connectors, blob store, extraction, spans,
       clustering, proposals, admissibility, independence, incidents,
       snapshot, new regression tests, commit
-- [ ] P3 classification, packs, providers, prompts, validator, fallback,
+- [x] P3 classification, packs, providers, prompts, validator, fallback,
       commit
-- [ ] P4 ruleset, expression language, scoring, decide/finalize/replay,
+- [x] P4 ruleset, expression language, scoring, decide/finalize/replay,
       certification, per-rule tests, commit
-- [ ] P5 routes, reviews, worker, webhooks, report, end-to-end, both role
+- [x] P5 routes, reviews, worker, webhooks, report, end-to-end, both role
       modes, commit
-- [ ] P6 frontend pages, look, a11y, contract tests, Dockerfile, commit
-- [ ] P7 Docker, compose, Makefile, CI, release, pre-commit, docs, ADRs,
+- [x] P6 frontend pages, look, a11y, contract tests, Dockerfile, commit
+- [x] P7 Docker, compose, Makefile, CI, release, pre-commit, docs, ADRs,
       crosswalk, final regenerate and full run, push, summary

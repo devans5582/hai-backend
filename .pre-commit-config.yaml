@@ -1,0 +1,35 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(legacy/|frontend/src/generated/)
+      - id: end-of-file-fixer
+        exclude: ^(legacy/|frontend/src/generated/|docs/generated/)
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1500"]
+      - id: detect-private-key
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: hai-ontology-validate
+        name: hai-ontology validate
+        entry: uv run hai-ontology validate --implementations hai_engine.rules
+        language: system
+        pass_filenames: false
+        files: ^(ontology/|packages/hai-engine/src/hai_engine/rules/)
+      - id: hai-codegen-check
+        name: hai-ontology codegen --check
+        entry: uv run hai-ontology codegen --check
+        language: system
+        pass_filenames: false
+        files: ^(ontology/|packages/hai-ontology/src/hai_ontology/codegen/)

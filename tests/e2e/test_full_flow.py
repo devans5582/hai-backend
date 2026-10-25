@@ -101,7 +101,7 @@ def worker_for(settings: Settings, manifest: Manifest, net: FakeInternet, sink: 
     )
 
 
-async def test_full_flow(
+async def test_full_assessment_lifecycle(
     client: TestClient, partner: dict[str, str], settings: Settings, manifest: Manifest, clean_db: Database
 ) -> None:
     sink = HookSink()
@@ -285,7 +285,7 @@ async def test_full_flow(
     )
 
 
-async def test_blocked_website_reports_unavailable_not_missing(
+async def test_blocked_sources_are_unavailable_not_missing(
     client: TestClient, partner: dict[str, str], settings: Settings, manifest: Manifest, clean_db: Database
 ) -> None:
     created = client.post("/v1/assessments", json={**BODY, "website": ORG_DOMAIN}, headers=partner)

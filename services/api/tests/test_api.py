@@ -136,7 +136,7 @@ def test_idempotent_start_and_aliases(client: TestClient, api_key: str) -> None:
     assert re.status_code == 202 and re.json()["parent_assessment_id"] == a["id"]
 
 
-def test_review_requires_reason_and_api_keys_cannot_sign(client: TestClient, api_key: str, settings: Settings) -> None:
+def test_review_requires_reason(client: TestClient, api_key: str, settings: Settings) -> None:
     created = client.post("/v1/assessments", json=BODY, headers={"X-API-Key": api_key}).json()
     aid = created["id"]
     # reviews need a reviewer JWT and a reason
@@ -162,7 +162,12 @@ def test_review_requires_reason_and_api_keys_cannot_sign(client: TestClient, api
         ).status_code
         == 404
     )
-    # signing needs a reviewer; an API key is refused even with the right path
+
+
+def test_api_keys_cannot_sign(client: TestClient, api_key: str, settings: Settings) -> None:
+    created = client.post("/v1/assessments", json=BODY, headers={"X-API-Key": api_key}).json()
+    aid = created["id"]
+    # signing needs a reviewer; an API key is refused even with the right path (AT-10)
     refused = client.post(
         f"/v1/assessments/{aid}/certification",
         json={"decision": "certified", "reason": "please"},

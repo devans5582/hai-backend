@@ -23,6 +23,7 @@ from hai_core.errors import (
     ImmutableFieldError,
     IntegrityViolationError,
     InvalidTransitionError,
+    ValidationFailedError,
 )
 from hai_core.generated.enums import (
     Admissibility,
@@ -336,6 +337,81 @@ def test_hai_certified_requires_signed_decision(clean_db: Database, manifest: Ma
                 result_sha256="x",
             )
         )
+
+
+def test_escalation_and_four_eyes(clean_db: Database, manifest: Manifest) -> None:
+    """AT-14: escalate hands the task to a different reviewer; the escalating reviewer is locked out; the
+    reviewer who requested certification cannot sign it; every action needs a reason."""
+    from hai_core.auth import Principal, Scope
+    from hai_core.generated.enums import IncidentSeverity, IncidentStatus, ReviewSubjectType
+    from hai_core.generated.models import Incident
+    from hai_core.reviews import act, create_task, get_task
+
+    with clean_db.transaction("pytest", "hai_api") as conn:
+        store = Store(conn, actor="pytest", manifest=manifest)
+        org = _org(store)
+        assessment = _assessment(store, org)
+    with clean_db.transaction("pytest", "hai_pipeline") as conn:
+        store = Store(conn, actor="pytest", manifest=manifest)
+        incident = store.insert(
+            Incident(
+                canonical_event_key=uuid4().hex,
+                org_id=org.id,
+                title="Lawsuit reported",
+                severity=IncidentSeverity.HIGH,
+                most_material_criterion=manifest.criteria[0].code,
+            )
+        )
+    one = Principal("reviewer", "rev-1", "Reviewer One", Scope.REVIEWER_DEFAULT)
+    two = Principal("reviewer", "rev-2", "Reviewer Two", Scope.REVIEWER_DEFAULT)
+    partner = Principal("api_key", "partner", "Partner", Scope.PARTNER_DEFAULT)
+    with clean_db.transaction("pytest", "hai_reviewer") as conn:
+        store = Store(conn, actor="pytest", manifest=manifest)
+        task = create_task(
+            conn,
+            assessment_id=assessment.id,
+            subject_type=ReviewSubjectType.INCIDENT.value,
+            subject_id=incident.id,
+            reason="alleged incident",
+            opened_by="service:worker",
+        )
+        # the same open subject is never queued twice
+        again = create_task(
+            conn,
+            assessment_id=assessment.id,
+            subject_type=ReviewSubjectType.INCIDENT.value,
+            subject_id=incident.id,
+            reason="dup",
+            opened_by="service:worker",
+        )
+        assert again.id == task.id
+        with pytest.raises(ForbiddenError):
+            act(conn, store, task_id=task.id, principal=partner, action="dismiss", reason="not allowed")
+        with pytest.raises(ValidationFailedError):
+            act(conn, store, task_id=task.id, principal=one, action="dismiss", reason="   ")
+        with pytest.raises(ValidationFailedError):
+            act(conn, store, task_id=task.id, principal=one, action="sign", reason="wrong action for an incident")
+        _, escalated = act(conn, store, task_id=task.id, principal=one, action="escalate", reason="need a second look")
+        assert escalated.status == "escalated" and escalated.excluded_reviewers == ["rev-1"]
+        with pytest.raises(ForbiddenError):
+            act(conn, store, task_id=task.id, principal=one, action="dismiss", reason="changed my mind")
+        _, closed = act(conn, store, task_id=task.id, principal=two, action="dismiss", reason="not this organization")
+        assert closed.status == "closed" and closed.closed_by == "rev-2"
+        assert store.require(Incident, incident.id).status is IncidentStatus.DISMISSED
+        with pytest.raises(ConflictError):
+            act(conn, store, task_id=task.id, principal=two, action="dismiss", reason="already closed")
+        # four eyes: the reviewer who opened a certification task cannot sign it
+        cert = create_task(
+            conn,
+            assessment_id=assessment.id,
+            subject_type=ReviewSubjectType.CERTIFICATION.value,
+            subject_id=assessment.id,
+            reason="certification requested",
+            opened_by=one.actor,
+        )
+        with pytest.raises(ForbiddenError):
+            act(conn, store, task_id=cert.id, principal=one, action="sign", reason="signing my own request")
+        assert get_task(conn, cert.id).status == "open"
 
 
 def test_store_refuses_append_only_updates_before_the_database(clean_db: Database, manifest: Manifest) -> None:
