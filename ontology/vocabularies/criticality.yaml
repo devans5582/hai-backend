@@ -1,0 +1,10 @@
+vocabulary:
+  code: criticality
+  title: Criticality
+  description: Potential harm if an AI system fails.
+  ordered: true
+  values:
+    - { code: low, label: Low, rank: 0, description: Minor inconvenience. }
+    - { code: moderate, label: Moderate, rank: 1, description: Recoverable harm to some users. }
+    - { code: high, label: High, rank: 2, description: Serious harm to users or third parties. }
+    - { code: critical, label: Critical, rank: 3, description: Safety-critical or rights-affecting decisions. }

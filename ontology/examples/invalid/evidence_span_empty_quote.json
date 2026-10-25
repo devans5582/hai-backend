@@ -1,0 +1,11 @@
+{
+  "entity": "EvidenceSpan",
+  "description": "CK-SPAN-QUOTE: an empty quote is refused (IC-06).",
+  "expect_error": "CK-SPAN-QUOTE",
+  "record": {
+    "source_document_id": "33333333-3333-4333-8333-333333333333",
+    "char_start": 10,
+    "char_end": 20,
+    "quote": "   "
+  }
+}

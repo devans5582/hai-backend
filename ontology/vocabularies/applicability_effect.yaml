@@ -1,0 +1,7 @@
+vocabulary:
+  code: applicability_effect
+  title: Applicability effect
+  description: What happens when an applicability condition holds (decision D5).
+  values:
+    - { code: not_applicable, label: Not applicable, description: The criterion is excluded from the score. }
+    - { code: review, label: Review, description: The criterion is routed to a reviewer. }

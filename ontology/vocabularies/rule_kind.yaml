@@ -1,0 +1,9 @@
+vocabulary:
+  code: rule_kind
+  title: Rule kind
+  description: What a rule does.
+  values:
+    - { code: cap, label: Cap, description: Limits a level or score from above. }
+    - { code: gate, label: Gate, description: Decides a state or routes to review. }
+    - { code: confidence, label: Confidence, description: Computes or caps confidence. }
+    - { code: adjustment, label: Adjustment, description: Moves a level up or down. }

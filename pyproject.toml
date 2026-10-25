@@ -44,7 +44,7 @@ dev = [
 # Ruff
 # ---------------------------------------------------------------------------
 [tool.ruff]
-line-length = 110
+line-length = 120
 target-version = "py311"
 extend-exclude = ["legacy", "frontend", "**/generated/*.py", "**/_generated/*.py"]
 

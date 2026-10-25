@@ -1,0 +1,11 @@
+vocabulary:
+  code: size_band
+  title: Size band
+  description: "Organization size by headcount (spec 7.10 placeholders; decision D3). aliases carry the Phase 6 form inputs (legacy evaluate.js:77, report-generator.js:905-913)."
+  ordered: true
+  attributes: { max_headcount: number }
+  values:
+    - { code: small, label: Small (1-50), rank: 0, description: Up to 50 people., aliases: ["1-10", "11-50"], attributes: { max_headcount: 50 } }
+    - { code: mid, label: Mid (51-200), rank: 1, description: 51 to 200 people., aliases: ["51-200"], attributes: { max_headcount: 200 } }
+    - { code: large, label: Large (201-1000), rank: 2, description: 201 to 1000 people., aliases: ["200+", "201-1000"], attributes: { max_headcount: 1000 } }
+    - { code: enterprise, label: Enterprise (1000+), rank: 3, description: More than 1000 people., aliases: ["1000+"], attributes: { max_headcount: 1000000 } }

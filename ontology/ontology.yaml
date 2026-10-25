@@ -1,0 +1,663 @@
+# HAI Ontology manifest. Source of truth for the schema, the generated code,
+# the LLM output contract and the report labels. Modelled on
+# docs/spec/HAI_Ontology_v1_Specification.docx (sections 4, 5, 6, 11).
+#
+# Every table also carries id (uuid), ontology_version, created_at and
+# created_by; these common fields are generated and are not repeated below.
+#
+# Field types: uuid, text, int, bigint, numeric, bool, timestamp, date, json,
+# enum (vocabulary), ref (entity), array (items + vocabulary or ref).
+# mutability: mutable | append_only (insert only, IC-02) | immutable (insert
+# only and no field may change).
+# writers: database roles that may insert or update the table (IC-12).
+
+ontology:
+  name: hai
+  version: 1.0.0
+  title: HAI Ontology
+  description: Domain model for the Human Alignment Index (HAI Score) from source document to certification decision.
+  spec: docs/spec/HAI_Ontology_v1_Specification.docx
+  schema: hai
+
+layers:
+  - code: subject
+    title: Subject
+    description: What is being rated.
+  - code: evidence
+    title: Evidence
+    description: What Humaital found.
+  - code: methodology
+    title: Methodology
+    description: The rules being applied.
+  - code: assessment
+    title: Assessment
+    description: The rating itself.
+
+roles:
+  - code: hai_pipeline
+    description: Evidence acquisition and linking (connectors, extraction, admissibility, incidents, snapshot).
+  - code: hai_engine
+    description: Rules engine and evaluation worker. Only writer of findings, decisions, scores and results.
+  - code: hai_reviewer
+    description: Named human reviewers. Only writer of reviews and certification decisions.
+  - code: hai_api
+    description: API service. Writes organizations, assessments, claims from uploads and audit events.
+  - code: hai_admin
+    description: Operators. Methodology seeding and migrations.
+
+entities:
+  # ---------------------------------------------------------------- subject
+  - name: Organization
+    table: organizations
+    layer: subject
+    mutability: mutable
+    writers: [hai_pipeline, hai_api, hai_admin]
+    description: The rated organization. External identifiers are stored only when verified against the submitted domain.
+    fields:
+      - { name: legal_name, type: text, required: true, description: "Registered legal name." }
+      - { name: display_name, type: text, required: true, description: "Name shown in reports." }
+      - { name: primary_domain, type: text, required: true, unique: true, description: "Registrable domain of the official website." }
+      - { name: aliases, type: array, items: text, description: "Other names the organization is known by." }
+      - { name: cik, type: text, description: "SEC Central Index Key. Stored only when verified." }
+      - { name: lei, type: text, description: "Legal Entity Identifier. Stored only when verified." }
+      - { name: wikidata_qid, type: text, description: "Wikidata item id. Stored only when verified." }
+      - { name: github_handle, type: text, description: "GitHub organization handle found on the official site or in Wikidata." }
+      - { name: industry_code, type: text, description: "Industry classification label used for peer benchmarks." }
+      - { name: stage_band, type: enum, vocabulary: stage_band, description: "Default stage band. Also captured per assessment." }
+      - { name: size_band, type: enum, vocabulary: size_band, description: "Default size band. Also captured per assessment." }
+      - { name: jurisdictions, type: array, items: text, description: "ISO country codes where the organization operates." }
+      - { name: entity_confidence, type: numeric, min: 0, max: 1, description: "Confidence that the resolved identity is the submitted organization." }
+      - { name: identifiers_verified, type: bool, default: false, description: "True when the official website matched the submitted domain." }
+      - { name: resolved_at, type: timestamp, description: "When entity resolution last ran." }
+
+  - name: OrganizationRelation
+    table: organization_relations
+    layer: subject
+    mutability: mutable
+    writers: [hai_pipeline, hai_api, hai_admin]
+    description: Parent, subsidiary, affiliate or acquisition links between organizations. Drives independence.
+    fields:
+      - { name: parent_org_id, type: ref, ref: Organization, required: true, description: "The controlling organization." }
+      - { name: child_org_id, type: ref, ref: Organization, required: true, description: "The controlled organization." }
+      - { name: relation_type, type: enum, vocabulary: org_relation_type, required: true, description: "Kind of control." }
+      - { name: valid_from, type: date, description: "When the relation began." }
+      - { name: valid_to, type: date, description: "When the relation ended." }
+    checks:
+      - { id: CK-ORGREL-DISTINCT, sql: "parent_org_id <> child_org_id", py: "parent_org_id != child_org_id", description: "An organization does not control itself." }
+
+  - name: AISystem
+    table: ai_systems
+    layer: subject
+    mutability: mutable
+    writers: [hai_pipeline, hai_api, hai_admin]
+    description: An AI system operated by the organization. Optional in v1 (decision D6); evidence may link to the organization directly.
+    fields:
+      - { name: owner_org_id, type: ref, ref: Organization, required: true, description: "Operating organization." }
+      - { name: name, type: text, required: true, description: "System name." }
+      - { name: use_case, type: text, description: "What the system is used for." }
+      - { name: deployment_context, type: text, description: "Where and to whom it is deployed." }
+      - { name: criticality, type: enum, vocabulary: criticality, description: "Potential harm if the system fails." }
+      - { name: valid_from, type: date, description: "When operation began." }
+      - { name: valid_to, type: date, description: "When operation ended." }
+
+  - name: Claim
+    table: claims
+    layer: subject
+    mutability: append_only
+    writers: [hai_pipeline, hai_api]
+    description: An assertion the organization makes about itself. A claim is never evidence of its own truth. Uploads enter as claims.
+    fields:
+      - { name: claimant_org_id, type: ref, ref: Organization, required: true, description: "The organization making the claim." }
+      - { name: assertion_text, type: text, required: true, description: "What is asserted." }
+      - { name: scope_type, type: enum, vocabulary: claim_scope_type, required: true, description: "What the claim is about." }
+      - { name: scope_id, type: uuid, description: "Id of the control, incident or system the claim is about." }
+      - { name: claimed_at, type: date, description: "When the claim was made." }
+      - { name: source_document_id, type: ref, ref: SourceDocument, description: "The uploaded or fetched document carrying the claim." }
+      - { name: verified_by_org_id, type: ref, ref: Organization, description: "Independent verifier, when one exists." }
+
+  - name: Control
+    table: controls
+    layer: subject
+    mutability: mutable
+    writers: [hai_pipeline, hai_api]
+    description: A governance mechanism protecting a system or the organization.
+    fields:
+      - { name: org_id, type: ref, ref: Organization, required: true, description: "Owning organization." }
+      - { name: ai_system_id, type: ref, ref: AISystem, description: "Protected system, when identifiable." }
+      - { name: name, type: text, required: true, description: "Control name." }
+      - { name: intended_risk, type: text, description: "The risk the control addresses." }
+      - { name: owner_role, type: text, description: "Named accountable role." }
+      - { name: threshold, type: text, description: "Measurable threshold the control enforces." }
+      - { name: monitoring, type: text, description: "How operation is monitored." }
+      - { name: can_pause_or_rollback, type: bool, description: "Whether the control can halt or roll back the system." }
+      - { name: operational_status, type: enum, vocabulary: control_operational_status, required: true, default: unknown, description: "Lifecycle of the control." }
+      - { name: valid_from, type: date, description: "When the control came into force." }
+      - { name: valid_to, type: date, description: "When it was retired." }
+
+  - name: TestOutcome
+    table: test_outcomes
+    layer: subject
+    mutability: append_only
+    writers: [hai_pipeline, hai_api]
+    description: A point-in-time test of a control. A failed test is kept and shown, never dropped.
+    fields:
+      - { name: control_id, type: ref, ref: Control, required: true, description: "Tested control." }
+      - { name: protocol, type: text, description: "Test protocol." }
+      - { name: performed_at, type: date, required: true, description: "When the test ran." }
+      - { name: result, type: enum, vocabulary: test_result, required: true, description: "Pass, fail or inconclusive." }
+      - { name: measured_value, type: text, description: "Measured value, if any." }
+      - { name: assessor_org_id, type: ref, ref: Organization, description: "Who performed the test." }
+      - { name: verifier_org_id, type: ref, ref: Organization, description: "Independent verifier, if any." }
+
+  - name: Incident
+    table: incidents
+    layer: subject
+    mutability: mutable
+    writers: [hai_pipeline, hai_reviewer, hai_api]
+    description: One row per real-world event regardless of article count. News reports attach as evidence (AT-04).
+    fields:
+      - { name: canonical_event_key, type: text, required: true, unique: true, immutable: true, description: "Deterministic key for the event (IC-10)." }
+      - { name: org_id, type: ref, ref: Organization, required: true, description: "Affected organization." }
+      - { name: ai_system_id, type: ref, ref: AISystem, description: "Affected system, if identified." }
+      - { name: title, type: text, required: true, description: "Short neutral title." }
+      - { name: summary, type: text, description: "Neutral description of what was reported." }
+      - { name: occurred_at, type: date, description: "When the event occurred or was first reported." }
+      - { name: severity, type: enum, vocabulary: incident_severity, required: true, description: "Four-level severity (decision D4)." }
+      - { name: status, type: enum, vocabulary: incident_status, required: true, default: alleged, description: "Verification status." }
+      - { name: affected_control_ids, type: array, items: uuid, description: "Controls the event touched." }
+      - { name: most_material_criterion, type: enum, vocabulary: criterion_code, description: "The one criterion this incident adjusts (IC-10)." }
+    transitions: { field: status, vocabulary: incident_status }
+
+  - name: Remediation
+    table: remediations
+    layer: subject
+    mutability: mutable
+    writers: [hai_pipeline, hai_reviewer, hai_api]
+    description: An action taken to fix an incident. Closure counts as independently verified only with an independent verifier.
+    fields:
+      - { name: incident_id, type: ref, ref: Incident, required: true, description: "The incident being remediated." }
+      - { name: action, type: text, required: true, description: "What was done." }
+      - { name: committed_at, type: date, description: "When the remediation was committed to." }
+      - { name: completed_at, type: date, description: "When it was completed." }
+      - { name: verified_by_org_id, type: ref, ref: Organization, description: "Independent verifier, if any." }
+
+  # --------------------------------------------------------------- evidence
+  - name: Publisher
+    table: publishers
+    layer: evidence
+    mutability: mutable
+    writers: [hai_pipeline, hai_admin]
+    description: Who published a source document. org_id is set when the publisher is the rated organization or an affiliate.
+    fields:
+      - { name: name, type: text, required: true, description: "Publisher name." }
+      - { name: domain, type: text, required: true, unique: true, description: "Registrable domain." }
+      - { name: publisher_type, type: enum, vocabulary: publisher_type, required: true, description: "Kind of publisher; determines source tier." }
+      - { name: org_id, type: ref, ref: Organization, description: "The organization behind the publisher, if any." }
+
+  - name: Connector
+    table: connectors
+    layer: evidence
+    mutability: mutable
+    writers: [hai_admin]
+    description: A configured evidence source. A new source is a configuration row, not an ontology change.
+    fields:
+      - { name: code, type: text, required: true, unique: true, description: "Connector code, for example EDGAR." }
+      - { name: name, type: text, required: true, description: "Display name." }
+      - { name: access_terms, type: text, description: "Terms of use or rate limits." }
+      - { name: status, type: enum, vocabulary: connector_status, required: true, default: configured, description: "configured, active or retired." }
+
+  - name: ConnectorRun
+    table: connector_runs
+    layer: evidence
+    mutability: mutable
+    writers: [hai_pipeline]
+    description: Proof that a fetch was attempted for an assessment and how it ended (IC-16). Recorded even when nothing came back.
+    fields:
+      - { name: assessment_id, type: ref, ref: Assessment, required: true, immutable: true, description: "The assessment this run served." }
+      - { name: connector_id, type: ref, ref: Connector, required: true, immutable: true, description: "Which connector ran." }
+      - { name: outcome, type: enum, vocabulary: connector_run_outcome, required: true, default: invoked, description: "How the run ended." }
+      - { name: error_code, type: text, description: "Machine-readable error when blocked, failed or rate limited." }
+      - { name: items_returned, type: int, required: true, default: 0, min: 0, description: "Documents produced." }
+      - { name: started_at, type: timestamp, required: true, immutable: true, description: "Start time." }
+      - { name: finished_at, type: timestamp, description: "End time." }
+      - { name: notes, type: text, description: "Free-text notes, for example budget exhausted." }
+
+  - name: SourceDocument
+    table: source_documents
+    layer: evidence
+    mutability: append_only
+    supersedable: true
+    writers: [hai_pipeline, hai_api]
+    description: A frozen copy of a fetched or uploaded document with its hash, dates and rights. A re-fetch with a different hash is a new row.
+    fields:
+      - { name: canonical_url, type: text, required: true, description: "Canonical URL after normalisation." }
+      - { name: publisher_id, type: ref, ref: Publisher, required: true, description: "Who published it." }
+      - { name: connector_run_id, type: ref, ref: ConnectorRun, required: true, description: "The run that retrieved it." }
+      - { name: cluster_id, type: ref, ref: SourceCluster, description: "Near-duplicate cluster, if any." }
+      - { name: title, type: text, description: "Document title." }
+      - { name: content_type, type: text, description: "MIME type of the raw bytes." }
+      - { name: language, type: text, description: "Detected language code." }
+      - { name: published_at, type: date, description: "Publication date asserted by the source." }
+      - { name: retrieved_at, type: timestamp, required: true, description: "When Humaital fetched it." }
+      - { name: sha256, type: text, required: true, description: "SHA-256 of the raw bytes." }
+      - { name: text_sha256, type: text, required: true, description: "SHA-256 of the extracted text." }
+      - { name: snapshot_uri, type: text, required: true, description: "Blob store URI of the raw bytes." }
+      - { name: text_uri, type: text, required: true, description: "Blob store URI of the extracted text." }
+      - { name: extraction_version, type: text, required: true, description: "Extractor version that produced the text." }
+      - { name: rights, type: text, description: "Usage rights or licence noted at fetch time." }
+      - { name: valid_from, type: date, description: "When the content was true in the world." }
+      - { name: valid_to, type: date, description: "When it stopped being true." }
+    unique:
+      - [canonical_url, sha256]
+
+  - name: SourceCluster
+    table: source_clusters
+    layer: evidence
+    mutability: mutable
+    writers: [hai_pipeline]
+    description: Groups syndicated or near-duplicate documents so they count once for independence and confidence (IC-09).
+    fields:
+      - { name: cluster_key, type: text, required: true, unique: true, description: "Deterministic key, for example the SimHash bucket." }
+      - { name: method, type: enum, vocabulary: cluster_method, required: true, description: "How the cluster was formed." }
+      - { name: simhash, type: text, description: "64-bit SimHash of the representative document as hex." }
+
+  - name: EvidenceSpan
+    table: evidence_spans
+    layer: evidence
+    mutability: append_only
+    supersedable: true
+    writers: [hai_pipeline]
+    description: The citable unit. The exact quote with character offsets into the stored text (IC-03).
+    fields:
+      - { name: source_document_id, type: ref, ref: SourceDocument, required: true, description: "Document the span is cut from." }
+      - { name: char_start, type: int, required: true, min: 0, description: "Start offset in the stored text." }
+      - { name: char_end, type: int, required: true, min: 1, description: "End offset (exclusive)." }
+      - { name: quote, type: text, required: true, description: "Exact text at the offsets." }
+      - { name: extracted_assertion, type: text, description: "Short neutral paraphrase of what the quote says." }
+      - { name: asserted_dates, type: array, items: date, description: "Dates mentioned in the quote." }
+      - { name: section_heading, type: text, description: "Nearest heading above the span." }
+    checks:
+      - { id: CK-SPAN-RANGE, sql: "char_end > char_start", py: "char_end > char_start", description: "A span has positive length." }
+      - { id: CK-SPAN-QUOTE, sql: "length(btrim(quote)) > 0", py: "nonblank(quote)", description: "A span carries non-empty quoted text (IC-06)." }
+
+  - name: EvidenceLink
+    table: evidence_links
+    layer: evidence
+    mutability: mutable
+    supersedable: true
+    writers: [hai_pipeline, hai_engine, hai_reviewer]
+    description: The only bridge from evidence to a score. One span, one target, one criterion, six separate judgments (spec section 6).
+    fields:
+      - { name: span_id, type: ref, ref: EvidenceSpan, required: true, immutable: true, description: "The quoted span." }
+      - { name: target_type, type: enum, vocabulary: target_type, required: true, immutable: true, description: "Kind of thing the span is about." }
+      - { name: target_id, type: uuid, required: true, immutable: true, description: "Id of the organization, system, claim, control, test outcome or incident." }
+      - { name: criterion_code, type: enum, vocabulary: criterion_code, required: true, immutable: true, description: "The one criterion this link bears on (IC-08)." }
+      - { name: polarity, type: enum, vocabulary: polarity, required: true, immutable: true, description: "Support, contradict or neutral. Never updated (IC-01)." }
+      - { name: admissibility, type: enum, vocabulary: admissibility, required: true, description: "Usable in scoring at all. Changed only via review." }
+      - { name: admissibility_reason, type: text, description: "Why the link is inadmissible or pending." }
+      - { name: maturity_rung, type: enum, vocabulary: maturity_rung, required: true, default: none, description: "How far up the ladder the quote proves. Set by the classifier from the quote." }
+      - { name: execution_level, type: enum, vocabulary: execution_level, required: true, default: none, description: "Per-span proof of execution." }
+      - { name: evidence_class, type: enum, vocabulary: evidence_class, required: true, description: "Foundational, core governance, operational or external validation." }
+      - { name: independence, type: enum, vocabulary: independence, required: true, description: "Who stands behind the statement. Recomputed from relations." }
+      - { name: source_tier, type: enum, vocabulary: source_tier, required: true, description: "Potential authority of the publisher type. Never sets maturity." }
+      - { name: proposer, type: text, required: true, description: "Who proposed the link, heuristic or provider:model." }
+      - { name: relevance, type: numeric, min: 0, max: 1, description: "Proposer's relevance estimate." }
+      - { name: valid_from, type: date, description: "When the evidence was true." }
+      - { name: valid_to, type: date, description: "When it stopped being true." }
+      - { name: reviewer_id, type: text, description: "Reviewer who last changed admissibility." }
+    checks:
+      - { id: IC-07, sql: "maturity_rung <> 'independently_verified' OR independence IN ('independent', 'regulator')", py: "maturity_rung != 'independently_verified' or independence in ('independent', 'regulator')", description: "Independently verified requires an independent or regulator publisher." }
+
+  # ------------------------------------------------------------ methodology
+  - name: MethodologyVersion
+    table: methodology_versions
+    layer: methodology
+    mutability: mutable
+    writers: [hai_admin]
+    description: A released methodology. Only a signed Humaital change record creates a new version.
+    fields:
+      - { name: semver, type: text, required: true, unique: true, description: "Methodology version." }
+      - { name: effective_from, type: date, description: "When it applies from." }
+      - { name: approved_by, type: text, description: "Who at Humaital signed it." }
+      - { name: change_record_uri, type: text, description: "Link to the change record." }
+      - { name: status, type: enum, vocabulary: methodology_status, required: true, default: draft, description: "draft, approved or retired." }
+      - { name: manifest_hash, type: text, required: true, description: "SHA-256 of the manifest this version was seeded from." }
+
+  - name: Pillar
+    table: pillars
+    layer: methodology
+    mutability: mutable
+    writers: [hai_admin]
+    description: One of the six pillars.
+    fields:
+      - { name: methodology_version_id, type: ref, ref: MethodologyVersion, required: true, description: "Owning methodology version." }
+      - { name: code, type: enum, vocabulary: pillar_code, required: true, description: "Pillar code." }
+      - { name: name, type: text, required: true, description: "Display name." }
+      - { name: display_order, type: int, required: true, description: "Order in reports." }
+      - { name: weight, type: numeric, required: true, min: 0, max: 1, description: "Share of the HAI Score." }
+    unique:
+      - [methodology_version_id, code]
+
+  - name: Criterion
+    table: criteria
+    layer: methodology
+    mutability: mutable
+    writers: [hai_admin]
+    description: One of the twenty criteria. Codes are permanent; retired codes are never reused.
+    fields:
+      - { name: methodology_version_id, type: ref, ref: MethodologyVersion, required: true, description: "Owning methodology version." }
+      - { name: pillar_id, type: ref, ref: Pillar, required: true, description: "Owning pillar." }
+      - { name: code, type: enum, vocabulary: criterion_code, required: true, description: "Criterion code." }
+      - { name: pillar_code, type: enum, vocabulary: pillar_code, required: true, description: "Owning pillar code." }
+      - { name: name, type: text, required: true, description: "Display name." }
+      - { name: definition, type: text, required: true, description: "What the criterion means." }
+      - { name: legacy_id, type: text, description: "Phase 6 identifier kept as an alias." }
+      - { name: content_status, type: enum, vocabulary: content_status, required: true, default: draft, description: "Whether Humaital approved the text." }
+      - { name: materiality, type: enum, vocabulary: materiality, required: true, description: "High or standard consequence." }
+      - { name: materiality_weight, type: numeric, required: true, min: 0, description: "Numeric materiality used by confidence." }
+      - { name: weight, type: numeric, required: true, min: 0, description: "Within-pillar weight." }
+      - { name: freshness_window_months, type: int, required: true, min: 1, description: "Stale window for dated evidence (decision D8)." }
+    unique:
+      - [methodology_version_id, code]
+
+  - name: LevelDescriptor
+    table: level_descriptors
+    layer: methodology
+    mutability: mutable
+    writers: [hai_admin]
+    description: What each level 1 to 5 means for one criterion, and the maturity rung it requires (decision D1).
+    fields:
+      - { name: criterion_id, type: ref, ref: Criterion, required: true, description: "Owning criterion." }
+      - { name: level, type: int, required: true, min: 1, max: 5, description: "Level 1 to 5." }
+      - { name: descriptor, type: text, required: true, description: "Descriptor text." }
+      - { name: required_maturity_rung, type: enum, vocabulary: maturity_rung, required: true, description: "Minimum rung for this level." }
+    unique:
+      - [criterion_id, level]
+
+  - name: CriterionApplicability
+    table: criterion_applicability
+    layer: methodology
+    mutability: mutable
+    writers: [hai_admin]
+    description: When a criterion does not apply or must be reviewed (decision D5).
+    fields:
+      - { name: criterion_id, type: ref, ref: Criterion, required: true, description: "Owning criterion." }
+      - { name: condition, type: text, required: true, description: "Safe expression over assessment inputs." }
+      - { name: effect, type: enum, vocabulary: applicability_effect, required: true, description: "not_applicable or review." }
+
+  - name: Rule
+    table: rules
+    layer: methodology
+    mutability: mutable
+    writers: [hai_admin]
+    description: One rule of a ruleset, referenced by code so traces can name it.
+    fields:
+      - { name: ruleset_version, type: text, required: true, description: "Ruleset the rule belongs to." }
+      - { name: code, type: text, required: true, description: "Rule code, for example CAP-MATURITY." }
+      - { name: kind, type: enum, vocabulary: rule_kind, required: true, description: "cap, gate, confidence or adjustment." }
+      - { name: scope, type: enum, vocabulary: rule_scope, required: true, description: "criterion or assessment." }
+      - { name: run_order, type: int, required: true, description: "Execution order within the scope." }
+      - { name: expression_ref, type: text, required: true, description: "module:function implementing the rule." }
+      - { name: parameters, type: json, description: "Rule parameters." }
+      - { name: description, type: text, description: "What the rule does." }
+    unique:
+      - [ruleset_version, code]
+
+  # ------------------------------------------------------------- assessment
+  - name: Assessment
+    table: assessments
+    layer: assessment
+    mutability: mutable
+    writers: [hai_api, hai_pipeline, hai_engine, hai_reviewer]
+    description: One scoring run. Pins every version (IC-18). lifecycle_state follows spec section 8.1.
+    fields:
+      - { name: org_id, type: ref, ref: Organization, required: true, immutable: true, description: "The rated organization." }
+      - { name: parent_assessment_id, type: ref, ref: Assessment, description: "The assessment this one re-assesses, if any." }
+      - { name: requested_by, type: text, required: true, description: "Principal that created the assessment." }
+      - { name: submitted_domain, type: text, required: true, description: "Domain as submitted." }
+      - { name: direct_urls, type: array, items: text, description: "Governance page URLs supplied by the requester." }
+      - { name: stage_band, type: enum, vocabulary: stage_band, required: true, description: "Stage band at assessment time." }
+      - { name: size_band, type: enum, vocabulary: size_band, required: true, description: "Size band at assessment time." }
+      - { name: methodology_version, type: text, required: true, immutable: true, description: "Pinned methodology version." }
+      - { name: ruleset_version, type: text, required: true, immutable: true, description: "Pinned ruleset version." }
+      - { name: prompt_version, type: text, required: true, immutable: true, description: "Pinned prompt version." }
+      - { name: model_id, type: text, required: true, immutable: true, description: "Pinned provider:model." }
+      - { name: lifecycle_state, type: enum, vocabulary: lifecycle_state, required: true, default: queued, description: "Where the job is." }
+      - { name: idempotency_key, type: text, unique: true, description: "Client idempotency key." }
+      - { name: certification_requested, type: bool, required: true, default: false, description: "Whether a certification decision was requested." }
+      - { name: failure_reason, type: text, description: "Why the pipeline failed, when it did." }
+      - { name: started_at, type: timestamp, description: "When acquisition began." }
+      - { name: finished_at, type: timestamp, description: "When the lifecycle reached a terminal or completed state." }
+    transitions: { field: lifecycle_state, vocabulary: lifecycle_state }
+
+  - name: EvidenceSnapshot
+    table: evidence_snapshots
+    layer: assessment
+    mutability: immutable
+    writers: [hai_pipeline]
+    description: Frozen copy of every link's judgment columns, incident states and version pins. The rules engine reads only this (AT-07).
+    fields:
+      - { name: assessment_id, type: ref, ref: Assessment, required: true, unique: true, description: "The assessment." }
+      - { name: frozen_at, type: timestamp, required: true, description: "Freeze time; freshness is computed against it." }
+      - { name: manifest_hash, type: text, required: true, description: "Manifest hash at freeze time." }
+      - { name: span_ids, type: array, items: uuid, required: true, description: "Spans included." }
+      - { name: link_ids, type: array, items: uuid, required: true, description: "Links included." }
+      - { name: link_states, type: json, required: true, description: "Frozen judgment columns per link." }
+      - { name: incident_states, type: json, required: true, description: "Frozen status and severity per targeted incident." }
+      - { name: connector_runs, type: json, required: true, description: "Outcome per connector for IC-15 and IC-16." }
+      - { name: version_pins, type: json, required: true, description: "ontology, methodology, ruleset, prompt and model." }
+      - { name: snapshot_sha256, type: text, required: true, description: "SHA-256 over the canonical snapshot content." }
+
+  - name: CriterionFinding
+    table: criterion_findings
+    layer: assessment
+    mutability: append_only
+    writers: [hai_engine]
+    description: LLM or heuristic output. Advisory only. Rejected findings are stored for audit and never used (IC-05).
+    fields:
+      - { name: assessment_id, type: ref, ref: Assessment, required: true, description: "The assessment." }
+      - { name: criterion_code, type: enum, vocabulary: criterion_code, required: true, description: "The criterion." }
+      - { name: proposed_level, type: int, required: true, min: 1, max: 5, description: "Proposed level." }
+      - { name: evidence_link_ids, type: array, items: uuid, required: true, description: "Supporting links cited." }
+      - { name: contradicting_link_ids, type: array, items: uuid, description: "Contradicting links cited." }
+      - { name: uncertainty, type: numeric, required: true, min: 0, max: 1, description: "Proposer's uncertainty." }
+      - { name: reasoning_summary, type: text, required: true, description: "One or two sentences." }
+      - { name: provider, type: text, required: true, description: "Provider name." }
+      - { name: model_id, type: text, required: true, description: "provider:model." }
+      - { name: prompt_version, type: text, required: true, description: "Prompt version used." }
+      - { name: attempt, type: int, required: true, default: 1, min: 1, description: "Attempt number." }
+      - { name: validation_status, type: enum, vocabulary: finding_validation_status, required: true, description: "accepted or rejected." }
+      - { name: validation_errors, type: json, description: "IC codes and messages when rejected." }
+      - { name: raw_output, type: json, description: "Raw model output for audit." }
+      - { name: role, type: text, required: true, default: primary, description: "primary or second_opinion." }
+
+  - name: CriterionDecision
+    table: criterion_decisions
+    layer: assessment
+    mutability: append_only
+    supersedable: true
+    writers: [hai_engine]
+    description: Rules-engine output. The only source of criterion levels. Every decision lists the rules that ran (IC-14).
+    fields:
+      - { name: assessment_id, type: ref, ref: Assessment, required: true, description: "The assessment." }
+      - { name: criterion_code, type: enum, vocabulary: criterion_code, required: true, description: "The criterion." }
+      - { name: level, type: int, min: 1, max: 5, description: "Decided level. Null when the criterion is excluded." }
+      - { name: coverage_state, type: enum, vocabulary: coverage_state, required: true, description: "Observed, missing, unavailable and so on." }
+      - { name: confidence, type: numeric, required: true, min: 0, max: 100, description: "Criterion confidence." }
+      - { name: applied_rule_codes, type: array, items: text, required: true, description: "Rules that ran, in order." }
+      - { name: finding_id, type: ref, ref: CriterionFinding, description: "The accepted finding used, if any." }
+      - { name: trace, type: json, required: true, description: "Per-rule before and after state with a note." }
+      - { name: review_required, type: bool, required: true, default: false, description: "Routed to review." }
+    checks:
+      - { id: IC-14, sql: "cardinality(applied_rule_codes) >= 1", py: "len(applied_rule_codes) >= 1", description: "Every criterion decision lists at least one applied rule code." }
+      - { id: CK-DECISION-LEVEL, sql: "(coverage_state IN ('unavailable', 'not_applicable') AND level IS NULL) OR (coverage_state NOT IN ('unavailable', 'not_applicable') AND level IS NOT NULL)", py: "(coverage_state in ('unavailable', 'not_applicable') and level is None) or (coverage_state not in ('unavailable', 'not_applicable') and level is not None)", description: "Excluded criteria have no level; counted criteria do." }
+
+  - name: PillarScore
+    table: pillar_scores
+    layer: assessment
+    mutability: append_only
+    supersedable: true
+    writers: [hai_engine]
+    description: Derived per pillar; never edited.
+    fields:
+      - { name: assessment_id, type: ref, ref: Assessment, required: true, description: "The assessment." }
+      - { name: pillar_code, type: enum, vocabulary: pillar_code, required: true, description: "The pillar." }
+      - { name: score, type: numeric, required: true, min: 0, max: 100, description: "Pillar score 0 to 100." }
+      - { name: confidence, type: numeric, required: true, min: 0, max: 100, description: "Pillar confidence." }
+      - { name: criteria_counted, type: int, required: true, min: 0, description: "Criteria that counted." }
+      - { name: criteria_excluded, type: int, required: true, min: 0, description: "Criteria excluded as unavailable or not applicable." }
+
+  - name: AssessmentResult
+    table: assessment_results
+    layer: assessment
+    mutability: append_only
+    supersedable: true
+    writers: [hai_engine]
+    description: The HAI Score, confidence and effectiveness plus the outcome status set only by the rules engine (AT-10).
+    fields:
+      - { name: assessment_id, type: ref, ref: Assessment, required: true, description: "The assessment." }
+      - { name: hai_score, type: numeric, min: 0, max: 100, description: "HAI Score 0 to 100. Null when not computable." }
+      - { name: confidence_pct, type: numeric, min: 0, max: 100, description: "Overall confidence." }
+      - { name: effectiveness, type: numeric, min: 0, max: 100, description: "Share of counted criteria with documented execution or better." }
+      - { name: score_before_caps, type: numeric, min: 0, max: 100, description: "Score before caps." }
+      - { name: caps_applied, type: array, items: text, description: "Rule codes of caps that changed the score." }
+      - { name: outcome_status, type: enum, vocabulary: outcome_status, required: true, description: "First matching status, top to bottom." }
+      - { name: gate_reasons, type: array, items: text, description: "Why gates failed." }
+      - { name: review_triggers, type: array, items: text, description: "Review triggers fired." }
+      - { name: ruleset_version, type: text, required: true, description: "Ruleset that produced the result." }
+      - { name: result_sha256, type: text, required: true, description: "Hash of the canonical result for replay comparison." }
+
+  - name: CertificationDecision
+    table: certification_decisions
+    layer: assessment
+    mutability: append_only
+    supersedable: true
+    writers: [hai_reviewer]
+    description: Signed by a named reviewer. Never written by the LLM, the engine or the browser (IC-13).
+    fields:
+      - { name: assessment_id, type: ref, ref: Assessment, required: true, description: "The assessment." }
+      - { name: result_id, type: ref, ref: AssessmentResult, required: true, description: "The result certified." }
+      - { name: threshold_applied, type: numeric, required: true, description: "Threshold in force." }
+      - { name: decision, type: enum, vocabulary: certification_outcome, required: true, description: "certified, not_certified or revoked." }
+      - { name: gate_reasons, type: array, items: text, description: "Reasons when not certified or revoked." }
+      - { name: reviewer_id, type: text, required: true, description: "Named reviewer." }
+      - { name: signed_at, type: timestamp, required: true, description: "Signing time." }
+      - { name: expires_at, type: timestamp, description: "Expiry for a certified decision." }
+      - { name: certificate_number, type: text, unique: true, description: "Public certificate number." }
+      - { name: signature, type: text, required: true, description: "HMAC over assessment, result and reviewer." }
+    checks:
+      - { id: CK-CERT-REVIEWER, sql: "length(btrim(reviewer_id)) > 0", py: "nonblank(reviewer_id)", description: "A certification decision names its reviewer." }
+
+  - name: Review
+    table: reviews
+    layer: assessment
+    mutability: append_only
+    writers: [hai_reviewer]
+    description: A human decision on an incident, contradiction, borderline confidence, finding, link, appeal or certification. Always with a reason.
+    fields:
+      - { name: subject_type, type: enum, vocabulary: review_subject_type, required: true, description: "What is reviewed." }
+      - { name: subject_id, type: uuid, required: true, description: "Id of the reviewed row or task." }
+      - { name: assessment_id, type: ref, ref: Assessment, description: "Related assessment." }
+      - { name: reviewer_id, type: text, required: true, description: "Named reviewer." }
+      - { name: action, type: enum, vocabulary: review_action, required: true, description: "What the reviewer decided." }
+      - { name: reason, type: text, required: true, description: "Mandatory reason." }
+      - { name: decided_at, type: timestamp, required: true, description: "When." }
+    checks:
+      - { id: CK-REVIEW-REASON, sql: "length(btrim(reason)) > 0", py: "nonblank(reason)", description: "A review always carries a reason." }
+
+  - name: AuditEvent
+    table: audit_events
+    layer: assessment
+    mutability: immutable
+    writers: [hai_pipeline, hai_engine, hai_reviewer, hai_api, hai_admin]
+    description: Append-only, hash-chained record of every decision-bearing write (AT-15).
+    fields:
+      - { name: seq, type: bigint, required: true, unique: true, description: "Monotonic sequence number." }
+      - { name: actor, type: text, required: true, description: "Principal." }
+      - { name: action, type: text, required: true, description: "insert, update or a named action." }
+      - { name: subject_type, type: text, required: true, description: "Table or entity name." }
+      - { name: subject_id, type: uuid, description: "Row id." }
+      - { name: before, type: json, description: "Row before." }
+      - { name: after, type: json, description: "Row after." }
+      - { name: reason, type: text, description: "Reason, when given." }
+      - { name: at, type: timestamp, required: true, description: "Event time." }
+      - { name: prev_hash, type: text, required: true, description: "Hash of the previous event or the genesis constant." }
+      - { name: hash, type: text, required: true, unique: true, description: "SHA-256 over prev_hash and the canonical event." }
+
+# Relationship catalogue (spec section 5). Every foreign key in the schema is
+# declared here; a ref field without a relation fails validation.
+relations:
+  - { name: operates, from: Organization, to: [AISystem], cardinality: one_to_many, time_bound: true, fks: [{ entity: AISystem, field: owner_org_id, to: Organization }], description: "System ownership can transfer." }
+  - { name: controls_entity, from: Organization, to: [Organization], cardinality: many_to_many, time_bound: true, via: OrganizationRelation, fks: [{ entity: OrganizationRelation, field: parent_org_id, to: Organization }, { entity: OrganizationRelation, field: child_org_id, to: Organization }], description: "Subsidiary, affiliate or acquisition. Drives independence." }
+  - { name: protected_by, from: Organization, to: [Control, AISystem], cardinality: many_to_many, time_bound: true, fks: [{ entity: Control, field: org_id, to: Organization }, { entity: Control, field: ai_system_id, to: AISystem }], description: "A control may cover several systems." }
+  - { name: asserts, from: Organization, to: [Claim], cardinality: one_to_many, time_bound: false, fks: [{ entity: Claim, field: claimant_org_id, to: Organization }], description: "The organization is the claimant." }
+  - { name: describes, from: Claim, to: [Control, Incident, AISystem, Organization], cardinality: many_to_one, time_bound: false, polymorphic: { type_field: scope_type, id_field: scope_id, entity: Claim }, description: "What the claim is about." }
+  - { name: evaluated_by, from: Control, to: [TestOutcome], cardinality: one_to_many, time_bound: false, fks: [{ entity: TestOutcome, field: control_id, to: Control }], description: "Tests are point-in-time." }
+  - { name: affected, from: Incident, to: [AISystem, Control], cardinality: many_to_many, time_bound: false, fks: [{ entity: Incident, field: ai_system_id, to: AISystem }], array_field: { entity: Incident, field: affected_control_ids, to: Control }, description: "Which systems and controls the event touched." }
+  - { name: incident_of, from: Incident, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: Incident, field: org_id, to: Organization }], description: "The organization an incident concerns." }
+  - { name: remediates, from: Remediation, to: [Incident], cardinality: many_to_one, time_bound: false, fks: [{ entity: Remediation, field: incident_id, to: Incident }], description: "Remediation of an incident." }
+  - { name: verified_by, from: TestOutcome, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: TestOutcome, field: verifier_org_id, to: Organization }, { entity: Remediation, field: verified_by_org_id, to: Organization }, { entity: Claim, field: verified_by_org_id, to: Organization }], description: "Verifier must be independent to count as verified." }
+  - { name: assessed_by, from: TestOutcome, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: TestOutcome, field: assessor_org_id, to: Organization }], description: "Who performed the test." }
+  - { name: published_by, from: SourceDocument, to: [Publisher], cardinality: many_to_one, time_bound: false, fks: [{ entity: SourceDocument, field: publisher_id, to: Publisher }], description: "Publisher of the document." }
+  - { name: publisher_is, from: Publisher, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: Publisher, field: org_id, to: Organization }], description: "The organization behind a publisher." }
+  - { name: retrieved_via, from: SourceDocument, to: [ConnectorRun], cardinality: many_to_one, time_bound: false, fks: [{ entity: SourceDocument, field: connector_run_id, to: ConnectorRun }], description: "Proves the source was actually fetched (IC-16)." }
+  - { name: run_for, from: ConnectorRun, to: [Assessment], cardinality: many_to_one, time_bound: false, fks: [{ entity: ConnectorRun, field: assessment_id, to: Assessment }], description: "The assessment a run served." }
+  - { name: run_of, from: ConnectorRun, to: [Connector], cardinality: many_to_one, time_bound: false, fks: [{ entity: ConnectorRun, field: connector_id, to: Connector }], description: "The connector that ran." }
+  - { name: member_of, from: SourceDocument, to: [SourceCluster], cardinality: many_to_one, time_bound: false, fks: [{ entity: SourceDocument, field: cluster_id, to: SourceCluster }], description: "Syndication and duplicates." }
+  - { name: uploaded_as, from: Claim, to: [SourceDocument], cardinality: many_to_one, time_bound: false, fks: [{ entity: Claim, field: source_document_id, to: SourceDocument }], description: "Uploaded evidence enters as a claim." }
+  - { name: excerpted_from, from: EvidenceSpan, to: [SourceDocument], cardinality: many_to_one, time_bound: false, fks: [{ entity: EvidenceSpan, field: source_document_id, to: SourceDocument }], description: "The document a span is cut from." }
+  - { name: bears_on, from: EvidenceSpan, to: [Organization, AISystem, Claim, Control, TestOutcome, Incident], cardinality: many_to_many, time_bound: true, via: EvidenceLink, fks: [{ entity: EvidenceLink, field: span_id, to: EvidenceSpan }], polymorphic: { type_field: target_type, id_field: target_id, entity: EvidenceLink }, description: "Supports, contradicts or neutral, stored as polarity on the link, scoped to one criterion." }
+  - { name: supersedes, from: SourceDocument, to: [SourceDocument], cardinality: one_to_one, time_bound: false, fks: [{ entity: SourceDocument, field: supersedes_id, to: SourceDocument }, { entity: EvidenceSpan, field: supersedes_id, to: EvidenceSpan }, { entity: EvidenceLink, field: supersedes_id, to: EvidenceLink }, { entity: CriterionDecision, field: supersedes_id, to: CriterionDecision }, { entity: PillarScore, field: supersedes_id, to: PillarScore }, { entity: AssessmentResult, field: supersedes_id, to: AssessmentResult }, { entity: CertificationDecision, field: supersedes_id, to: CertificationDecision }], description: "Corrections and re-fetches add a row that supersedes the old one." }
+  - { name: part_of_methodology, from: Pillar, to: [MethodologyVersion], cardinality: many_to_one, time_bound: false, fks: [{ entity: Pillar, field: methodology_version_id, to: MethodologyVersion }, { entity: Criterion, field: methodology_version_id, to: MethodologyVersion }], description: "Fixed per methodology version." }
+  - { name: belongs_to, from: Criterion, to: [Pillar], cardinality: many_to_one, time_bound: false, fks: [{ entity: Criterion, field: pillar_id, to: Pillar }], description: "Fixed per methodology version." }
+  - { name: defined_by, from: LevelDescriptor, to: [Criterion], cardinality: many_to_one, time_bound: false, fks: [{ entity: LevelDescriptor, field: criterion_id, to: Criterion }], description: "Exactly five per criterion." }
+  - { name: applicable_to, from: CriterionApplicability, to: [Criterion], cardinality: many_to_one, time_bound: false, fks: [{ entity: CriterionApplicability, field: criterion_id, to: Criterion }], description: "Applicability conditions of a criterion." }
+  - { name: assesses, from: Assessment, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: Assessment, field: org_id, to: Organization }], description: "The rated organization." }
+  - { name: reassesses, from: Assessment, to: [Assessment], cardinality: many_to_one, time_bound: false, fks: [{ entity: Assessment, field: parent_assessment_id, to: Assessment }], description: "A new assessment under a new methodology or on request; history is never edited." }
+  - { name: pins, from: Assessment, to: [EvidenceSnapshot], cardinality: one_to_one, time_bound: false, fks: [{ entity: EvidenceSnapshot, field: assessment_id, to: Assessment }], description: "Reproducibility." }
+  - { name: proposed_for, from: CriterionFinding, to: [Assessment], cardinality: many_to_one, time_bound: false, fks: [{ entity: CriterionFinding, field: assessment_id, to: Assessment }], description: "Findings of an assessment." }
+  - { name: derived_from, from: CriterionDecision, to: [CriterionFinding], cardinality: many_to_one, time_bound: false, fks: [{ entity: CriterionDecision, field: finding_id, to: CriterionFinding }, { entity: CriterionDecision, field: assessment_id, to: Assessment }], description: "The scoring trace; rules are named in applied_rule_codes." }
+  - { name: contributes_to, from: CriterionDecision, to: [PillarScore, AssessmentResult], cardinality: many_to_one, time_bound: false, fks: [{ entity: PillarScore, field: assessment_id, to: Assessment }, { entity: AssessmentResult, field: assessment_id, to: Assessment }], description: "Aggregation path to the HAI Score, keyed by assessment." }
+  - { name: certifies, from: CertificationDecision, to: [AssessmentResult, Assessment], cardinality: many_to_one, time_bound: false, fks: [{ entity: CertificationDecision, field: result_id, to: AssessmentResult }, { entity: CertificationDecision, field: assessment_id, to: Assessment }], description: "A reviewer certifies a result." }
+  - { name: reviewed_in, from: Review, to: [Incident, EvidenceLink, CriterionFinding, CriterionDecision, CertificationDecision, Assessment], cardinality: many_to_one, time_bound: false, fks: [{ entity: Review, field: assessment_id, to: Assessment }], polymorphic: { type_field: subject_type, id_field: subject_id, entity: Review }, description: "Any reviewable row." }
+
+# Integrity constraints (spec section 11). enforced_in says where; implementation
+# names the code or generated object; acceptance_test names the AT that proves it.
+integrity_constraints:
+  - { id: IC-01, rule: "evidence_links.polarity cannot be updated after insert.", enforced_in: db_trigger, implementation: "generated trg_evidence_links_immutable (polarity, span_id, target_type, target_id, criterion_code)", acceptance_test: AT-06 }
+  - { id: IC-02, rule: "source_documents, evidence_spans, criterion_decisions, audit_events are insert-only.", enforced_in: db_trigger, implementation: "generated trg_<table>_append_only on every append_only and immutable entity", acceptance_test: AT-13 }
+  - { id: IC-03, rule: "An evidence span's quote must match the stored snapshot at its character offsets.", enforced_in: validator, implementation: "hai_pipeline.spans.verify_span and hai_engine.validation.check_quotes", acceptance_test: AT-03 }
+  - { id: IC-04, rule: "A criterion finding may cite only span and link ids inside its assessment's evidence snapshot.", enforced_in: validator, implementation: hai_engine.validation.check_citations, acceptance_test: AT-08 }
+  - { id: IC-05, rule: "A finding with a missing or unknown criterion_code, or no citations for a proposed level above 1, is rejected.", enforced_in: validator, implementation: hai_engine.validation.check_schema, acceptance_test: AT-08 }
+  - { id: IC-06, rule: "maturity_rung above stated_commitment requires a span with non-empty quoted text, not metadata only.", enforced_in: validator, implementation: "generated CK-SPAN-QUOTE plus hai_engine.classification and hai_engine.validation.check_maturity_credit", acceptance_test: AT-03 }
+  - { id: IC-07, rule: "maturity_rung independently_verified requires independence independent or regulator.", enforced_in: db_check, implementation: "generated CHECK IC-07 on evidence_links and the EvidenceLink Pydantic validator", acceptance_test: AT-12 }
+  - { id: IC-08, rule: "A link contributes only to the criterion_code it names. No cross-criterion or global promotion.", enforced_in: rules_engine, implementation: hai_engine.rules.context.CriterionContext, acceptance_test: AT-02 }
+  - { id: IC-09, rule: "Documents in one source cluster count once for independence and confidence.", enforced_in: rules_engine, implementation: "hai_engine.rules.builtin.conf_evidence (CONF-EVIDENCE)", acceptance_test: AT-07 }
+  - { id: IC-10, rule: "One canonical incident per canonical_event_key; at most one score adjustment per incident per assessment.", enforced_in: db_unique, implementation: "generated UNIQUE incidents.canonical_event_key plus hai_engine.rules.builtin.adj_incidents (ADJ-INCIDENTS)", acceptance_test: AT-04 }
+  - { id: IC-11, rule: "Incidents in alleged or under_investigation create a review, never an automatic adjustment.", enforced_in: rules_engine, implementation: "hai_engine.rules.builtin.gate_unverified_incidents (GATE-UNVERIFIED-INCIDENTS)", acceptance_test: AT-05 }
+  - { id: IC-12, rule: "criterion_decisions, assessment_results and certification_decisions are writable only by the rules-engine and reviewer roles.", enforced_in: db_grants, implementation: "generated GRANTs from entities[].writers, RLS policies in db/migrations/0002, SET LOCAL ROLE in hai_core.db", acceptance_test: AT-10 }
+  - { id: IC-13, rule: "hai_certified requires a signed certification_decisions row with a reviewer.", enforced_in: db_trigger, implementation: "db/migrations/0002 trg_results_require_certification (constraint trigger) plus GATE-OUTCOME-STATUS", acceptance_test: AT-10 }
+  - { id: IC-14, rule: "Every criterion_decision lists at least one applied rule code.", enforced_in: db_check, implementation: generated CHECK IC-14 on criterion_decisions, acceptance_test: AT-12 }
+  - { id: IC-15, rule: "coverage_state unavailable requires at least one failed or blocked connector_run.", enforced_in: rules_engine, implementation: "hai_engine.rules.builtin.gate_coverage (GATE-COVERAGE)", acceptance_test: AT-11 }
+  - { id: IC-16, rule: "No source may be reported as collected unless a connector_run with succeeded exists for it.", enforced_in: report_generator, implementation: hai_engine.reporting.collected_sources, acceptance_test: AT-11 }
+  - { id: IC-17, rule: "Crawled text is stored as data only and never concatenated into system instructions.", enforced_in: evaluation_worker, implementation: hai_engine.llm.prompts.build_messages, acceptance_test: AT-15 }
+  - { id: IC-18, rule: "Each assessment pins ontology, methodology, ruleset, prompt and model versions; none may be null.", enforced_in: db_not_null, implementation: "generated NOT NULL on assessments.ontology_version, methodology_version, ruleset_version, prompt_version, model_id", acceptance_test: AT-07 }
+
+# Acceptance tests (spec section 12 plus prompt section 11). tests lists the
+# automated test functions that prove each one.
+acceptance_tests:
+  - { id: AT-01, title: "Every source runs on every assessment", description: "Connectors run regardless of website outcome and every run is recorded.", tests: [test_every_connector_runs_and_is_recorded, test_full_assessment_lifecycle] }
+  - { id: AT-02, title: "No global execution leakage", description: "A link contributes only to its own criterion; execution is per span.", tests: [test_execution_is_per_span, test_link_counts_only_for_its_criterion] }
+  - { id: AT-03, title: "Metadata is not evidence", description: "Titles, labels and dates alone never lift maturity above none; quotes match stored text.", tests: [test_metadata_is_not_evidence, test_quote_offsets_and_quotes, test_spans_have_exact_offsets] }
+  - { id: AT-04, title: "One incident per event", description: "Two syndicated articles about one lawsuit produce one incident.", tests: [test_event_keys_bucket_by_month, test_one_incident_from_two_articles] }
+  - { id: AT-05, title: "Alleged incidents go to review", description: "Alleged or under-investigation incidents never adjust a score automatically.", tests: [test_alleged_incident_has_no_automatic_effect, test_incidents_start_conservative] }
+  - { id: AT-06, title: "Polarity is never overwritten", description: "Updating polarity on a link is refused by the database.", tests: [test_polarity_is_immutable] }
+  - { id: AT-07, title: "Replay is deterministic", description: "Same snapshot and versions give the same result; clusters count once; version pins are mandatory.", tests: [test_replay_matches_stored_result, test_a_source_cluster_counts_once, test_version_pins_are_mandatory] }
+  - { id: AT-08, title: "Findings cite only the snapshot", description: "Schema-invalid findings and citations outside the snapshot or pack are rejected.", tests: [test_bad_findings_are_rejected, test_citation_outside_the_snapshot, test_a_good_finding_passes] }
+  - { id: AT-09, title: "Evidence is not truncated", description: "Per-criterion packs from full documents; omissions are counted into uncertainty.", tests: [test_evidence_pack_is_per_criterion_and_counts_omissions] }
+  - { id: AT-10, title: "One authority for scores and status", description: "Only the engine writes results and status; only a reviewer certifies; the browser renders what is stored.", tests: [test_result_tables_are_writable_only_by_engine_role, test_api_keys_cannot_sign, test_hai_certified_requires_signed_decision] }
+  - { id: AT-11, title: "Unavailable is not missing", description: "Blocked sources give unavailable (excluded) and the report never lists an uncollected source.", tests: [test_unavailable_only_when_a_connector_failed, test_blocked_sources_are_unavailable_not_missing, test_report_lists_only_collected_sources] }
+  - { id: AT-12, title: "One manifest everywhere", description: "Maturity comes from descriptors not tier; generated code matches the manifest; no hand-typed codes.", tests: [test_independence_comes_from_the_publisher_not_the_tier, test_generated_files_are_up_to_date, test_no_hand_typed_codes_outside_generated_files] }
+  - { id: AT-13, title: "Complete append-only ledger", description: "Documents and spans are insert-only; news carries real dates, URLs and publishers.", tests: [test_append_only_tables_refuse_updates, test_news_items_carry_real_dates_and_publishers] }
+  - { id: AT-14, title: "Review workflow", description: "Reviews require a reason; escalation keeps the task open for a different reviewer; four-eyes on certification.", tests: [test_escalation_and_four_eyes, test_review_requires_reason] }
+  - { id: AT-15, title: "Tamper evidence and prompt isolation", description: "The audit chain verifies and detects tampering; crawled text never enters the system prompt.", tests: [test_audit_tampering_is_detected, test_every_write_is_audited_and_the_chain_verifies, test_injection_never_reaches_the_model] }

@@ -1,0 +1,11 @@
+vocabulary:
+  code: execution_level
+  title: Execution level
+  description: "Per-span proof of execution (Phase 6 FIX-12, legacy proof-of-execution.js:28-33). bonus is the confidence bonus (legacy :279-287)."
+  ordered: true
+  attributes: { bonus: number }
+  values:
+    - { code: none, label: None, rank: 0, description: Policy document only; no execution signals found., attributes: { bonus: -5 } }
+    - { code: asserted, label: Asserted, rank: 1, description: Intent language; no artefact evidence., attributes: { bonus: 0 } }
+    - { code: partial, label: Partial, rank: 2, description: Execution trace without external verification., attributes: { bonus: 10 } }
+    - { code: verified, label: Verified, rank: 3, description: Third-party verified artefact or dated quantified outcome., attributes: { bonus: 20 } }

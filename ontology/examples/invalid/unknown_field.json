@@ -1,0 +1,11 @@
+{
+  "entity": "Publisher",
+  "description": "Unknown fields are refused.",
+  "expect_error": "E_UNKNOWN_FIELD",
+  "record": {
+    "name": "Example Press",
+    "domain": "press.example",
+    "publisher_type": "press",
+    "tier": "T3"
+  }
+}

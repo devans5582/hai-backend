@@ -1,0 +1,256 @@
+# Methodology 1.0.0. Scoring, confidence, certification, outcome, freshness,
+# review triggers and lexicons. Numbers marked "Phase 6" are imported exactly
+# from legacy/express-api; see docs/porting-from-phase6.md for the lines.
+# Numbers marked draft are placeholders until Humaital supplies content.
+methodology:
+  version: 1.0.0
+  status: draft
+  effective_from: 2026-10-24
+  approved_by: null
+  change_record_uri: null
+  product:
+    report_name: HAI Score
+    long_name: Human Alignment Index
+    code_name: hai
+
+  scoring:
+    level_min: 1
+    level_max: 5
+    criterion_ratio: "(level - 1) / 4"         # Phase 6 report-generator.js:1250
+    pillar_aggregation: equal_mean               # D2: equal_mean | materiality_weighted
+    score_scale: 100
+    score_cap: 85                                # Phase 6 report-generator.js:1019
+    low_confidence_cap:                          # Phase 6 report-generator.js:1023-1024
+      confidence_below: 70
+      cap: 75
+    excluded_coverage_states: [unavailable, not_applicable]
+    missing_level: 1
+    effectiveness_min_rung: documented_execution # share of counted criteria at this rung or above
+
+  confidence:
+    base_contribution: 30                        # Phase 6 evidence-weighting.js:141
+    # contribution = tier_weight x rung_credit x class_multiplier x materiality x decay x base
+    # tier_weight: source_tier.weight; rung_credit: maturity_rung.credit;
+    # class_multiplier: evidence_class.multiplier; decay: freshness below.
+    corroboration_bonus:                         # Phase 6 evidence-weighting.js:171-178
+      two_sources: 8
+      three_or_more: 15
+      scaled_by_materiality: true
+    execution_bonus_from: execution_level.bonus  # Phase 6 proof-of-execution.js:279-287
+    execution_bonus_mode: max_over_links         # the best per-span execution level in the pack
+    clamp: { min: 0, max: 100 }
+    partial_ceiling:                             # Phase 6 bundle.js, referenced at scraper.js:765
+      value: 69
+      content_status: draft
+    contradiction_penalty:                       # draft
+      per_admissible_contradicting_link: 10
+      max: 30
+      content_status: draft
+    omission_penalty:                            # AT-09, draft
+      per_omitted_span: 1
+      max: 15
+      content_status: draft
+    second_opinion:                              # draft
+      disagreement_levels_for_penalty: 2
+      penalty: 15
+      disagreement_levels_for_review: 3
+      content_status: draft
+
+  certification:
+    threshold_mode: universal                    # D3: universal | stage_size
+    threshold: 70                                # whitepaper; Phase 6 report-generator.js:199
+    min_confidence: 70                           # confidence_too_low below this (Phase 6 evidence cap threshold); draft
+    validity_months: 12                          # draft
+    stage_size_table:
+      content_status: draft
+      rows:
+        - { stage_band: early, size_band: small, threshold: 70 }
+        - { stage_band: early, size_band: mid, threshold: 70 }
+        - { stage_band: growth, size_band: small, threshold: 70 }
+        - { stage_band: growth, size_band: mid, threshold: 70 }
+        - { stage_band: growth, size_band: large, threshold: 70 }
+        - { stage_band: mature, size_band: mid, threshold: 70 }
+        - { stage_band: mature, size_band: large, threshold: 70 }
+        - { stage_band: mature, size_band: enterprise, threshold: 70 }
+
+  outcome:
+    # Evaluated in outcome_status rank order; first match wins (spec 8.2).
+    access_limited_unavailable_share: 0.5        # draft
+    insufficient_min_observed_criteria: 4        # draft
+    governance_baseline_min_admissible_links: 1  # raw score 0 but signals exist
+    content_status: draft
+
+  freshness:
+    default_window_months: 24                    # D8
+    undated_age_months: 18                       # Phase 6 time-decay.js:64
+    certificate_full_weight_until_expiry: true   # Phase 6 time-decay.js:122-141
+    # Exponential decay: max(floor, exp(-ln2 / half_life_months * age_months)).
+    # Keyed by publisher_type. legacy_source maps the Phase 6 curve keys (time-decay.js:34-60).
+    decay_curves:
+      regulator_record: { half_life_months: 18, floor: 0.4, legacy_source: [EDGAR, GOVINFO] }
+      standards_registry: { half_life_months: 24, floor: 0.6, legacy_source: [ISO_42001, NIST_RMF] }
+      independent_audit: { half_life_months: 24, floor: 0.55, legacy_source: [] }
+      academic_research: { half_life_months: 36, floor: 0.5, legacy_source: [ACADEMIC, OECD] }
+      press: { half_life_months: 3, floor: 0.1, legacy_source: [NEWS] }
+      org_disclosure: { half_life_months: 12, floor: 0.3, legacy_source: [WEBSITE] }
+      org_repository: { half_life_months: 18, floor: 0.2, legacy_source: [GITHUB] }
+      archive: { half_life_months: 18, floor: 0.25, legacy_source: [WAYBACK] }
+      aggregator_or_social: { half_life_months: 18, floor: 0.3, legacy_source: [] }
+      default: { half_life_months: 18, floor: 0.3, legacy_source: [DEFAULT] }
+    # Contradicting press decays slower: reputational signal persists (Phase 6 NEWS_NEGATIVE 6/0.4).
+    contradicting_press_curve: { half_life_months: 6, floor: 0.4 }
+    labels:                                      # Phase 6 time-decay.js:232-240
+      - { min: 80, label: Current }
+      - { min: 60, label: Mostly current }
+      - { min: 40, label: Mixed age }
+      - { min: 0, label: Largely stale }
+
+  review_triggers:
+    borderline_confidence_band: { low: 60, high: 75 }   # draft
+    contradictory_coverage: true
+    unverified_incidents: true
+    certification_request: true
+    no_finding_with_admissible_support: true
+    content_status: draft
+
+  lexicons:
+    # Terms compile to whole-word regular expressions. A trailing * is a prefix wildcard.
+    commitment:
+      terms: ["we are committed to", "we commit to", "committed to", "we aim to", "our policy is",
+              "we will", "we strive to", "we pledge", "we believe", "principles", "policy",
+              "code of conduct", "we do not", "we never"]
+    control:
+      owner_terms: ["chief * officer", "head of *", "responsible ai lead", "accountable executive",
+                    "owner", "owned by", "responsible for", "reports to the board", "committee",
+                    "council", "review board", "director of *", "vp of *", "vice president"]
+      threshold_terms: ["at least \\d+", "within \\d+ (hours|days|weeks)", "no more than \\d+",
+                        "\\d+\\s?%", "threshold", "must not exceed", "minimum of \\d+", "every \\d+ (months|weeks|days)",
+                        "annually", "quarterly", "monthly"]
+    execution_dates:
+      terms: ["in (q[1-4]|january|february|march|april|may|june|july|august|september|october|november|december) 20\\d\\d",
+              "as of (q[1-4] )?20\\d\\d", "on \\d{1,2} (january|february|march|april|may|june|july|august|september|october|november|december) 20\\d\\d",
+              "(january|february|march|april|may|june|july|august|september|october|november|december) \\d{1,2},? 20\\d\\d",
+              "20\\d\\d-\\d\\d-\\d\\d", "fy ?20\\d\\d", "during 20\\d\\d", "since 20\\d\\d"]
+      result_terms: ["completed", "conducted", "performed", "reviewed", "audited", "tested", "resolved",
+                     "reported", "measured", "published", "found", "identified", "remediated", "achieved"]
+    independent_verification:
+      terms: ["independent audit*", "independently audited", "third-party audit*", "external audit*",
+              "certified to", "certification awarded", "attestation", "soc 2", "iso 42001", "iso 27001",
+              "assurance report", "verified by"]
+    # Phase 6 FIX-12 execution patterns (legacy proof-of-execution.js:42-106, :132-149).
+    execution:
+      categories:
+        metrics:
+          weight: 1.0
+          patterns:
+            - "\\d{1,3}%\\s*(reduction|improvement|decrease|increase)"
+            - "\\d+\\s*(incidents|cases|complaints|audits|reviews)\\s*(reported|resolved|completed)"
+            - "in\\s*(q[1-4]|january|february|march|april|may|june|july|august|september|october|november|december)\\s*202[0-9]"
+            - "as of\\s*(q[1-4]|[0-9]{4})"
+            - "year-over-year|quarter-on-quarter|monthly trend|annual report"
+            - "measured|quantified|tracked|monitored since"
+        process:
+          weight: 0.8
+          patterns:
+            - "approved by|signed off by|reviewed by|audited by"
+            - "ethics (committee|board|panel|review) (met|convened|approved|reviewed)"
+            - "incident (reported|logged|resolved|investigated)"
+            - "change (log|record|audit trail)"
+            - "meeting (minutes|notes|agenda) (published|available|archived)"
+            - "testing (completed|passed|failed|conducted)"
+            - "red team(ing)? (conducted|performed|completed)"
+            - "model card (published|released|updated)"
+            - "datasheets? for datasets?"
+            - "deployed|launched|rolled out|went live"
+        control:
+          weight: 0.7
+          patterns:
+            - "chief (ai|ethics|responsible|technology) officer"
+            - "responsible ai (lead|officer|director|team)"
+            - "ai (governance|ethics|safety) (committee|board|council|team)"
+            - "[A-Z][a-z]+ [A-Z][a-z]+,?\\s*(VP|Director|Head of|Chief)"
+            - "escalated to|reviewed by (the )?(board|executive|leadership)"
+        audit:
+          weight: 1.0
+          patterns:
+            - "iso (42001|27001|9001)[\\s:\\-]*(certified|certification|compliant|audit)"
+            - "soc\\s*2?\\s*(type\\s*i+|audit|report|compliant)"
+            - "independent (audit|review|assessment|evaluation)"
+            - "(external|third.party) (auditor|reviewer|assessor|verifier)"
+            - "certification (awarded|achieved|renewed|maintained)"
+            - "nist (ai\\s*rmf|ai risk management|800-)"
+            - "eu ai act (compliant|compliance|assessment|registration)"
+        impact:
+          weight: 0.9
+          patterns:
+            - "users? (benefited|improved|helped|saved|assisted)\\s*:?\\s*\\d"
+            - "time saved|hours? (saved|reduced|freed)"
+            - "error(s?) (reduced|decreased|eliminated)"
+            - "access(ibility)? (improved|expanded|increased)"
+            - "outcome(s?) (measured|published|reported)"
+            - "impact (report|assessment|evaluation) (published|released|completed)"
+      levels:
+        verified_if: "audit in categories or (metrics in categories and total_weight >= 1.8)"
+        partial_if: "metrics in categories or (process in categories and control in categories)"
+        asserted_if: "total_weight > 0"
+    # Phase 6 FIX-9 severity map (legacy negative-signal-overrides.js:60-141, :171-186) as
+    # incident rules. publisher_types replaces the legacy source codes. First match wins.
+    negative_signals:
+      rules:
+        - code: NEG-REGULATORY-ORDER
+          publisher_types: [regulator_record]
+          terms: ["enforcement action", "consent decree", "regulatory order", "court order", "injunction",
+                  "civil penalty", "settlement order", "cease and desist", "gdpr fine", "ico penalty", "ftc order"]
+          severity: critical
+          initial_status: substantiated
+          affected_pillars: [TRU, ACC, SAF]
+          description: A regulatory filing or order was identified in verified public records for this entity. This assessment cannot support current governance levels for the affected criteria while this filing is active. Human review is required.
+        - code: NEG-LEGAL-PROCEEDING
+          publisher_types: [regulator_record, press]
+          terms: ["under investigation", "regulatory inquiry", "class action", "lawsuit filed", "sec investigation",
+                  "doj inquiry", "formal complaint filed", "regulatory probe", "sued", "lawsuit"]
+          severity: high
+          initial_status: alleged
+          affected_pillars: [TRU, ACC, TRN]
+          description: An active legal or regulatory proceeding involving this entity was detected in public sources. This may affect the reliability of current governance evidence. Human review is recommended before using this score.
+        - code: NEG-AI-HARM
+          publisher_types: [press, regulator_record, academic_research]
+          terms: ["ai safety incident", "ai harm reported", "algorithmic harm", "ai bias documented", "ai failure",
+                  "data breach confirmed", "ai system recall", "ai deployment halted", "data breach"]
+          severity: high
+          initial_status: alleged
+          affected_pillars: [SAF, TRU, IMP]
+          description: A reported safety or harm event involving AI systems associated with this entity was detected in public sources. The affected criteria reflect reduced confidence pending review.
+        - code: NEG-POLICY-CONTRADICTION
+          publisher_types: [press, academic_research]
+          terms: ["contradicts stated policy", "policy not followed", "claims disputed", "misleading ai claims",
+                  "ai transparency gap reported", "broken commitment"]
+          severity: moderate
+          initial_status: alleged
+          affected_pillars: [TRN, TRU, PUR]
+          description: Publicly available sources report a gap between stated governance commitments and observed practice. One level has been deducted from affected criteria pending review. This does not represent a finding of wrongdoing.
+        - code: NEG-UNVERIFIED-CONCERN
+          publisher_types: [press, archive, org_repository, aggregator_or_social]
+          terms: ["criticism", "concerns raised", "critics say", "questioned", "lack of transparency", "pressure to improve"]
+          severity: low
+          initial_status: alleged
+          affected_pillars: [TRU, TRN]
+          description: Reported concerns about governance practices were detected in lower-confidence sources. Criterion confidence has been moderated. Criterion levels are unchanged. No score reduction has been applied.
+      default:
+        severity_by_tier: { T1: moderate, T2: moderate, T3: low, T4: low }
+        initial_status: alleged
+        affected_pillars: [TRU]
+        description: A governance risk signal was detected in public sources. The affected criteria reflect reduced confidence. Human review is recommended.
+      wording_rules:
+        - Describe what was detected, not what it proves.
+        - Use reported, detected or identified in public sources.
+        - Never use proved, confirmed wrongdoing, guilty of or violated.
+        - Never name a regulatory body as having acted unless the source is a regulator record.
+    injection:
+      terms: ["ignore (all )?(previous|prior|above) instructions", "disregard (the|all) (above|previous)",
+              "you are now", "system prompt", "assign level [1-5]", "set (the )?(score|level) to",
+              "as an ai (language )?model", "<\\|im_start\\|>", "###\\s*instruction", "\\[inst\\]",
+              "do not follow the rubric", "rate this (company|organization) (as|at) level", "hai score of \\d"]
+    irrelevance:
+      # A span is irrelevant for a criterion when none of the criterion's retrieval hints match it.
+      require_hint_match: true

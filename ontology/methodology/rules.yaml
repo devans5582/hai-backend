@@ -1,0 +1,122 @@
+# Ruleset 1.0.0. Rules are data; implementations are pure Python functions in
+# hai_engine.rules.builtin registered under the same code. The validator refuses
+# an expression_ref that does not resolve to a function registered under the code.
+# Criterion-scope rules run in run_order for every criterion; assessment-scope
+# rules run once afterwards. Every run is recorded in the decision trace (IC-14).
+ruleset:
+  version: 1.0.0
+  rules:
+    # --------------------------------------------------------------- criterion
+    - code: GATE-APPLICABILITY
+      kind: gate
+      scope: criterion
+      run_order: 10
+      expression_ref: hai_engine.rules.builtin:gate_applicability
+      description: Evaluate the criterion's applicability conditions. not_applicable excludes the criterion; review routes it.
+      parameters: {}
+    - code: GATE-COVERAGE
+      kind: gate
+      scope: criterion
+      run_order: 20
+      expression_ref: hai_engine.rules.builtin:gate_coverage
+      description: "Set coverage state. unavailable only when a connector run failed or was blocked and no admissible support exists (IC-15); otherwise missing, observed, not_tested, failed or contradictory."
+      parameters: {}
+    - code: ADJ-START-FROM-FINDING
+      kind: adjustment
+      scope: criterion
+      run_order: 30
+      expression_ref: hai_engine.rules.builtin:adj_start_from_finding
+      description: Start the level from the accepted finding's proposed level, or from the evidence ladder when no finding was accepted. Findings are advisory.
+      parameters: {}
+    - code: CAP-NO-ADMISSIBLE-SUPPORT
+      kind: cap
+      scope: criterion
+      run_order: 40
+      expression_ref: hai_engine.rules.builtin:cap_no_admissible_support
+      description: Without any admissible supporting link the level is the missing level.
+      parameters: {}
+    - code: CAP-MATURITY
+      kind: cap
+      scope: criterion
+      run_order: 50
+      expression_ref: hai_engine.rules.builtin:cap_maturity
+      description: Cap the level at the highest level whose required maturity rung is reached by an admissible supporting link (decision D1). Source tier never sets maturity.
+      parameters: {}
+    - code: CAP-FAILED-EXECUTION
+      kind: cap
+      scope: criterion
+      run_order: 60
+      expression_ref: hai_engine.rules.builtin:cap_failed_execution
+      description: A failed test outcome caps the level at the specified_control level.
+      parameters: { cap_level: 3 }
+    - code: GATE-UNVERIFIED-INCIDENTS
+      kind: gate
+      scope: criterion
+      run_order: 70
+      expression_ref: hai_engine.rules.builtin:gate_unverified_incidents
+      description: Alleged or under-investigation incidents targeting this criterion route it to review with no automatic effect (IC-11).
+      parameters: {}
+    - code: ADJ-INCIDENTS
+      kind: adjustment
+      scope: criterion
+      run_order: 80
+      expression_ref: hai_engine.rules.builtin:adj_incidents
+      description: Apply each substantiated incident's severity effect once, on its most material criterion only (IC-10).
+      parameters: {}
+    - code: CONF-EVIDENCE
+      kind: confidence
+      scope: criterion
+      run_order: 90
+      expression_ref: hai_engine.rules.builtin:conf_evidence
+      description: "Confidence from admissible supporting links: tier x class x rung credit x materiality x freshness decay x base, clusters counted once (IC-09), plus corroboration, execution and omission terms."
+      parameters: {}
+    - code: CONF-CONTRADICTION
+      kind: confidence
+      scope: criterion
+      run_order: 100
+      expression_ref: hai_engine.rules.builtin:conf_contradiction
+      description: Admissible contradicting links lower confidence and, with admissible support, make the criterion contradictory.
+      parameters: {}
+    - code: CONF-INCIDENT-CEILING
+      kind: confidence
+      scope: criterion
+      run_order: 110
+      expression_ref: hai_engine.rules.builtin:conf_incident_ceiling
+      description: A substantiated incident's confidence ceiling caps the confidence of its most material criterion.
+      parameters: {}
+    # -------------------------------------------------------------- assessment
+    - code: CAP-SCORE-CEILING
+      kind: cap
+      scope: assessment
+      run_order: 200
+      expression_ref: hai_engine.rules.builtin:cap_score_ceiling
+      description: The HAI Score never exceeds scoring.score_cap.
+      parameters: {}
+    - code: CAP-SCORE-LOW-CONFIDENCE
+      kind: cap
+      scope: assessment
+      run_order: 210
+      expression_ref: hai_engine.rules.builtin:cap_score_low_confidence
+      description: When overall confidence is below the threshold the score is capped.
+      parameters: {}
+    - code: GATE-REVIEW-TRIGGERS
+      kind: gate
+      scope: assessment
+      run_order: 220
+      expression_ref: hai_engine.rules.builtin:gate_review_triggers
+      description: "Collect review triggers: contradictory criteria, unverified incidents, borderline confidence, certification request, second-opinion disagreement."
+      parameters: {}
+    - code: GATE-CERTIFICATION
+      kind: gate
+      scope: assessment
+      run_order: 230
+      expression_ref: hai_engine.rules.builtin:gate_certification
+      description: Compare the score and confidence with the threshold in force (decision D3) and record gate reasons.
+      parameters: {}
+    - code: GATE-OUTCOME-STATUS
+      kind: gate
+      scope: assessment
+      run_order: 240
+      expression_ref: hai_engine.rules.builtin:gate_outcome_status
+      description: "Set outcome status, first match wins: access_limited, insufficient_evidence, governance_baseline, confidence_too_low, certification_not_yet_achieved, hai_certified (only with a signed decision)."
+      parameters: {}

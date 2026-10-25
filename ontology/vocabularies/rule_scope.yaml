@@ -1,0 +1,7 @@
+vocabulary:
+  code: rule_scope
+  title: Rule scope
+  description: Whether a rule runs per criterion or once per assessment.
+  values:
+    - { code: criterion, label: Criterion, description: Runs for each criterion. }
+    - { code: assessment, label: Assessment, description: Runs once after all criteria. }

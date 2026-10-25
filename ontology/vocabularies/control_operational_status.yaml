@@ -1,0 +1,11 @@
+vocabulary:
+  code: control_operational_status
+  title: Control operational status
+  description: Lifecycle of a control.
+  values:
+    - { code: planned, label: Planned, description: Intended but not yet in place. }
+    - { code: implemented, label: Implemented, description: In place; operation not yet shown. }
+    - { code: operating, label: Operating, description: Running with evidence of operation. }
+    - { code: suspended, label: Suspended, description: Temporarily not operating. }
+    - { code: retired, label: Retired, description: No longer in use. }
+    - { code: unknown, label: Unknown, description: Status not determinable from evidence. }

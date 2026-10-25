@@ -1,0 +1,15 @@
+vocabulary:
+  code: publisher_type
+  title: Publisher type
+  description: "Kind of publisher (spec 7.9). source_tier is looked up from here; it is potential authority only and never sets maturity or independence. default_independence is the starting independence before organization relations are applied."
+  attributes: { source_tier: string, default_independence: string }
+  values:
+    - { code: regulator_record, label: Regulator record, description: "SEC EDGAR, courts, government agencies.", attributes: { source_tier: T1, default_independence: regulator } }
+    - { code: standards_registry, label: Standards registry, description: "ISO certificate registries, NIST.", attributes: { source_tier: T1, default_independence: independent } }
+    - { code: independent_audit, label: Independent audit, description: An audit firm engaged by the organization., attributes: { source_tier: T2, default_independence: commissioned } }
+    - { code: academic_research, label: Academic research, description: Peer-reviewed or preprint research., attributes: { source_tier: T2, default_independence: independent } }
+    - { code: press, label: Press, description: News organizations., attributes: { source_tier: T3, default_independence: independent } }
+    - { code: org_disclosure, label: Organization disclosure, description: "The organization's own website, reports and model cards.", attributes: { source_tier: T3, default_independence: self } }
+    - { code: org_repository, label: Organization repository, description: The organization's code repositories., attributes: { source_tier: T3, default_independence: self } }
+    - { code: archive, label: Web archive, description: An archived copy of a page; independence follows the archived publisher., attributes: { source_tier: T3, default_independence: self } }
+    - { code: aggregator_or_social, label: Aggregator or social, description: Aggregators and social media., attributes: { source_tier: T4, default_independence: independent } }

@@ -1,0 +1,12 @@
+vocabulary:
+  code: target_type
+  title: Target type
+  description: What an evidence link is about. The AI system level is optional in v1 (decision D6).
+  attributes: { entity: string }
+  values:
+    - { code: organization, label: Organization, description: The organization itself., attributes: { entity: Organization } }
+    - { code: ai_system, label: AI system, description: A named AI system., attributes: { entity: AISystem } }
+    - { code: claim, label: Claim, description: A claim the organization made., attributes: { entity: Claim } }
+    - { code: control, label: Control, description: A governance control., attributes: { entity: Control } }
+    - { code: test_outcome, label: Test outcome, description: A test of a control., attributes: { entity: TestOutcome } }
+    - { code: incident, label: Incident, description: An incident., attributes: { entity: Incident } }

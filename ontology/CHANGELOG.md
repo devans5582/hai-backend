@@ -9,7 +9,7 @@ enough.
 
 First release, modelled from `docs/spec/HAI_Ontology_v1_Specification.docx`.
 
-* Four layers, 30 entities, the relationship catalogue, 33 hand-written
+* Four layers, 30 entities, the relationship catalogue, 34 hand-written
   vocabularies plus the two derived ones (`criterion_code`, `pillar_code`).
 * Integrity constraints IC-01 to IC-18 and acceptance tests AT-01 to AT-15.
 * Six pillars with the Phase 6 weights.

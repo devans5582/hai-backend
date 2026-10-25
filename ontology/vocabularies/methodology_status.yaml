@@ -1,0 +1,8 @@
+vocabulary:
+  code: methodology_status
+  title: Methodology status
+  description: Approval state of a methodology version.
+  values:
+    - { code: draft, label: Draft, description: Not yet signed by Humaital. }
+    - { code: approved, label: Approved, description: Signed change record exists. }
+    - { code: retired, label: Retired, description: Superseded; kept for replay. }

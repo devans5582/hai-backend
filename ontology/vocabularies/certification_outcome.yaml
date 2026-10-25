@@ -1,0 +1,8 @@
+vocabulary:
+  code: certification_outcome
+  title: Certification outcome
+  description: A reviewer's certification decision.
+  values:
+    - { code: certified, label: Certified, description: HAI certified until expiry. }
+    - { code: not_certified, label: Not certified, description: Gates failed or reviewer declined. }
+    - { code: revoked, label: Revoked, description: A prior certification was withdrawn; supersedes it. }

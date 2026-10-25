@@ -1,0 +1,9 @@
+vocabulary:
+  code: stage_band
+  title: Stage band
+  description: "Organization stage (spec 7.10 placeholders; decision D3). aliases carry the Phase 6 form inputs (legacy evaluate.js:76, report-generator.js:899-901)."
+  ordered: true
+  values:
+    - { code: early, label: Early stage, rank: 0, description: Startup or pre-seed to seed., aliases: [startup, early-stage, seed, pre-seed, emerging] }
+    - { code: growth, label: Growth stage, rank: 1, description: Series A to scale-up., aliases: [scaleup, scale-up, series-a, series-b, scaling] }
+    - { code: mature, label: Mature, rank: 2, description: Established or public organization., aliases: [enterprise, public, large, institutional] }

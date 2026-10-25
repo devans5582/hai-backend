@@ -1,0 +1,9 @@
+vocabulary:
+  code: claim_scope_type
+  title: Claim scope type
+  description: What a claim is about.
+  values:
+    - { code: organization, label: Organization, description: The organization as a whole. }
+    - { code: ai_system, label: AI system, description: A named system. }
+    - { code: control, label: Control, description: A governance control. }
+    - { code: incident, label: Incident, description: An incident. }

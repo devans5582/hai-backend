@@ -1,0 +1,7 @@
+vocabulary:
+  code: finding_validation_status
+  title: Finding validation status
+  description: Whether the validator accepted a finding.
+  values:
+    - { code: accepted, label: Accepted, description: Passed every check; usable by the rules engine. }
+    - { code: rejected, label: Rejected, description: Failed a check; stored for audit and never used. }

@@ -1,0 +1,12 @@
+vocabulary:
+  code: outcome_status
+  title: Outcome status
+  description: What the result means (spec 8.2). Set only by the rules engine, evaluated top to bottom by rank; the first match wins. Rendered exactly as stored (AT-10).
+  ordered: true
+  values:
+    - { code: access_limited, label: Access limited, rank: 0, description: Primary sources unavailable above a threshold share of criteria. }
+    - { code: insufficient_evidence, label: Insufficient evidence, rank: 1, description: Too few criteria observed to compute a defensible score. }
+    - { code: governance_baseline, label: Governance baseline, rank: 2, description: Raw score is 0 but high- or medium-strength signals exist. }
+    - { code: confidence_too_low, label: Confidence too low, rank: 3, description: Score computed but confidence below the certification minimum. }
+    - { code: certification_not_yet_achieved, label: Certification not yet achieved, rank: 4, description: Score and confidence computed; a gate failed or no reviewer has signed. }
+    - { code: hai_certified, label: HAI certified, rank: 5, description: All gates pass and a signed certification decision exists. }

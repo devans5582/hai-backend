@@ -1,0 +1,15 @@
+{
+  "entity": "CriterionDecision",
+  "description": "IC-14: a decision must list at least one rule.",
+  "expect_error": "IC-14",
+  "record": {
+    "assessment_id": "44444444-4444-4444-8444-444444444444",
+    "criterion_code": "IMP-02",
+    "level": 2,
+    "coverage_state": "observed",
+    "confidence": 40,
+    "applied_rule_codes": [],
+    "trace": [],
+    "review_required": false
+  }
+}

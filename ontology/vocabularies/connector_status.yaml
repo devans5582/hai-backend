@@ -1,0 +1,8 @@
+vocabulary:
+  code: connector_status
+  title: Connector status
+  description: Configuration state of a connector.
+  values:
+    - { code: configured, label: Configured, description: Defined but not yet enabled. }
+    - { code: active, label: Active, description: Runs on every assessment. }
+    - { code: retired, label: Retired, description: No longer runs. }

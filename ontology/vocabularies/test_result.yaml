@@ -1,0 +1,8 @@
+vocabulary:
+  code: test_result
+  title: Test result
+  description: Outcome of a control test.
+  values:
+    - { code: pass, label: Pass, description: The control met its threshold. }
+    - { code: fail, label: Fail, description: The control did not meet its threshold. }
+    - { code: inconclusive, label: Inconclusive, description: The test did not produce a usable result. }

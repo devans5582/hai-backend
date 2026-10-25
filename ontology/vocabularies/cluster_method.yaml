@@ -1,0 +1,8 @@
+vocabulary:
+  code: cluster_method
+  title: Cluster method
+  description: How a source cluster was formed.
+  values:
+    - { code: exact_hash, label: Exact hash, description: Identical text hash. }
+    - { code: simhash, label: SimHash, description: 64-bit SimHash within the configured Hamming distance. }
+    - { code: manual, label: Manual, description: Grouped by a reviewer. }

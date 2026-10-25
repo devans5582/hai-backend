@@ -1,0 +1,11 @@
+vocabulary:
+  code: source_tier
+  title: Source tier
+  description: "How authoritative a kind of source could be. weight is the Phase 6 tier weight (legacy supplementary-evidence.js:97-108: high 1.0, medium 0.6, low 0.25); the T2 and T3 split is a draft (decision D9)."
+  ordered: true
+  attributes: { weight: number, legacy_tier: string }
+  values:
+    - { code: T1, label: Tier 1, rank: 3, description: Regulator records and standards registries., attributes: { weight: 1.0, legacy_tier: high } }
+    - { code: T2, label: Tier 2, rank: 2, description: Independent audits and academic research., attributes: { weight: 0.6, legacy_tier: medium } }
+    - { code: T3, label: Tier 3, rank: 1, description: "Press, organization disclosures and repositories.", attributes: { weight: 0.6, legacy_tier: medium } }
+    - { code: T4, label: Tier 4, rank: 0, description: Aggregators and social media., attributes: { weight: 0.25, legacy_tier: low } }

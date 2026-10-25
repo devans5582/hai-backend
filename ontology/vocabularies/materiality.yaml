@@ -1,0 +1,8 @@
+vocabulary:
+  code: materiality
+  title: Materiality
+  description: Consequence class of a criterion (decision D2). The numeric weight lives on the criterion.
+  ordered: true
+  values:
+    - { code: standard, label: Standard, rank: 0, description: Baseline consequence. }
+    - { code: high, label: High, rank: 1, description: Higher consequence if absent; Phase 6 weight 1.2 or above. }

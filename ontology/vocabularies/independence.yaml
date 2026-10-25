@@ -1,0 +1,11 @@
+vocabulary:
+  code: independence
+  title: Independence
+  description: Who stands behind the statement relative to the rated organization. Derived from the publisher and organization relations, never from the source tier.
+  ordered: true
+  values:
+    - { code: self, label: Self, rank: 0, description: Published by the rated organization. }
+    - { code: affiliate, label: Affiliate, rank: 1, description: "Published by a parent, subsidiary or controlled entity." }
+    - { code: commissioned, label: Commissioned, rank: 2, description: "Independent party paid by the organization, for example an engaged auditor." }
+    - { code: independent, label: Independent, rank: 3, description: No commercial relationship with the organization. }
+    - { code: regulator, label: Regulator, rank: 4, description: A government or statutory body. }

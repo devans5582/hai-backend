@@ -1,0 +1,14 @@
+vocabulary:
+  code: review_subject_type
+  title: Review subject type
+  description: What a review is about. allowed_actions is the contract the console enforces.
+  attributes: { allowed_actions: list }
+  values:
+    - { code: incident, label: Incident, description: Verify or dismiss an incident., attributes: { allowed_actions: [substantiate, dismiss, escalate] } }
+    - { code: contradiction, label: Contradiction, description: Resolve contradictory evidence on a criterion., attributes: { allowed_actions: [approve, reject, escalate] } }
+    - { code: confidence, label: Borderline confidence, description: Confirm or reject a borderline result., attributes: { allowed_actions: [approve, reject, escalate] } }
+    - { code: finding, label: Finding, description: Review an LLM finding., attributes: { allowed_actions: [approve, reject, escalate] } }
+    - { code: link, label: Evidence link, description: Change admissibility of a link., attributes: { allowed_actions: [approve, reject, escalate] } }
+    - { code: certification, label: Certification, description: Sign or decline a certification., attributes: { allowed_actions: [sign, reject, escalate] } }
+    - { code: appeal, label: Appeal, description: An organization's appeal (decision D4)., attributes: { allowed_actions: [approve, reject, escalate] } }
+    - { code: applicability, label: Applicability, description: Confirm a not-applicable or review effect., attributes: { allowed_actions: [approve, reject, escalate] } }

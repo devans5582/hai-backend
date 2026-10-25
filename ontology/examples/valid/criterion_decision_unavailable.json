@@ -1,0 +1,14 @@
+{
+  "entity": "CriterionDecision",
+  "description": "An unavailable criterion has no level and names its rules.",
+  "record": {
+    "assessment_id": "44444444-4444-4444-8444-444444444444",
+    "criterion_code": "IMP-02",
+    "level": null,
+    "coverage_state": "unavailable",
+    "confidence": 0,
+    "applied_rule_codes": ["GATE-APPLICABILITY", "GATE-COVERAGE"],
+    "trace": [],
+    "review_required": false
+  }
+}

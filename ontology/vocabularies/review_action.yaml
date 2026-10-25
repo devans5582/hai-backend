@@ -1,0 +1,12 @@
+vocabulary:
+  code: review_action
+  title: Review action
+  description: What a reviewer decided. keeps_task_open says whether the task stays in the queue for another reviewer.
+  attributes: { keeps_task_open: boolean }
+  values:
+    - { code: approve, label: Approve, description: Accept the subject as it stands., attributes: { keeps_task_open: false } }
+    - { code: reject, label: Reject, description: Refuse the subject., attributes: { keeps_task_open: false } }
+    - { code: escalate, label: Escalate, description: Hand to a different reviewer., attributes: { keeps_task_open: true } }
+    - { code: dismiss, label: Dismiss, description: Mark an incident as not this organization's., attributes: { keeps_task_open: false } }
+    - { code: substantiate, label: Substantiate, description: Confirm an incident., attributes: { keeps_task_open: false } }
+    - { code: sign, label: Sign, description: Sign a certification decision., attributes: { keeps_task_open: false } }

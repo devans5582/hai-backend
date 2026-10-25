@@ -1,0 +1,23 @@
+vocabulary:
+  code: lifecycle_state
+  title: Lifecycle state
+  description: Where the assessment job is (spec 8.1). Separate from outcome status. Transitions are enforced by a database trigger.
+  attributes: { terminal: boolean }
+  values:
+    - { code: queued, label: Queued, description: POST /assessments accepted., attributes: { terminal: false } }
+    - { code: acquiring, label: Acquiring, description: Connector runs started., attributes: { terminal: false } }
+    - { code: evaluating, label: Evaluating, description: Snapshot frozen; findings and rules running., attributes: { terminal: false } }
+    - { code: awaiting_review, label: Awaiting review, description: "A review trigger fired (certification, material contradiction, unresolved incident, borderline confidence).", attributes: { terminal: false } }
+    - { code: completed_unverified, label: Completed (unverified), description: "Result final, no human sign-off required or given.", attributes: { terminal: false } }
+    - { code: completed, label: Completed, description: Result final with reviewer sign-off., attributes: { terminal: true } }
+    - { code: failed, label: Failed, description: Unrecoverable pipeline error., attributes: { terminal: true } }
+    - { code: cancelled, label: Cancelled, description: Cancelled by operator., attributes: { terminal: true } }
+  transitions:
+    queued: [acquiring, cancelled]
+    acquiring: [evaluating, failed, cancelled]
+    evaluating: [awaiting_review, completed_unverified, failed]
+    awaiting_review: [completed, completed_unverified]
+    completed_unverified: [awaiting_review]
+    completed: []
+    failed: []
+    cancelled: []

@@ -1,0 +1,8 @@
+vocabulary:
+  code: org_relation_type
+  title: Organization relation type
+  description: Kind of control between organizations.
+  values:
+    - { code: subsidiary, label: Subsidiary, description: The child is owned by the parent. }
+    - { code: affiliate, label: Affiliate, description: Common ownership or significant influence. }
+    - { code: acquired, label: Acquired, description: The child was acquired by the parent. }

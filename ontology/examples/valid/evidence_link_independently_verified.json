@@ -1,0 +1,18 @@
+{
+  "entity": "EvidenceLink",
+  "description": "An independently verified link from a regulator record.",
+  "record": {
+    "span_id": "11111111-1111-4111-8111-111111111111",
+    "target_type": "organization",
+    "target_id": "22222222-2222-4222-8222-222222222222",
+    "criterion_code": "SAF-01",
+    "polarity": "supports",
+    "admissibility": "admissible",
+    "maturity_rung": "independently_verified",
+    "execution_level": "verified",
+    "evidence_class": "external_validation",
+    "independence": "regulator",
+    "source_tier": "T1",
+    "proposer": "heuristic"
+  }
+}

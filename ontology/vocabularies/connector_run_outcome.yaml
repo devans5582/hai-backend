@@ -1,0 +1,11 @@
+vocabulary:
+  code: connector_run_outcome
+  title: Connector run outcome
+  description: How a connector run ended (spec 4.2). counts_as_unavailable says whether the run lets a criterion be unavailable (IC-15).
+  attributes: { counts_as_unavailable: boolean, succeeded: boolean }
+  values:
+    - { code: invoked, label: Invoked, description: Started; not yet finished., attributes: { counts_as_unavailable: false, succeeded: false } }
+    - { code: succeeded, label: Succeeded, description: "Finished normally, with zero or more items.", attributes: { counts_as_unavailable: false, succeeded: true } }
+    - { code: blocked, label: Blocked, description: "Firewall, CAPTCHA, robots.txt or HTTP 403/406.", attributes: { counts_as_unavailable: true, succeeded: false } }
+    - { code: failed, label: Failed, description: "Network error, timeout or server error.", attributes: { counts_as_unavailable: true, succeeded: false } }
+    - { code: rate_limited, label: Rate limited, description: HTTP 429 or a rate limit in the connector., attributes: { counts_as_unavailable: true, succeeded: false } }

@@ -1,0 +1,12 @@
+vocabulary:
+  code: maturity_rung
+  title: Maturity rung
+  description: How far along the ladder a span proves the target. Set by the classifier from the quote and the publisher only; a title, label or date alone stays at none. credit is the share of the confidence contribution the rung earns (Phase 6 justifies 1.0 and supports 0.5).
+  ordered: true
+  attributes: { credit: number }
+  values:
+    - { code: none, label: None, rank: 0, description: "Nothing beyond a mention, title or metadata.", attributes: { credit: 0.0 } }
+    - { code: stated_commitment, label: Stated commitment, rank: 1, description: The organization says it does or will do this. A quoted policy or statement., attributes: { credit: 0.5 } }
+    - { code: specified_control, label: Specified control, rank: 2, description: A named control with an owner and a measurable threshold., attributes: { credit: 0.75 } }
+    - { code: documented_execution, label: Documented execution, rank: 3, description: Dated results showing the control ran. Self-reported counts here., attributes: { credit: 1.0 } }
+    - { code: independently_verified, label: Independently verified, rank: 4, description: An independent party or regulator confirms the outcome (IC-07)., attributes: { credit: 1.0 } }

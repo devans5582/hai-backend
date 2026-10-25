@@ -1,0 +1,11 @@
+{
+  "entity": "EvidenceSpan",
+  "description": "A span with a non-empty quote and a positive range.",
+  "record": {
+    "source_document_id": "33333333-3333-4333-8333-333333333333",
+    "char_start": 120,
+    "char_end": 188,
+    "quote": "Our Chief AI Officer reviews every model release against a 2% bias threshold.",
+    "asserted_dates": []
+  }
+}

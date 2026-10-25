@@ -1,0 +1,7 @@
+vocabulary:
+  code: content_status
+  title: Content status
+  description: Whether methodology text is Humaital's canonical content or a draft.
+  values:
+    - { code: draft, label: Draft, description: Placeholder text pending Humaital content. }
+    - { code: approved, label: Approved, description: Canonical text supplied and signed off. }

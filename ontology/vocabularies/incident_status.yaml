@@ -1,0 +1,20 @@
+vocabulary:
+  code: incident_status
+  title: Incident status
+  description: Verification status of an incident. Only substantiated or later can produce an automatic score effect; alleged and under_investigation route to review (IC-11). transitions lists legal moves; dismissed is reachable from any open state.
+  ordered: true
+  attributes: { can_adjust_score: boolean }
+  values:
+    - { code: alleged, label: Alleged, rank: 0, description: Reported but not verified., attributes: { can_adjust_score: false } }
+    - { code: under_investigation, label: Under investigation, rank: 1, description: Being looked into by the organization or an authority., attributes: { can_adjust_score: false } }
+    - { code: substantiated, label: Substantiated, rank: 2, description: Confirmed by an authoritative source or a reviewer., attributes: { can_adjust_score: true } }
+    - { code: remediating, label: Remediating, rank: 3, description: Fix in progress., attributes: { can_adjust_score: true } }
+    - { code: closed_verified, label: Closed (verified), rank: 4, description: Remediation independently verified., attributes: { can_adjust_score: true } }
+    - { code: dismissed, label: Dismissed, rank: 5, description: Found not to be an incident of this organization., attributes: { can_adjust_score: false } }
+  transitions:
+    alleged: [under_investigation, substantiated, dismissed]
+    under_investigation: [substantiated, dismissed]
+    substantiated: [remediating, closed_verified, dismissed]
+    remediating: [closed_verified, dismissed]
+    closed_verified: []
+    dismissed: []

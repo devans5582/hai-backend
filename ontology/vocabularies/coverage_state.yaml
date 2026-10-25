@@ -1,0 +1,13 @@
+vocabulary:
+  code: coverage_state
+  title: Coverage state
+  description: The state of a criterion decision. Absence is a state, not a score. counts_in_score says whether the criterion enters the HAI Score; report_wording is what the report must say.
+  attributes: { counts_in_score: boolean, report_wording: string, routes_to_review: boolean }
+  values:
+    - { code: observed, label: Observed, description: Admissible evidence found and assessed., attributes: { counts_in_score: true, report_wording: "Assessed from admissible evidence. The level and its evidence are shown.", routes_to_review: false } }
+    - { code: missing, label: Missing, description: Sources were searched and nothing relevant found., attributes: { counts_in_score: true, report_wording: "Sources were searched and nothing relevant was found. This is not proof of absence.", routes_to_review: false } }
+    - { code: unavailable, label: Unavailable, description: "Sources could not be reached (blocked, rate limited, outage). Requires a failed or blocked connector run (IC-15).", attributes: { counts_in_score: false, report_wording: "Sources could not be reached. This is an access limitation, not a governance gap. Excluded from the score.", routes_to_review: false } }
+    - { code: not_applicable, label: Not applicable, description: The criterion does not apply under an explicit applicability rule., attributes: { counts_in_score: false, report_wording: "This criterion does not apply to the organization under the stated rule. Excluded from the score.", routes_to_review: false } }
+    - { code: not_tested, label: Not tested, description: A control exists but no execution evidence., attributes: { counts_in_score: true, report_wording: "A control is documented but its operation is unconfirmed.", routes_to_review: false } }
+    - { code: failed, label: Failed, description: Execution evidence shows the control did not work., attributes: { counts_in_score: true, report_wording: "Execution evidence shows the control did not work. The failed result and its date are shown.", routes_to_review: false } }
+    - { code: contradictory, label: Contradictory, description: Material supporting and contradicting evidence both admissible. Always routed to review., attributes: { counts_in_score: true, report_wording: "Supporting and contradicting evidence were both admissible. Both sides are shown and the criterion was routed to review.", routes_to_review: true } }

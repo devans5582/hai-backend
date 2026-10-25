@@ -1,0 +1,11 @@
+vocabulary:
+  code: incident_severity
+  title: Incident severity
+  description: Four-level severity (decision D4), mapped from the Phase 6 override tiers (legacy negative-signal-overrides.js:40-45). level_effect is the level reduction applied by ADJ-INCIDENTS to the most material criterion once the incident is substantiated; confidence_ceiling caps that criterion's confidence.
+  ordered: true
+  attributes: { legacy_tier: string, level_effect: string, confidence_ceiling: number }
+  values:
+    - { code: low, label: Low, rank: 0, description: Reported concerns in lower-confidence sources. Confidence is moderated; the level is unchanged., attributes: { legacy_tier: confidence_floor, level_effect: none, confidence_ceiling: 20 } }
+    - { code: moderate, label: Moderate, rank: 1, description: A reported gap between stated commitments and observed practice., attributes: { legacy_tier: reduce_1_step, level_effect: reduce_1, confidence_ceiling: 100 } }
+    - { code: high, label: High, rank: 2, description: A reported active legal or regulatory proceeding or a reported AI harm event., attributes: { legacy_tier: reduce_2_steps, level_effect: reduce_2, confidence_ceiling: 100 } }
+    - { code: critical, label: Critical, rank: 3, description: A regulatory order or enforcement action in a verified public record., attributes: { legacy_tier: force_level_1, level_effect: force_level_1, confidence_ceiling: 100 } }

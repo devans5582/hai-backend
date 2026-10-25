@@ -1,0 +1,17 @@
+{
+  "entity": "Assessment",
+  "description": "IC-18: a missing model pin is refused.",
+  "expect_error": "E_REQUIRED",
+  "record": {
+    "org_id": "22222222-2222-4222-8222-222222222222",
+    "requested_by": "apikey:demo",
+    "submitted_domain": "acme.example",
+    "stage_band": "growth",
+    "size_band": "mid",
+    "methodology_version": "1.0.0",
+    "ruleset_version": "1.0.0",
+    "prompt_version": "1.0.0",
+    "lifecycle_state": "queued",
+    "certification_requested": false
+  }
+}

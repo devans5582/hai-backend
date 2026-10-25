@@ -1,0 +1,12 @@
+vocabulary:
+  code: admissibility
+  title: Admissibility
+  description: "Whether a link may be used in scoring at all. Checked in a fixed order: untrusted, unverifiable, irrelevant, stale. Changed only via review."
+  attributes: { usable: boolean }
+  values:
+    - { code: admissible, label: Admissible, description: Usable in scoring., attributes: { usable: true } }
+    - { code: pending_review, label: Pending review, description: Held for a human decision., attributes: { usable: false } }
+    - { code: inadmissible_irrelevant, label: Inadmissible (irrelevant), description: "About a different entity, system or topic.", attributes: { usable: false } }
+    - { code: inadmissible_stale, label: Inadmissible (stale), description: Outside the freshness window for this criterion. Undated evidence is never stale., attributes: { usable: false } }
+    - { code: inadmissible_unverifiable, label: Inadmissible (unverifiable), description: "Quote does not match the stored snapshot, or no successful connector run.", attributes: { usable: false } }
+    - { code: inadmissible_untrusted, label: Inadmissible (untrusted), description: Suspected prompt injection or forged content., attributes: { usable: false } }

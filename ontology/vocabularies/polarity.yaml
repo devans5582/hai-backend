@@ -1,0 +1,8 @@
+vocabulary:
+  code: polarity
+  title: Polarity
+  description: Whether a span supports, contradicts or merely mentions the target on one criterion. Set once by the proposer and checked by the validator; never updated (IC-01).
+  values:
+    - { code: supports, label: Supports, description: The span is evidence that the target meets or advances the criterion. }
+    - { code: contradicts, label: Contradicts, description: "The span is evidence against the target on this criterion (failed test, incident, retraction)." }
+    - { code: neutral, label: Neutral, description: The span is relevant context but argues neither way. }
