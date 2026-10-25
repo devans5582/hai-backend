@@ -7,6 +7,7 @@ from datetime import date
 import pytest
 
 from hai_core.generated.enums import Independence, PublisherType, SourceTier
+from hai_core.signals import SignalMatcher
 from hai_ontology.meta import Manifest
 from hai_pipeline.admissibility import assess_admissibility
 from hai_pipeline.clustering import Clusterer, hamming, simhash64
@@ -14,7 +15,6 @@ from hai_pipeline.extraction import extract_html, find_dates, parse_date
 from hai_pipeline.incidents import build_incident, canonical_event_key
 from hai_pipeline.proposals import evidence_class_for, heuristic_proposals, merge_model_proposals
 from hai_pipeline.publishers import classify_publisher, independence_for, source_tier_for
-from hai_pipeline.signals import SignalMatcher
 from hai_pipeline.spans import SpanMismatch, make_span, split_spans, verify_span
 from hai_pipeline.urls import canonical_url, registrable_domain, same_registrable_domain
 from tests.fixtures.fake_internet import LAWSUIT_BODY, RESPONSIBLE_AI_HTML, _article

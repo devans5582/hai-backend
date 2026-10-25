@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from hai_core.signals import LanguageSignals, NegativeMatch, SignalMatcher
 from hai_ontology.meta import CriterionDef, Methodology
-from hai_pipeline.signals import LanguageSignals, NegativeMatch, SignalMatcher
 
 
 @dataclass(frozen=True)

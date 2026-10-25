@@ -7,8 +7,8 @@ import re
 from dataclasses import dataclass
 from datetime import date
 
+from hai_core.signals import NegativeMatch
 from hai_ontology.meta import CriterionDef
-from hai_pipeline.signals import NegativeMatch
 
 AUTHORITATIVE_PUBLISHER_TYPES = frozenset({"regulator_record"})
 _WORD = re.compile(r"[a-z0-9]+")

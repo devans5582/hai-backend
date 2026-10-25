@@ -2,7 +2,7 @@
 
 A term is matched as whole words so that "sued" never matches "pursued" and
 "board" never matches "dashboard" (Phase 6 used substring matching). A ``*``
-inside a term is a wildcard for one or more word characters, so
+inside a term is a wildcard for zero or more word characters, so
 ``discriminat*`` matches "discriminate" and "discrimination" and
 ``chief * officer`` matches "chief AI officer". Terms that already contain
 regular-expression syntax (``\\d``, ``(``, ``|``, ``[``) are treated as regular
@@ -29,7 +29,7 @@ def compile_term(term: str) -> re.Pattern[str]:
         body = t
     else:
         parts = [re.escape(p) for p in t.split("*")]
-        body = r"\w+".join(parts)
+        body = r"\w*".join(parts)
         body = re.sub(r"\\ ", r"\\s+", body)
     return re.compile(rf"(?<![\w-]){body}(?![\w-])", re.IGNORECASE)
 

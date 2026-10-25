@@ -47,6 +47,7 @@ from hai_core.generated.models import (
     Connector as ConnectorRow,
 )
 from hai_core.settings import Settings
+from hai_core.signals import SignalMatcher
 from hai_ontology.meta import Manifest
 from hai_pipeline.admissibility import assess_admissibility
 from hai_pipeline.clustering import Clusterer
@@ -59,7 +60,6 @@ from hai_pipeline.http import Budget, Fetcher
 from hai_pipeline.incidents import build_incident
 from hai_pipeline.proposals import LinkProposal, evidence_class_for, heuristic_proposals
 from hai_pipeline.publishers import classify_publisher, independence_for, source_tier_for
-from hai_pipeline.signals import SignalMatcher
 from hai_pipeline.spans import split_spans
 from hai_pipeline.urls import canonical_url, registrable_domain
 

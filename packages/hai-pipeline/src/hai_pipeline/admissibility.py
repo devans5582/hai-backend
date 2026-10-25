@@ -13,8 +13,8 @@ from datetime import date, datetime
 
 from hai_core.freshness import is_stale
 from hai_core.generated.enums import Admissibility
+from hai_core.signals import SignalMatcher
 from hai_ontology.meta import CriterionDef, Methodology
-from hai_pipeline.signals import SignalMatcher
 from hai_pipeline.spans import verify_span
 
 
