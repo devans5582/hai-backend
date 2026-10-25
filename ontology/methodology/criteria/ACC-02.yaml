@@ -1,0 +1,78 @@
+# ACC-02 Corrective Action (ACC)
+#
+# content_status: draft.
+# Imported exactly from Phase 6: name, legacy_id, materiality_weight
+# (evidence-weighting.js:51-96), retrieval_hints (supplementary-evidence.js:111-132)
+# and indicator ids (openai.js:52-134).
+# TODO(humaital): replace definition, the five level descriptors and the indicator
+# labels with the canonical methodology text, then set content_status: approved.
+criterion:
+  code: ACC-02
+  pillar: ACC
+  name: "Corrective Action"
+  legacy_id: accountability_corrective_action
+  content_status: draft
+  definition: "DRAFT: the organization demonstrates corrective action in how it governs and deploys AI. TODO(humaital)."
+  materiality: standard
+  materiality_weight: 1.1
+  weight: 1.0
+  freshness_window_months: 24
+  target_types:
+    - organization
+    - control
+    - incident
+  applicability: []
+  levels:
+    - level: 1
+      required_maturity_rung: none
+      descriptor: "DRAFT: No public evidence of corrective action. TODO(humaital)."
+    - level: 2
+      required_maturity_rung: stated_commitment
+      descriptor: "DRAFT: A stated intent or policy reference to corrective action, quoted from the organization. TODO(humaital)."
+    - level: 3
+      required_maturity_rung: specified_control
+      descriptor: "DRAFT: A named control for corrective action with an accountable owner and a measurable threshold. TODO(humaital)."
+    - level: 4
+      required_maturity_rung: documented_execution
+      descriptor: "DRAFT: Dated results showing the control for corrective action has operated. TODO(humaital)."
+    - level: 5
+      required_maturity_rung: independently_verified
+      descriptor: "DRAFT: An independent party or regulator confirms corrective action is practised, measured and sustained. TODO(humaital)."
+  retrieval_hints:
+    - "corrective action"
+    - "incident response"
+    - "remediation"
+    - "error correction"
+    - "ai incident"
+    - "model failure"
+  indicators:
+    - code: A2_R1
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: A2_R2
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: A2_R3
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: A2_S1
+      kind: legacy_s
+      label: null  # TODO(humaital)
+    - code: A2_S2
+      kind: legacy_s
+      label: null  # TODO(humaital)
+    - code: A2_G1
+      kind: legacy_g
+      label: null  # TODO(humaital)
+    - code: A2_O1
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: A2_O2
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: A2_O3
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: A2_O4
+      kind: observable
+      label: null  # TODO(humaital)

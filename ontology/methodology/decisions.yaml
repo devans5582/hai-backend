@@ -1,0 +1,115 @@
+# Open decisions for Humaital sign-off (spec section 13, prompt section 13).
+# Each entry records the current default behaviour, where it is configured and
+# how to switch it. Decisions stay "open" until Humaital signs a change record.
+decisions:
+  - id: D1
+    title: How maturity rungs map to levels 1 to 5
+    needed_by: Phase 1 exit
+    status: open
+    recommendation: Set per criterion in level descriptors; start from the default ladder.
+    current: >-
+      Every criteria/<CODE>.yaml uses the default ladder none, stated_commitment,
+      specified_control, documented_execution, independently_verified for levels 1 to 5.
+      Rule CAP-MATURITY reads the ladder from the criterion, so a per-criterion override
+      is a YAML edit and a methodology minor bump.
+    configured_in: ontology/methodology/criteria/*.yaml levels[].required_maturity_rung
+
+  - id: D2
+    title: Does materiality affect score, confidence or both
+    needed_by: Phase 1 exit
+    status: open
+    recommendation: Confidence only in v1, so Purpose and Impact are not made secondary.
+    current: >-
+      Confidence only (spec recommendation). scoring.pillar_aggregation is equal_mean.
+      Set it to materiality_weighted to reproduce the Phase 6 materiality-weighted pillar
+      means (legacy evidence-weighting.js:209-225). Confidence always uses materiality.
+    configured_in: ontology/methodology/methodology.yaml scoring.pillar_aggregation
+
+  - id: D3
+    title: Certification threshold universal or stage and size adjusted
+    needed_by: Phase 0
+    status: open
+    recommendation: Pick one and record it as a rule.
+    current: >-
+      Universal 70 points (whitepaper, legacy report-generator.js:199).
+      certification.threshold_mode is universal. A stage_size table is defined and used
+      when threshold_mode is stage_size; it starts as a copy of the universal value and
+      is marked draft.
+    configured_in: ontology/methodology/methodology.yaml certification
+
+  - id: D4
+    title: Incident severity scale, verification thresholds and appeals
+    needed_by: Phase 1 exit
+    status: open
+    recommendation: Four-level severity; adjustments only from substantiated; appeals create a review.
+    current: >-
+      incident_severity is low, moderate, high, critical, mapped from the Phase 6
+      override tiers confidence_floor, reduce_1_step, reduce_2_steps, force_level_1
+      (legacy negative-signal-overrides.js:40-45). Only substantiated or later statuses
+      adjust a score (IC-11). An appeal is a review with subject_type appeal.
+    configured_in: ontology/vocabularies/incident_severity.yaml, incident_status.yaml
+
+  - id: D5
+    title: Criterion applicability and organizations with no public AI governance information
+    needed_by: Phase 1 exit
+    status: open
+    recommendation: Use not_applicable only by explicit rule; otherwise missing, never zero by default.
+    current: >-
+      No applicability conditions are defined, so no criterion is not_applicable. A criterion
+      with no admissible evidence after successful connector runs is missing at level 1 and
+      the report says "searched, not found". A criterion whose sources were blocked is
+      unavailable and excluded from the score.
+    configured_in: ontology/methodology/criteria/*.yaml applicability[]
+
+  - id: D6
+    title: Is AI system a required level of analysis
+    needed_by: Phase 1 start
+    status: open
+    recommendation: Optional in v1; organization-level links allowed.
+    current: Optional. Links target the organization unless a named system is resolved.
+    configured_in: ontology/vocabularies/target_type.yaml, criteria/*.yaml target_types
+
+  - id: D7
+    title: Criterion code format
+    needed_by: Phase 0
+    status: open
+    recommendation: Keep existing production IDs if stable; otherwise PIL-NN.
+    current: >-
+      PIL-NN (for example SAF-02). The Phase 6 snake_case IDs were duplicated across three
+      files and are kept as legacy_id aliases on each criterion and as aliases on the
+      derived criterion_code vocabulary. Retired codes are never reused.
+    configured_in: ontology/methodology/criteria/*.yaml code, legacy_id
+
+  - id: D8
+    title: Freshness window per criterion
+    needed_by: Phase 1 exit
+    status: open
+    recommendation: Default 24 months, override per criterion.
+    current: >-
+      freshness.default_window_months is 24 and every criterion currently carries 24.
+      Undated evidence is never stale; it is decayed with an assumed age of 18 months
+      (legacy time-decay.js:64).
+    configured_in: ontology/methodology/methodology.yaml freshness, criteria/*.yaml freshness_window_months
+
+  - id: D9
+    title: Source tier table and evidence class definitions
+    needed_by: Phase 1 exit
+    status: open
+    recommendation: Approve as drafted, revisit after pilot.
+    current: >-
+      publisher_type carries a source_tier attribute per spec 7.9. source_tier carries a
+      weight attribute: T1 1.0, T2 0.6, T3 0.6, T4 0.25, taken from the Phase 6 high,
+      medium and low weights (legacy supplementary-evidence.js:97-108); the T2 versus T3
+      split is a draft. evidence_class carries the Phase 6 multipliers 0.7, 1.0, 1.3 with
+      foundational_governance at 0.7 (draft).
+    configured_in: ontology/vocabularies/publisher_type.yaml, source_tier.yaml, evidence_class.yaml
+
+  - id: D10
+    title: Product name form across code and reports
+    needed_by: Phase 0
+    status: open
+    recommendation: Human Alignment Index without a hyphen.
+    current: >-
+      Reports use "HAI Score" and, once in the header, "Human Alignment Index". Code uses
+      hai. The hyphenated form from the Phase 6 report prompt is not used.
+    configured_in: ontology/methodology/methodology.yaml product

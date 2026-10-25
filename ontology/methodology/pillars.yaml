@@ -1,0 +1,40 @@
+# The six pillars. Weights are the Phase 6 pillar maximum points
+# (legacy/express-api/src/services/report-generator.js:1242) expressed as a
+# share of 100. They must sum to 1.0; the validator checks this.
+pillars:
+  - code: TRU
+    name: Trust
+    legacy_id: trust
+    display_order: 1
+    weight: 0.20
+    description: Users can rely on the organization's AI to behave as described and in their interest.
+  - code: ACC
+    name: Accountability
+    legacy_id: accountability
+    display_order: 2
+    weight: 0.15
+    description: Named people own AI outcomes, correct failures and oversee the practice.
+  - code: PUR
+    name: Purpose
+    legacy_id: purpose
+    display_order: 3
+    weight: 0.15
+    description: The organization states why it uses AI and acts in line with that purpose.
+  - code: SAF
+    name: Safety
+    legacy_id: safety
+    display_order: 4
+    weight: 0.15
+    description: Risks are assessed and mitigated, users are protected and long-term harms are considered.
+  - code: TRN
+    name: Transparency
+    legacy_id: transparency
+    display_order: 5
+    weight: 0.15
+    description: The organization explains its AI, discloses its data practices and communicates honestly.
+  - code: IMP
+    name: Impact
+    legacy_id: impact
+    display_order: 6
+    weight: 0.20
+    description: AI produces measurable, shared and lasting benefit for people.

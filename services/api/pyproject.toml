@@ -1,0 +1,29 @@
+[project]
+name = "hai-api"
+version = "0.1.0"
+description = "HAI API service (FastAPI)"
+requires-python = ">=3.11"
+dependencies = [
+    "hai-ontology",
+    "hai-core",
+    "hai-pipeline",
+    "hai-engine",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.12",
+]
+[project.scripts]
+hai-api = "hai_api.main:main"
+
+[tool.uv.sources]
+hai-ontology = { workspace = true }
+hai-core = { workspace = true }
+hai-pipeline = { workspace = true }
+hai-engine = { workspace = true }
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hai_api"]

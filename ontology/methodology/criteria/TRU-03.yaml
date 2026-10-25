@@ -1,0 +1,84 @@
+# TRU-03 Ethical Intent (TRU)
+#
+# content_status: draft.
+# Imported exactly from Phase 6: name, legacy_id, materiality_weight
+# (evidence-weighting.js:51-96), retrieval_hints (supplementary-evidence.js:111-132)
+# and indicator ids (openai.js:52-134).
+# TODO(humaital): replace definition, the five level descriptors and the indicator
+# labels with the canonical methodology text, then set content_status: approved.
+criterion:
+  code: TRU-03
+  pillar: TRU
+  name: "Ethical Intent"
+  legacy_id: trust_ethical_intent
+  content_status: draft
+  definition: "DRAFT: the organization demonstrates ethical intent in how it governs and deploys AI. TODO(humaital)."
+  materiality: standard
+  materiality_weight: 1.1
+  weight: 1.0
+  freshness_window_months: 24
+  target_types:
+    - organization
+    - ai_system
+    - control
+  applicability: []
+  levels:
+    - level: 1
+      required_maturity_rung: none
+      descriptor: "DRAFT: No public evidence of ethical intent. TODO(humaital)."
+    - level: 2
+      required_maturity_rung: stated_commitment
+      descriptor: "DRAFT: A stated intent or policy reference to ethical intent, quoted from the organization. TODO(humaital)."
+    - level: 3
+      required_maturity_rung: specified_control
+      descriptor: "DRAFT: A named control for ethical intent with an accountable owner and a measurable threshold. TODO(humaital)."
+    - level: 4
+      required_maturity_rung: documented_execution
+      descriptor: "DRAFT: Dated results showing the control for ethical intent has operated. TODO(humaital)."
+    - level: 5
+      required_maturity_rung: independently_verified
+      descriptor: "DRAFT: An independent party or regulator confirms ethical intent is practised, measured and sustained. TODO(humaital)."
+  retrieval_hints:
+    - "ethical ai"
+    - "ai ethics"
+    - "ethics policy"
+    - "ethical principles"
+    - "responsible ai"
+    - "ai principles"
+  indicators:
+    - code: T3_R1
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: T3_R2
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: T3_R3
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: T3_S1
+      kind: legacy_s
+      label: null  # TODO(humaital)
+    - code: T3_S2
+      kind: legacy_s
+      label: null  # TODO(humaital)
+    - code: T3_S3
+      kind: legacy_s
+      label: null  # TODO(humaital)
+    - code: T3_G1
+      kind: legacy_g
+      label: null  # TODO(humaital)
+    - code: T3_O1
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: T3_O2
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: T3_O3
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: T3_O4
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: T3_O5
+      kind: observable
+      label: null  # TODO(humaital)

@@ -1,0 +1,76 @@
+# PUR-03 Alignment of Words and Actions (PUR)
+#
+# content_status: draft.
+# Imported exactly from Phase 6: name, legacy_id, materiality_weight
+# (evidence-weighting.js:51-96), retrieval_hints (supplementary-evidence.js:111-132)
+# and indicator ids (openai.js:52-134).
+# TODO(humaital): replace definition, the five level descriptors and the indicator
+# labels with the canonical methodology text, then set content_status: approved.
+criterion:
+  code: PUR-03
+  pillar: PUR
+  name: "Alignment of Words and Actions"
+  legacy_id: purpose_alignment_words_actions
+  content_status: draft
+  definition: "DRAFT: the organization demonstrates alignment of words and actions in how it governs and deploys AI. TODO(humaital)."
+  materiality: standard
+  materiality_weight: 1.1
+  weight: 1.0
+  freshness_window_months: 24
+  target_types:
+    - organization
+    - claim
+  applicability: []
+  levels:
+    - level: 1
+      required_maturity_rung: none
+      descriptor: "DRAFT: No public evidence of alignment of words and actions. TODO(humaital)."
+    - level: 2
+      required_maturity_rung: stated_commitment
+      descriptor: "DRAFT: A stated intent or policy reference to alignment of words and actions, quoted from the organization. TODO(humaital)."
+    - level: 3
+      required_maturity_rung: specified_control
+      descriptor: "DRAFT: A named control for alignment of words and actions with an accountable owner and a measurable threshold. TODO(humaital)."
+    - level: 4
+      required_maturity_rung: documented_execution
+      descriptor: "DRAFT: Dated results showing the control for alignment of words and actions has operated. TODO(humaital)."
+    - level: 5
+      required_maturity_rung: independently_verified
+      descriptor: "DRAFT: An independent party or regulator confirms alignment of words and actions is practised, measured and sustained. TODO(humaital)."
+  retrieval_hints:
+    - "policy alignment"
+    - "practice alignment"
+    - "words and actions"
+    - "commitment"
+    - "following through"
+  indicators:
+    - code: P3_R1
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: P3_R2
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: P3_R3
+      kind: legacy_r
+      label: null  # TODO(humaital)
+    - code: P3_S1
+      kind: legacy_s
+      label: null  # TODO(humaital)
+    - code: P3_S2
+      kind: legacy_s
+      label: null  # TODO(humaital)
+    - code: P3_G1
+      kind: legacy_g
+      label: null  # TODO(humaital)
+    - code: P3_O1
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: P3_O2
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: P3_O3
+      kind: observable
+      label: null  # TODO(humaital)
+    - code: P3_O4
+      kind: observable
+      label: null  # TODO(humaital)

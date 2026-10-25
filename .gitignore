@@ -1,3 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+junit*.xml
+dist/
+build/
+
+# Node
 node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Local state
 .env
+.env.local
 *.log
+.DS_Store
+var/
+hai-platform.bundle
+
+# Legacy service (reference only)
+legacy/express-api/node_modules/

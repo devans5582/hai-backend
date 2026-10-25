@@ -1,0 +1,126 @@
+[project]
+name = "hai-platform"
+version = "0.1.0"
+description = "Humaital HAI Score platform: ontology-driven evidence pipeline, LLM-assisted evaluation, rules-based scoring"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+dependencies = [
+    "hai-ontology",
+    "hai-core",
+    "hai-pipeline",
+    "hai-engine",
+    "hai-api",
+    "hai-worker",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/*", "services/*"]
+
+[tool.uv.sources]
+hai-ontology = { workspace = true }
+hai-core = { workspace = true }
+hai-pipeline = { workspace = true }
+hai-engine = { workspace = true }
+hai-api = { workspace = true }
+hai-worker = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-PyYAML>=6.0",
+    "types-jsonschema>=4.23",
+    "pre-commit>=4.0",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["legacy", "frontend", "**/generated/*.py", "**/_generated/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "N", "C4", "PIE", "T20", "RET", "ARG"]
+ignore = [
+    "S101",    # asserts are fine in tests and as internal invariants
+    "RUF012",  # mutable class attributes on pydantic models are normal
+    "S608",    # SQL is built only from manifest identifiers, never user input (checked by tests)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S", "ARG", "T20"]
+"tests/**" = ["S", "ARG", "T20"]
+"conftest.py" = ["S"]
+"**/cli.py" = ["T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hai_ontology", "hai_core", "hai_pipeline", "hai_engine", "hai_api", "hai_worker"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------
+# Mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+mypy_path = [
+    "packages/hai-ontology/src",
+    "packages/hai-core/src",
+    "packages/hai-pipeline/src",
+    "packages/hai-engine/src",
+    "services/api/src",
+    "services/worker/src",
+]
+explicit_package_bases = true
+namespace_packages = true
+exclude = ["legacy/", "frontend/", "^build/"]
+
+[[tool.mypy.overrides]]
+module = ["selectolax.*", "fsspec.*", "pypdf.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra --strict-markers --import-mode=importlib"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = [
+    "packages/hai-ontology/tests",
+    "packages/hai-core/tests",
+    "packages/hai-pipeline/tests",
+    "packages/hai-engine/tests",
+    "services/api/tests",
+    "services/worker/tests",
+    "tests",
+]
+markers = [
+    "integration: needs PostgreSQL (set HAI_TEST_DATABASE_URL)",
+    "e2e: end-to-end through API and worker against the fake internet (needs PostgreSQL)",
+]
+filterwarnings = [
+    "error::DeprecationWarning:hai_.*",
+]
+
+[tool.coverage.run]
+source = ["hai_ontology", "hai_core", "hai_pipeline", "hai_engine", "hai_api", "hai_worker"]
+omit = ["**/generated/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
