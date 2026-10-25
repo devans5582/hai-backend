@@ -20,7 +20,8 @@ ruleset:
       run_order: 20
       expression_ref: hai_engine.rules.builtin:gate_coverage
       description: "Set coverage state. unavailable only when a connector run failed or was blocked and no admissible support exists (IC-15); otherwise missing, observed, not_tested, failed or contradictory."
-      parameters: {}
+      parameters:
+        primary_connectors: [WEBSITE, DIRECT_URL]
     - code: ADJ-START-FROM-FINDING
       kind: adjustment
       scope: criterion

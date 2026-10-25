@@ -15,7 +15,7 @@
       "rdfs:comment": "Domain model for the Human Alignment Index (HAI Score) from source document to certification decision.",
       "owl:versionInfo": "1.0.0",
       "hai:methodologyVersion": "1.0.0",
-      "hai:manifestHash": "834f32c4794a198bf5c984d06bc66cad8831c02e3a1346a0889c9f18c18edda0"
+      "hai:manifestHash": "4982a954e6281e84aaa456bd6531fcf660d4cab6aaa1c003f11ef682af8e0964"
     },
     {
       "@id": "https://humaital.com/ontology/hai#layer/subject",

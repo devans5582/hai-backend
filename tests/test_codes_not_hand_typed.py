@@ -73,7 +73,7 @@ def test_no_hand_typed_codes_outside_generated_files() -> None:
     for path in _source_files():
         text = path.read_text(encoding="utf-8", errors="replace")
         for lineno, line in enumerate(text.splitlines(), start=1):
-            if "noqa: hai-codes" in line:
+            if "hai-codes: ok" in line:
                 continue
             if CRITERION_CODE.search(line) or STATUS_LITERAL.search(line):
                 offenders.append(f"{path.relative_to(REPO)}:{lineno}: {line.strip()[:100]}")
