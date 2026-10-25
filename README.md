@@ -388,6 +388,7 @@ Every setting is an environment variable with the `HAI_` prefix;
 
 | Document | Contents |
 |---|---|
+| `ontology/README.md` | the manifest explained: layers, entity relationship diagram, the evidence link, methodology, ladder, lifecycle, every entity, relation, vocabulary, rule and constraint |
 | `docs/architecture.md` | components, flow, IC enforcement table, AT mapping, authority model, operations |
 | `docs/ontology-guide.md` | manifest files, criterion register, maturity ladder, coverage states, how to change it |
 | `docs/porting-from-phase6.md` | what was carried, corrected and dropped from the Node service, with file and line references |

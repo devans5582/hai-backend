@@ -3,6 +3,9 @@
 How the manifest under `ontology/` is organised, how to read it, and how to
 change it. The spec it models is `HAI_Ontology_v1_Specification (1).docx` at the repository root.
 
+For the relationship diagrams and the full entity, relation, vocabulary and
+rule tables generated from the manifest, read `ontology/README.md` first.
+
 ## Files
 
 ```
