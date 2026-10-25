@@ -13,6 +13,65 @@ one criterion each, frozen into a snapshot, proposed on by a model, decided by
 a pure rules engine that reads only the snapshot, and signed by a named
 reviewer; every step is auditable and replayable.
 
+## System Diagram
+
+```mermaid
+flowchart LR
+    classDef red fill:#D41920,stroke:#A8141A,color:#ffffff
+    classDef grey fill:#f3f3f5,stroke:#9a9aa4,color:#1a1a1f
+    classDef store fill:#ffffff,stroke:#D41920,color:#1a1a1f,stroke-dasharray: 4 3
+
+    subgraph Clients
+        console["Console<br/>React, nginx"]
+        partner["Partner systems<br/>API key, webhooks"]
+        public["Anyone<br/>public verify"]
+    end
+
+    subgraph Platform
+        api["hai-api<br/>FastAPI"]
+        worker["hai-worker<br/>job chain"]
+        engine["hai-engine<br/>rules decide"]
+        pipeline["hai-pipeline<br/>connectors, spans, links"]
+    end
+
+    subgraph Storage
+        pg[("PostgreSQL 16<br/>hai + hai_ops schemas<br/>roles, RLS, triggers, audit chain, job queue")]
+        blobs[("Blob store<br/>document text")]
+    end
+
+    subgraph Outside
+        sources["Evidence sources<br/>website, EDGAR, news, GitHub,<br/>research, archive, uploads, ISO 42001"]
+        llm["LLM provider<br/>heuristic, OpenAI, Anthropic, Ollama"]
+    end
+
+    manifest["Ontology manifest<br/>ontology/*.yaml"]
+    gen["Generated code<br/>SQL, Python, TypeScript, JSON Schema"]
+
+    console --> api
+    partner --> api
+    public --> api
+    api --> pg
+    api -- enqueue --> pg
+    pg -- claim job --> worker
+    worker --> pipeline
+    worker --> engine
+    pipeline --> sources
+    pipeline --> blobs
+    pipeline --> pg
+    engine -- proposals only --> llm
+    engine -- decisions, results --> pg
+    api -- webhooks --> partner
+    manifest -- hai-ontology codegen --> gen
+    gen -.-> api
+    gen -.-> worker
+    gen -.-> pg
+    gen -.-> console
+
+    class api,worker,engine,pipeline red
+    class console,partner,public,sources,llm grey
+    class manifest,gen store
+```
+
 ## Components
 
 | Component | Package | Database role | Writes |
@@ -48,6 +107,69 @@ subscriptions and deliveries, review tasks, monitoring subscriptions, uploads,
 and two read views (`v_latest_results`, `v_industry_benchmarks`).
 
 ## How An Assessment Runs
+
+```mermaid
+flowchart TD
+    classDef red fill:#D41920,stroke:#A8141A,color:#ffffff
+    classDef grey fill:#f3f3f5,stroke:#9a9aa4,color:#1a1a1f
+    classDef human fill:#fbe9ea,stroke:#D41920,color:#1a1a1f
+
+    start(["POST /v1/assessments<br/>Idempotency-Key, five version pins"])
+    acquire["acquire_evidence<br/>every connector runs and is recorded<br/>text stored, spans verified, links proposed<br/>admissibility judged, incidents created"]
+    classify["classify_links<br/>maturity rung, execution, class, independence per span"]
+    freeze["freeze_snapshot<br/>judgments, incidents, run outcomes, pins, SHA-256"]
+    evaluate["evaluate_criteria<br/>per-criterion packs to the model<br/>findings validated against the snapshot"]
+    decide["decide<br/>rules in methodology order<br/>decisions, pillar scores, result hash, trace"]
+    review{"review<br/>triggers?"}
+    tasks["awaiting_review<br/>reviewer acts with a reason<br/>escalation, four eyes"]
+    finalize["finalize<br/>rerun with the review overlay<br/>supersede earlier rows"]
+    unverified(["completed_unverified"])
+    sign["reviewer signs certification<br/>API keys refused"]
+    done(["completed<br/>public verify, webhooks"])
+
+    start --> acquire --> classify --> freeze --> evaluate --> decide --> review
+    review -- yes --> tasks --> finalize --> unverified
+    review -- no --> unverified
+    unverified --> sign --> done
+
+    class acquire,classify,freeze,evaluate,decide,finalize red
+    class tasks,sign human
+    class start,unverified,done,review grey
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Console or partner
+    participant A as hai-api
+    participant Q as hai_ops.jobs
+    participant W as hai-worker
+    participant S as Evidence sources
+    participant L as LLM provider
+    participant R as Reviewer
+
+    C->>A: POST /v1/assessments (X-API-Key, Idempotency-Key)
+    A->>Q: enqueue acquire_evidence
+    A-->>C: 201 assessment (queued)
+    Q->>W: claim (SKIP LOCKED, lease)
+    W->>S: fetch every connector, record a connector_run each
+    W->>W: spans, links, admissibility, incidents
+    W->>Q: classify_links, freeze_snapshot
+    W->>W: freeze evidence_snapshot (sha256)
+    W->>L: per-criterion evidence packs (data, never instructions)
+    L-->>W: findings (advisory)
+    W->>W: validate findings against the snapshot (IC-03 to IC-06)
+    W->>W: decide: rules in order, result hash, trace
+    alt review triggers
+        W-->>R: review tasks opened
+        R->>A: POST /v1/reviews (reviewer JWT, reason)
+        A->>Q: finalize
+        W->>W: rerun with review overlay, supersede rows
+    end
+    R->>A: POST /v1/assessments/{id}/certification (sign)
+    A-->>C: webhook assessment.completed (HMAC signed)
+    C->>A: GET /v1/certifications/{number}/verify (public)
+```
 
 1. `POST /v1/assessments` (API key, `Idempotency-Key` header). The API resolves
    or creates the organization, records the assessment with its five version
@@ -138,6 +260,35 @@ named in the manifest does not exist.
 | AT-15 | Tamper evidence and prompt isolation | `test_audit_tampering_is_detected` (tests/integration/test_core_platform.py); `test_every_write_is_audited_and_the_chain_verifies` (tests/integration/test_core_platform.py); `test_injection_never_reaches_the_model` (packages/hai-engine/tests/test_evaluation.py) |
 
 ## Authority And Authorization
+
+```mermaid
+flowchart LR
+    classDef role fill:#D41920,stroke:#A8141A,color:#ffffff
+    classDef table fill:#ffffff,stroke:#9a9aa4,color:#1a1a1f
+
+    pipeline_role["hai_pipeline"]:::role
+    engine_role["hai_engine"]:::role
+    reviewer_role["hai_reviewer"]:::role
+    api_role["hai_api"]:::role
+    admin_role["hai_admin"]:::role
+
+    evidence["organizations, publishers, connector_runs,<br/>source_documents, clusters, spans,<br/>evidence_links, incidents, snapshots"]:::table
+    findings["criterion_findings"]:::table
+    results["criterion_decisions, pillar_scores,<br/>assessment_results (RLS)"]:::table
+    certs["certification_decisions, reviews"]:::table
+    assessments["assessments, review_tasks,<br/>webhooks, uploads, monitoring"]:::table
+    keys["api_keys, migrations, seed"]:::table
+    audit["audit_events<br/>append-only, hash-chained"]:::table
+
+    pipeline_role --> evidence
+    engine_role --> findings
+    engine_role --> results
+    reviewer_role --> certs
+    reviewer_role -- admissibility, incident status --> evidence
+    api_role --> assessments
+    admin_role --> keys
+    pipeline_role & engine_role & reviewer_role & api_role & admin_role -. every write .-> audit
+```
 
 * Principals: API key (`X-API-Key`, scopes from `hai_ops.api_keys`), reviewer
   or admin JWT (`Authorization: Bearer`, HS256, minted by an admin at
