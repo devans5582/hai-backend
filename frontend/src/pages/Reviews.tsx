@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { Icon } from "../components/Icon";
 import { Badge, QueryState } from "../components/widgets";
 import { REVIEW_ACTIONS_BY_SUBJECT, type ReviewAction } from "../generated/ontology";
 import { api, ApiRequestError, type ReviewTask } from "../lib/api";
@@ -14,7 +15,11 @@ export function Reviews() {
   return (
     <div className="stack">
       <div className="page-head">
-        <h1>Review queue</h1>
+        <div>
+          <span className="eyebrow">Human judgment, where it matters</span>
+          <h1>Review queue</h1>
+          <p className="page-description">Resolve uncertain findings and keep assessments moving with confidence.</p>
+        </div>
         <div className="row">
           <label htmlFor="status" className="sr-only">
             Task status
@@ -33,7 +38,12 @@ export function Reviews() {
       )}
       <QueryState isLoading={tasks.isLoading} error={tasks.error}>
         {(tasks.data?.items.length ?? 0) === 0 ? (
-          <p className="muted">No tasks.</p>
+          <div className="card empty-state">
+            <span className="empty-icon"><Icon name={status === "open" ? "check-circle" : "reviews"} /></span>
+            <h2>{status === "open" ? "You're all caught up" : status === "closed" ? "No completed reviews yet" : "No review tasks yet"}</h2>
+            <p>{status === "open" ? "There are no open tasks to review. Findings that need your judgment will appear here." : status === "closed" ? "Your completed review decisions will appear here for reference." : "Tasks appear when an assessment needs a reviewer's judgment."}</p>
+            {status === "closed" ? <button type="button" onClick={() => setStatus("open")}>View open tasks</button> : <Link className="text-link" to="/">Back to dashboard <Icon name="arrow-right" /></Link>}
+          </div>
         ) : (
           <div className="stack">
             {tasks.data?.items.map((t) => <TaskCard key={t.id} task={t} canAct={reviewer} />)}
@@ -74,8 +84,8 @@ export function TaskCard({ task, canAct }: { task: ReviewTask; canAct: boolean }
       </p>
       {open && canAct && (
         <form
-          className="row"
-          style={{ alignItems: "flex-end" }}
+          className="review-form"
+          aria-busy={act.isPending}
           onSubmit={(e) => {
             e.preventDefault();
             act.mutate();
@@ -83,7 +93,7 @@ export function TaskCard({ task, canAct }: { task: ReviewTask; canAct: boolean }
         >
           <div className="field" style={{ margin: 0 }}>
             <label htmlFor={`action-${task.id}`}>Action</label>
-            <select id={`action-${task.id}`} value={action} onChange={(e) => setAction(e.target.value)} style={{ width: "auto" }}>
+            <select id={`action-${task.id}`} value={action} onChange={(e) => setAction(e.target.value)}>
               {allowed.map((a) => (
                 <option key={a} value={a}>
                   {label("review_action", a)}
@@ -91,12 +101,12 @@ export function TaskCard({ task, canAct }: { task: ReviewTask; canAct: boolean }
               ))}
             </select>
           </div>
-          <div className="field" style={{ margin: 0, flex: 1, minWidth: 220 }}>
+          <div className="field" style={{ margin: 0 }}>
             <label htmlFor={`reason-${task.id}`}>Reason (required)</label>
-            <input id={`reason-${task.id}`} value={reason} onChange={(e) => setReason(e.target.value)} required minLength={3} aria-invalid={!!err} />
+            <input id={`reason-${task.id}`} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Explain the evidence behind your decision" required minLength={3} aria-invalid={!!err} />
           </div>
           <button type="submit" className="primary" disabled={act.isPending || reason.trim().length < 3}>
-            Submit
+            {act.isPending ? "Submitting..." : "Submit"}
           </button>
         </form>
       )}

@@ -1,14 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Icon } from "../components/Icon";
 import { TraceDrawer } from "../components/TraceDrawer";
 import { Badge, CoverageStrip, PillarBars, QueryState, ScoreDial, Tabs } from "../components/widgets";
-import { api, ApiRequestError } from "../lib/api";
+import { api, ApiRequestError, type Assessment } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { connectorLabel } from "../lib/connectors";
 import { LIFECYCLE_UI, fmtDate, fmtDateTime, fmtNum, label, toneForLifecycle, toneForOutcome } from "../lib/format";
 
 type Tab = "overview" | "criteria" | "sources" | "reviews";
+
+const PROCESSING_HELP: Partial<Record<Assessment["lifecycle_state"], string>> = {
+  queued: "Your assessment is in the queue. Evidence collection will begin when a worker is available.",
+  acquiring: "We’re collecting public evidence for this organization. Results will appear as the assessment progresses.",
+  evaluating: "Evidence is being evaluated against the assessment criteria. The rules engine will determine the result.",
+  awaiting_review: "This assessment needs a reviewer’s attention before it can be finalized. Open the Reviews tab to see the outstanding tasks.",
+};
 
 export function AssessmentDetail() {
   const { id = "" } = useParams();
@@ -29,37 +37,49 @@ export function AssessmentDetail() {
   return (
     <QueryState isLoading={assessment.isLoading} error={assessment.error}>
       {a && (
-        <div className="stack">
+        <div className="stack assessment-detail">
+          <Link className="back-link" to="/"><Icon name="arrow-left" /> Back to dashboard</Link>
           <div className="page-head">
             <div>
+              <span className="eyebrow">Assessment overview</span>
               <h1>{r?.organization.name ?? a.submitted_domain}</h1>
-              <div className="row small muted">
+              <div className="row small muted assessment-meta">
                 <span className="mono">{a.submitted_domain}</span>
                 <Badge tone={toneForLifecycle(a.lifecycle_state)}>{a.lifecycle_label}</Badge>
                 <span>
-                  {a.stage_band} / {a.size_band}
+                  {label("stage_band", a.stage_band)} / {label("size_band", a.size_band)}
                 </span>
-                <span>created {fmtDateTime(a.created_at)}</span>
+                <span>Created {fmtDateTime(a.created_at)}</span>
               </div>
             </div>
             <div className="actions">
               {LIFECYCLE_UI[a.lifecycle_state]?.cancel && (
                 <button type="button" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
-                  Cancel
+                  {cancel.isPending ? "Cancelling…" : "Cancel"}
                 </button>
               )}
               {LIFECYCLE_UI[a.lifecycle_state]?.reassess && (
                 <button type="button" onClick={() => reassess.mutate()} disabled={reassess.isPending}>
-                  Reassess
+                  <Icon name="refresh" /> {reassess.isPending ? "Starting…" : "Reassess"}
                 </button>
               )}
               {!a.certification_requested && LIFECYCLE_UI[a.lifecycle_state]?.requestCertification && (
                 <button type="button" className="primary" onClick={() => requestCert.mutate()} disabled={requestCert.isPending}>
-                  Request certification
+                  <Icon name="shield" /> {requestCert.isPending ? "Requesting…" : "Request certification"}
                 </button>
               )}
             </div>
           </div>
+          {PROCESSING_HELP[a.lifecycle_state] && (
+            <div className="alert info assessment-progress" role="status">
+              <Icon name={a.lifecycle_state === "awaiting_review" ? "reviews" : "clock"} />
+              <div>
+                <strong>{a.lifecycle_label}</strong>
+                <p>{PROCESSING_HELP[a.lifecycle_state]}</p>
+                {LIFECYCLE_UI[a.lifecycle_state]?.polling && <span className="small muted">This page updates automatically. You can return to the dashboard while it runs.</span>}
+              </div>
+            </div>
+          )}
           {a.failure_reason && (
             <div className="alert error" role="alert">
               Failed: {a.failure_reason}
@@ -82,8 +102,10 @@ export function AssessmentDetail() {
           />
           <QueryState isLoading={report.isLoading} error={report.error}>
             {r && tab === "overview" && (
-              <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" className="grid">
-                <div className="card">
+              <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" className="grid assessment-overview">
+                <div className="card score-card">
+                  <h2>Assessment result</h2>
+                  <p className="muted small">Human Alignment Index · out of 100</p>
                   <ScoreDial score={r.result?.hai_score ?? null} />
                   <div className="row" style={{ justifyContent: "center", marginTop: "0.75rem" }}>
                     <Badge tone={toneForOutcome(r.result?.outcome_status)}>{r.result?.outcome_label ?? "No result yet"}</Badge>
@@ -105,43 +127,52 @@ export function AssessmentDetail() {
                 </div>
                 <div className="card">
                   <h2>Pillars</h2>
+                  <p className="muted small">Performance across the governance pillars.</p>
                   <PillarBars pillars={r.pillars} />
+                  {r.pillars.length === 0 && <p className="muted small">Pillar scores will appear when evaluation is complete.</p>}
                 </div>
                 <div className="card" style={{ gridColumn: "1 / -1" }}>
                   <h2>Coverage</h2>
+                  <p className="muted small">Select a criterion to explore its evidence and the rules behind its result. Each tile shows the stored coverage state and level.</p>
                   <CoverageStrip cells={r.criteria.map((c) => ({ code: c.code, name: c.name, coverage_state: c.coverage_state, level: c.level }))} onSelect={setTraceCode} />
                   <p className="muted small" style={{ marginTop: "0.5rem" }}>
                     {Object.entries(r.coverage_summary)
                       .filter(([, n]) => n > 0)
                       .map(([s, n]) => `${label("coverage_state", s)}: ${n}`)
                       .join(", ")}
-                    . Select a cell to open its trace.
                   </p>
                 </div>
-                <div className="card" style={{ gridColumn: "1 / -1" }}>
-                  <h2>Version pins</h2>
-                  <div className="row small mono">
-                    {Object.entries(a.versions).map(([k, v]) => (
-                      <span key={k}>
-                        {k} {v}
-                      </span>
-                    ))}
-                    {r.snapshot && <span>snapshot {r.snapshot.sha256.slice(0, 12)}</span>}
+                <details className="card version-details" style={{ gridColumn: "1 / -1" }}>
+                  <summary>
+                    <span>Assessment details</span>
+                    <span className="muted small">Versions & execution notes</span>
+                    <Icon name="chevron-down" />
+                  </summary>
+                  <div className="version-details-body">
+                    <h3>Version pins</h3>
+                    <div className="row small mono">
+                      {Object.entries(a.versions).map(([k, v]) => (
+                        <span key={k}>
+                          {k} {v}
+                        </span>
+                      ))}
+                      {r.snapshot && <span>snapshot {r.snapshot.sha256.slice(0, 12)}</span>}
+                    </div>
+                    {r.execution_notes.length > 0 && (
+                      <>
+                        <h3 style={{ marginTop: "1rem" }}>Execution notes</h3>
+                        <ul className="small">
+                          {r.execution_notes.map((n) => (
+                            <li key={n.code}>
+                              <strong>{n.code}</strong> {n.name}: {n.note}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    <p className="muted small">{r.drafts_notice}</p>
                   </div>
-                  {r.execution_notes.length > 0 && (
-                    <>
-                      <h3 style={{ marginTop: "1rem" }}>Execution notes</h3>
-                      <ul className="small">
-                        {r.execution_notes.map((n) => (
-                          <li key={n.code}>
-                            <strong>{n.code}</strong> {n.name}: {n.note}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                  <p className="muted small">{r.drafts_notice}</p>
-                </div>
+                </details>
               </div>
             )}
             {r && tab === "criteria" && (
@@ -197,6 +228,7 @@ export function AssessmentDetail() {
                         </tr>
                       </thead>
                       <tbody>
+                        {(runs.data?.items.length ?? 0) === 0 && <tr><td colSpan={5} className="table-empty muted">No connector runs yet. Runs will appear once evidence collection begins.</td></tr>}
                         {(runs.data?.items ?? []).map((run) => (
                           <tr key={run.id}>
                             <td>{connectorLabel(run.code)}</td>
@@ -224,6 +256,7 @@ export function AssessmentDetail() {
                       </tr>
                     </thead>
                     <tbody>
+                      {r.sources.length === 0 && <tr><td colSpan={4} className="table-empty muted">No sources have been collected for this assessment.</td></tr>}
                       {r.sources.map((s) => (
                         <tr key={s.id}>
                           <td>
@@ -315,7 +348,7 @@ function SignCertification({ assessmentId, gateReasons, onDone }: { assessmentId
         </div>
       )}
       <button type="submit" className="primary" disabled={sign.isPending || reason.trim().length < 3}>
-        Sign
+        {sign.isPending ? "Signing…" : "Sign"}
       </button>
     </form>
   );

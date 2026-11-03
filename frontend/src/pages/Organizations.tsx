@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Icon } from "../components/Icon";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
 import { fmtDate, fmtDateTime, fmtNum, label, toneForLifecycle } from "../lib/format";
@@ -12,17 +13,29 @@ export function Organizations() {
   return (
     <div className="stack">
       <div className="page-head">
-        <h1>Organizations</h1>
-        <div className="field" style={{ margin: 0 }}>
+        <div>
+          <span className="eyebrow">Your organization directory</span>
+          <h1>Organizations</h1>
+          <p className="page-description">Explore assessment history, traceable evidence, and peer benchmarks.</p>
+        </div>
+        <div className="search-input">
+          <Icon name="search" />
           <label htmlFor="q" className="sr-only">
             Search organizations
           </label>
-          <input id="q" placeholder="Search by name or domain" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input id="q" type="search" placeholder="Search by name or domain" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       </div>
       <div className="card table-wrap">
         <QueryState isLoading={orgs.isLoading} error={orgs.error}>
-          <table>
+          {(orgs.data?.items.length ?? 0) === 0 ? (
+            <div className="empty-state">
+              <span className="empty-icon"><Icon name={q ? "search" : "building"} /></span>
+              <h2>{q ? "No matching organizations" : "Your directory starts here"}</h2>
+              <p>{q ? "Try another name or domain to find the organization you need." : "Start an assessment to add an organization and build its evidence history."}</p>
+              {q ? <button type="button" onClick={() => setQ("")}>Clear search</button> : <Link className="btn primary" to="/assessments/new"><Icon name="plus" /> New assessment</Link>}
+            </div>
+          ) : <table>
             <thead>
               <tr>
                 <th>Organization</th>
@@ -49,8 +62,7 @@ export function Organizations() {
                 </tr>
               ))}
             </tbody>
-          </table>
-          {orgs.data?.total === 0 && <p className="muted">No organizations yet.</p>}
+          </table>}
         </QueryState>
       </div>
       <section className="card table-wrap" aria-labelledby="bench">
@@ -58,7 +70,12 @@ export function Organizations() {
         <p className="muted small">Latest result per organization, grouped by industry, stage and size. Access-limited runs are excluded.</p>
         <QueryState isLoading={bench.isLoading} error={bench.error}>
           {(bench.data?.items.length ?? 0) === 0 ? (
-            <p className="muted">No completed assessments to compare yet.</p>
+            <div className="empty-state">
+              <span className="empty-icon"><Icon name="layers" /></span>
+              <h3>See how peers compare</h3>
+              <p>Benchmarks will appear here as eligible assessments are completed.</p>
+              <Link className="text-link" to="/assessments/new">Start an assessment <Icon name="arrow-right" /></Link>
+            </div>
           ) : (
             <table>
               <thead>
@@ -101,8 +118,10 @@ export function OrganizationDetail() {
     <QueryState isLoading={org.isLoading} error={org.error}>
       {org.data && (
         <div className="stack">
+          <Link className="text-link" to="/organizations"><Icon name="arrow-left" /> All organizations</Link>
           <div className="page-head">
             <div>
+              <span className="eyebrow">Organization profile</span>
               <h1>{org.data.display_name}</h1>
               <div className="row small muted">
                 <span className="mono">{org.data.primary_domain}</span>
@@ -115,7 +134,14 @@ export function OrganizationDetail() {
           <section className="card table-wrap" aria-labelledby="org-assessments">
             <h2 id="org-assessments">Assessments</h2>
             <QueryState isLoading={assessments.isLoading} error={assessments.error}>
-              <table>
+              {(assessments.data?.items.length ?? 0) === 0 ? (
+                <div className="empty-state">
+                  <span className="empty-icon"><Icon name="file" /></span>
+                  <h3>No assessments yet</h3>
+                  <p>Start an assessment to understand this organization's AI governance.</p>
+                  <Link className="btn primary" to="/assessments/new"><Icon name="plus" /> New assessment</Link>
+                </div>
+              ) : <table>
                 <thead>
                   <tr>
                     <th>Assessment</th>
@@ -136,15 +162,22 @@ export function OrganizationDetail() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table>}
             </QueryState>
           </section>
           <section className="card" aria-labelledby="ledger">
             <h2 id="ledger">Evidence ledger</h2>
             <QueryState isLoading={evidence.isLoading} error={evidence.error}>
-              <p className="muted small">
-                {evidence.data?.total ?? 0} links. Showing {offset + 1} to {Math.min(offset + 20, evidence.data?.total ?? 0)}.
-              </p>
+              {(evidence.data?.items.length ?? 0) === 0 ? (
+                <div className="empty-state">
+                  <span className="empty-icon"><Icon name="file" /></span>
+                  <h3>{offset === 0 ? "No evidence links yet" : "No evidence on this page"}</h3>
+                  <p>{offset === 0 ? "Collected evidence will appear here as assessments progress." : "Return to the previous page to explore the available evidence."}</p>
+                  {offset === 0 && <Link className="text-link" to="/assessments/new">Start an assessment <Icon name="arrow-right" /></Link>}
+                </div>
+              ) : <p className="muted small">
+                {evidence.data?.total ?? 0} links. Showing {offset + 1} to {Math.min(offset + (evidence.data?.items.length ?? 0), evidence.data?.total ?? 0)}.
+              </p>}
               {(evidence.data?.items ?? []).map((e) => (
                 <div key={e.link_id} style={{ marginBottom: "0.75rem" }}>
                   <div className="row small">
@@ -162,14 +195,14 @@ export function OrganizationDetail() {
                   </div>
                 </div>
               ))}
-              <div className="actions">
+              {((evidence.data?.total ?? 0) > 20 || offset > 0) && <div className="actions">
                 <button type="button" onClick={() => setOffset(Math.max(0, offset - 20))} disabled={offset === 0}>
                   Previous
                 </button>
                 <button type="button" onClick={() => setOffset(offset + 20)} disabled={offset + 20 >= (evidence.data?.total ?? 0)}>
                   Next
                 </button>
-              </div>
+              </div>}
             </QueryState>
           </section>
         </div>

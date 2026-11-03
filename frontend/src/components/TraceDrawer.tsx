@@ -1,34 +1,73 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { api } from "../lib/api";
 import { fmtDate, label } from "../lib/format";
 import { Badge, QueryState } from "./widgets";
 
 export function TraceDrawer({ assessmentId, criterionCode, onClose }: { assessmentId: string; criterionCode: string | null; onClose: () => void }) {
+  const drawerRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  const isOpen = !!criterionCode;
   const q = useQuery({
     queryKey: ["trace", assessmentId, criterionCode],
     queryFn: () => api.getCriterionTrace(assessmentId, criterionCode as string),
     enabled: !!criterionCode,
   });
   useEffect(() => {
-    if (!criterionCode) return;
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const drawer = drawerRef.current;
+      if (!drawer) return;
+      const focusable = Array.from(drawer.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter((element) => !element.closest('[hidden], [aria-hidden="true"]'));
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) {
+        e.preventDefault();
+        drawer.focus();
+      } else if (e.shiftKey && (document.activeElement === first || !drawer.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !drawer.contains(document.activeElement))) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [criterionCode, onClose]);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      if (trigger?.isConnected) trigger.focus();
+    };
+  }, [isOpen]);
   if (!criterionCode) return null;
   const c = q.data?.criteria[0];
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="trace-title">
+      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="trace-title" ref={drawerRef} tabIndex={-1}>
         <header>
-          <h2 id="trace-title">
-            Trace: {criterionCode} {c ? c.criterion_name : ""}
-          </h2>
-          <button type="button" onClick={onClose} aria-label="Close trace">
+          <div className="drawer-heading">
+            <span className="eyebrow">Evidence & decision trail</span>
+            <h2 id="trace-title">
+              Trace: {criterionCode} {c ? c.criterion_name : ""}
+            </h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close trace" ref={closeRef}>
             Close
           </button>
         </header>

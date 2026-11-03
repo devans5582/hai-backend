@@ -1,0 +1,37 @@
+import type { CSSProperties } from "react";
+
+const paths = {
+  dashboard: "M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z",
+  plus: "M12 5v14 M5 12h14",
+  reviews: "M9 5H5v16h14V5h-4 M9 3h6v4H9z M8 13l2 2 5-5",
+  building: "M4 21V5l8-3 8 3v16 M2 21h20 M9 21v-4h6v4 M8 8h1 M15 8h1 M8 12h1 M15 12h1",
+  layers: "m12 3 10 5-10 5L2 8z M2 12l10 5 10-5 M2 16l10 5 10-5",
+  shield: "M12 3 3 7v5c0 5 9 9 9 9s9-4 9-9V7z M8 12l3 3 5-6",
+  settings: "M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
+  search: "M21 21l-5-5 M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
+  "arrow-right": "M4 12h16 M14 6l6 6-6 6",
+  "arrow-left": "M20 12H4 M10 6l-6 6 6 6",
+  "chevron-right": "m9 5 7 7-7 7",
+  "chevron-down": "m6 9 6 6 6-6",
+  "external-link": "M14 3h7v7 M10 14 21 3 M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6",
+  check: "m5 12 4 4L19 6",
+  "check-circle": "M22 11v1a10 10 0 1 1-6-9 M22 4 12 14l-3-3",
+  clock: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0 M12 6v6l4 2",
+  activity: "M2 12h4l3-8 6 16 3-8h4",
+  file: "M14 2H4v20h16V8z M14 2v6h6 M8 13h8 M8 17h5",
+  globe: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0 M2 12h20 M12 2a18 18 0 0 1 0 20 18 18 0 0 1 0-20",
+  info: "M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0 M12 11v6 M12 7h.01",
+  lock: "M5 10h14v11H5z M8 10V6a4 4 0 0 1 8 0v4 M12 14v3",
+  key: "M15 7a5 5 0 1 1-10 0 5 5 0 0 1 10 0 M11 11l10 10 M16 16l3-3 M19 19l3-3",
+  eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12 M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0",
+  "eye-off": "m3 3 18 18 M10.6 10.6a2 2 0 0 0 2.8 2.8 M9 5.5A11 11 0 0 1 12 5c6 0 10 7 10 7a20 20 0 0 1-3 3 M6 6C3.5 8 2 12 2 12s4 7 10 7c1.5 0 3-.5 4-1",
+  sun: "M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M12 2v2 M12 20v2 M2 12h2 M20 12h2 M5 5l1 1 M18 18l1 1 M5 19l1-1 M18 6l1-1",
+  menu: "M4 6h16 M4 12h16 M4 18h16",
+  x: "m6 6 12 12 M6 18 18 6",
+  sparkles: "m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z",
+  refresh: "M20 7a9 9 0 1 0 1 9 M20 2v6h-6",
+} as const;
+export type IconName = keyof typeof paths;
+export function Icon({ name, className = "", style }: { name: IconName; className?: string; style?: CSSProperties }) {
+  return <svg className={`icon ${className}`} style={style} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+}

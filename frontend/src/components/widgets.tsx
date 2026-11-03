@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { COVERAGE_STATE_VALUES, LABELS, type CoverageState } from "../generated/ontology";
 import type { ApiRequestError, PillarResult } from "../lib/api";
 import { fmtNum } from "../lib/format";
@@ -55,12 +56,15 @@ export interface CoverageCell {
 export function CoverageStrip({ cells, onSelect }: { cells: CoverageCell[]; onSelect?: (code: string) => void }) {
   return (
     <div>
-      <div className="strip" role="list" aria-label="Coverage by criterion">
+      <div className="strip coverage-grid" role="list" aria-label="Coverage by criterion">
         {cells.map((c) => {
           const state = c.coverage_state ?? "missing";
-          const text = `${c.code} ${c.name}: ${LABELS["coverage_state"]?.[state] ?? state}${c.level ? `, level ${c.level}` : ""}`;
+          const text = `${c.code} ${c.name}: ${LABELS["coverage_state"]?.[state] ?? state}${c.level !== null ? `, level ${c.level}` : ""}`;
           return (
-            <button key={c.code} type="button" className={`cell cov-${state}`} role="listitem" title={text} aria-label={text} onClick={() => onSelect?.(c.code)} />
+            <button key={c.code} type="button" className={`cell coverage-cell cov-${state}`} role="listitem" title={text} aria-label={text} onClick={() => onSelect?.(c.code)}>
+              <span className="coverage-code" aria-hidden="true">{c.code}</span>
+              <span className="coverage-level" aria-hidden="true">{c.level === null ? "—" : `L${c.level}`}</span>
+            </button>
           );
         })}
       </div>
@@ -77,13 +81,22 @@ export function CoverageStrip({ cells, onSelect }: { cells: CoverageCell[]; onSe
 }
 
 export function QueryState({ isLoading, error, children }: { isLoading: boolean; error: unknown; children: ReactNode }) {
-  if (isLoading) return <p className="muted" aria-live="polite">Loading...</p>;
+  if (isLoading) return (
+    <div className="query-loading" role="status" aria-live="polite">
+      <span className="loading-spinner" aria-hidden="true" />
+      <div className="query-loading-copy">
+        <strong>Loading your workspace</strong>
+        <span className="muted small">Fetching the latest information…</span>
+      </div>
+    </div>
+  );
   if (error) {
     const e = error as Partial<ApiRequestError> & { message?: string };
     return (
       <div className="alert error" role="alert">
-        {e.status === 401 ? "Sign in on the Settings page to continue. " : ""}
-        {e.message ?? "Request failed"}
+        <strong>{e.status === 401 ? "Connect your account to continue" : "We couldn’t load this information"}</strong>
+        <p className="query-error-message">{e.status === 401 ? "Add your API key or reviewer token in Settings to access your workspace." : e.message ?? "Check your connection and try again."}</p>
+        {e.status === 401 && <Link className="btn" to="/settings">Open Settings</Link>}
       </div>
     );
   }
@@ -91,10 +104,26 @@ export function QueryState({ isLoading, error, children }: { isLoading: boolean;
 }
 
 export function Tabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; label: string }[]; value: T; onChange: (id: T) => void }) {
+  const tabListRef = useRef<HTMLDivElement>(null);
   return (
-    <div className="tabs" role="tablist">
-      {tabs.map((t) => (
-        <button key={t.id} role="tab" type="button" aria-selected={value === t.id} aria-controls={`panel-${t.id}`} id={`tab-${t.id}`} onClick={() => onChange(t.id)}>
+    <div className="tabs" role="tablist" ref={tabListRef}>
+      {tabs.map((t, index) => (
+        <button key={t.id} role="tab" type="button" aria-selected={value === t.id} aria-controls={`panel-${t.id}`} id={`tab-${t.id}`} tabIndex={value === t.id ? 0 : -1} onClick={() => onChange(t.id)} onKeyDown={(event) => {
+          let nextIndex: number;
+          switch (event.key) {
+            case "ArrowRight": nextIndex = (index + 1) % tabs.length; break;
+            case "ArrowLeft": nextIndex = (index - 1 + tabs.length) % tabs.length; break;
+            case "Home": nextIndex = 0; break;
+            case "End": nextIndex = tabs.length - 1; break;
+            default: return;
+          }
+          event.preventDefault();
+          const next = tabs[nextIndex];
+          if (next) {
+            onChange(next.id);
+            tabListRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
+          }
+        }}>
           {t.label}
         </button>
       ))}
