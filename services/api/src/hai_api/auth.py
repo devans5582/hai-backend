@@ -26,7 +26,9 @@ def current_principal(request: Request) -> Principal:
     auth = request.headers.get("authorization", "")
     if api_key:
         with state.db.transaction("auth", "hai_api") as conn:
-            principal = verify_api_key(conn, settings.api_key_pepper.get_secret_value(), api_key)
+            principal = verify_api_key(
+                conn, settings.api_key_pepper.get_secret_value(), api_key, allow_demo=not settings.is_production
+            )
         if principal is None:
             raise UnauthorizedError("invalid or revoked API key")
         return principal

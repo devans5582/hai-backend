@@ -196,8 +196,28 @@ make dev                                             # api :8000, worker, consol
 
 ## Your First Assessment
 
-Create an API key with Make. For the Docker setup, run `make up` first so
-the database is initialized.
+For local development, the default API key is **`demo`**. `make up` initializes
+the Docker database and seeds it automatically; the non-Docker setup seeds it
+with `make seed`. Paste `demo` into **Settings → API key → Save credentials**
+in the console. There is no username/password login.
+
+For an existing initialized Docker database, add the demo key with:
+
+```bash
+make seed-docker
+```
+
+Seeding is idempotent: it keeps one demo key and does not reactivate it if it
+was revoked. The database stores its HMAC, and it has the default partner
+permissions. Production neither seeds nor accepts the demo key.
+
+Use the demo key for the local curl examples:
+
+```bash
+export HAI_API_KEY=demo
+```
+
+To create an additional random API key with Make:
 
 ```bash
 # in the Docker stack
@@ -206,11 +226,12 @@ make api-key-docker NAME=local-console
 make api-key NAME=partner
 ```
 
-Each run creates a new key and prints it once. Paste the full `hai_...` value
-into **Settings → API key → Save credentials** in the console. There is no
-username/password login. To use the key with curl, export it as `HAI_API_KEY`.
+Each key-generation command creates a new random key and prints it once. Paste
+the full `hai_...` value into the console's **API key** field or export it as
+`HAI_API_KEY` for curl. Naming a generated key `demo` does not change its secret
+to the seeded `demo` value.
 
-`NAME` defaults to `local`; quote names containing spaces. Omit `SCOPES` for
+`NAME` defaults to `demo`; quote names containing spaces. Omit `SCOPES` for
 the default partner permissions, or pass comma-separated scopes without spaces:
 
 ```bash
@@ -392,6 +413,7 @@ Every setting is an environment variable with the `HAI_` prefix;
 
 | Variable | Purpose |
 |---|---|
+| `HAI_ENV` | `development` / `test` seeds and accepts the `demo` API key; `production` skips and rejects it |
 | `HAI_DATABASE_URL` | Postgres connection string |
 | `HAI_ENFORCE_DB_ROLES` | `SET LOCAL ROLE` per component in every transaction |
 | `HAI_API_KEY_PEPPER`, `HAI_JWT_SECRET`, `HAI_CERT_SIGNING_KEY`, `HAI_WEBHOOK_SIGNING_KEY` | signing secrets; production refuses `dev-` values and anything under 32 characters |

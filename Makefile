@@ -15,10 +15,10 @@ PY_TESTS := packages/hai-ontology/tests packages/hai-core/tests packages/hai-pip
 PG_TESTS := tests/integration tests/e2e services/api/tests
 # Preserve names and scopes as single arguments, including spaces and apostrophes.
 shell_quote = '$(subst ','"'"',$(1))'
-API_KEY_ARGS = --name $(call shell_quote,$(or $(NAME),local)) $(if $(SCOPES),--scopes $(call shell_quote,$(SCOPES)),)
+API_KEY_ARGS = --name $(call shell_quote,$(or $(NAME),demo)) $(if $(SCOPES),--scopes $(call shell_quote,$(SCOPES)),)
 
 .PHONY: help install install-frontend hooks ontology-validate codegen codegen-check check-bump ontology-diff migrate-plan \
-        baseline db db-stop migrate seed api-key api-key-docker verify-audit run-api run-worker run-frontend dev fmt fmt-check lint typecheck \
+        baseline db db-stop migrate seed seed-docker api-key api-key-docker verify-audit run-api run-worker run-frontend dev fmt fmt-check lint typecheck \
         test-unit test-integration test-enforced test coverage frontend-check check build up down logs reset smoke bundle clean
 
 help: ## Show this help
@@ -70,13 +70,16 @@ db-stop: ## Stop and remove the throwaway Postgres
 migrate: ## Run migrations against HAI_DATABASE_URL
 	$(UV) run hai-db wait && $(UV) run hai-db migrate
 
-seed: ## Seed methodology and connector rows from the YAML
+seed: ## Seed methodology, connectors and the development demo key with local Python
 	$(UV) run hai-db seed
 
-api-key: ## Create a key with local Python: make api-key [NAME=local] [SCOPES=a,b]
+seed-docker: ## Seed an initialized Docker database, including the development demo key
+	$(COMPOSE) run --rm migrate hai-db seed
+
+api-key: ## Create an additional key with local Python: make api-key [NAME=demo] [SCOPES=a,b]
 	$(UV) run hai-db create-api-key $(API_KEY_ARGS)
 
-api-key-docker: ## Create a key in the Docker stack: make api-key-docker [NAME=local] [SCOPES=a,b]
+api-key-docker: ## Create an additional Docker key: make api-key-docker [NAME=demo] [SCOPES=a,b]
 	$(COMPOSE) run --rm migrate hai-db create-api-key $(API_KEY_ARGS)
 
 verify-audit: ## Verify the audit hash chain

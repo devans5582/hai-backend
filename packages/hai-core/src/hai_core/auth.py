@@ -2,6 +2,7 @@
 
 API keys look like ``hai_<key id>.<secret>``. Only an HMAC-SHA256 of the secret
 under a server pepper is stored; the plaintext is shown once at creation.
+The seeded development key ``demo`` requires explicit opt-in when verifying.
 Reviewers and admins use HS256 JWTs minted by an admin. Every principal
 carries scopes; routes declare which scope they need.
 """
@@ -22,6 +23,7 @@ from sqlalchemy import Connection, text
 from hai_core.errors import UnauthorizedError
 
 PrincipalKind = Literal["api_key", "reviewer", "admin", "service", "anonymous"]
+DEMO_API_KEY = "demo"  # Intentional development credential; rejected in production.
 
 
 class Scope:
@@ -146,11 +148,15 @@ def _record(row: Any) -> ApiKeyRecord:
     return ApiKeyRecord(row[0], row[1], row[2], list(row[3]), row[4], row[5], row[6])
 
 
-def verify_api_key(conn: Connection, pepper: str, plaintext: str) -> Principal | None:
-    parsed = parse_plaintext_key(plaintext.strip())
+def verify_api_key(conn: Connection, pepper: str, plaintext: str, *, allow_demo: bool = False) -> Principal | None:
+    value = plaintext.strip()
+    parsed = (DEMO_API_KEY, DEMO_API_KEY) if value == DEMO_API_KEY else parse_plaintext_key(value)
     if parsed is None:
         return None
     key_id, secret = parsed
+    # Check the reserved ID too: hai_demo.demo must not bypass the environment guard.
+    if key_id == DEMO_API_KEY and not allow_demo:
+        return None
     row = conn.execute(
         text(
             "SELECT id, key_id, name, scopes, created_at, revoked_at, last_used_at, key_hmac FROM hai_ops.api_keys WHERE key_id = :k"  # noqa: E501

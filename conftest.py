@@ -113,7 +113,7 @@ def db(settings: Settings, manifest: Manifest) -> Iterator[Database]:
         roles = ", ".join(sorted(role_codes(manifest)))
         conn.execute(text(f'GRANT {roles} TO "{user}"'))
     with database.transaction("pytest", "hai_admin") as conn:
-        seed_all(conn, manifest, REPO / "config" / "connectors.yaml", actor="pytest")
+        seed_all(conn, manifest, REPO / "config" / "connectors.yaml", actor="pytest", settings=settings)
     try:
         yield database
     finally:

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from hai_core.audit import verify_chain
-from hai_core.auth import Scope, create_api_key, list_api_keys, revoke_api_key
+from hai_core.auth import DEMO_API_KEY, Scope, create_api_key, list_api_keys, revoke_api_key
 from hai_core.db.engine import Database
 from hai_core.db.migrate import MigrationError, migrate, migration_status, schema_version, wait_for_database
 from hai_core.logging import configure_logging
@@ -81,8 +81,10 @@ def cmd_seed(_args: argparse.Namespace) -> int:
         cfg = find_repo_root() / cfg
     db = _db()
     with db.transaction("hai-db", "hai_admin") as conn:
-        counts = seed_all(conn, manifest, cfg)
+        counts = seed_all(conn, manifest, cfg, settings=s)
     print(", ".join(f"{k}={v}" for k, v in counts.items() if k != "seeded_at"))
+    if counts.get("demo_api_keys"):
+        print(f"development API key: {DEMO_API_KEY} (Console Settings > API key)")
     return 0
 
 
@@ -137,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=cmd_wait)
     sub.add_parser("migrate", help="apply pending migrations").set_defaults(func=cmd_migrate)
     sub.add_parser("status", help="show migration status").set_defaults(func=cmd_status)
-    sub.add_parser("seed", help="seed methodology and connector rows from YAML").set_defaults(func=cmd_seed)
+    sub.add_parser("seed", help="seed methodology, connectors and development demo access").set_defaults(func=cmd_seed)
     s = sub.add_parser("create-api-key", help="create an API key (plaintext shown once)")
     s.add_argument("--name", required=True)
     s.add_argument("--scopes", help="comma-separated scopes (default: partner scopes)")

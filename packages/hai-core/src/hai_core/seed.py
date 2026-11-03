@@ -1,4 +1,4 @@
-"""Seed methodology rows and connector rows from YAML. Idempotent."""
+"""Seed methodology, connectors and development access. Idempotent."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 from sqlalchemy import Connection, text
 
+from hai_core.auth import DEMO_API_KEY, Scope, hmac_secret
 from hai_core.db.store import Store
 from hai_core.generated.enums import (
     ConnectorStatus,
@@ -28,6 +29,7 @@ from hai_core.generated.models import (
     Pillar,
     Rule,
 )
+from hai_core.settings import Settings
 from hai_ontology.meta import Manifest
 
 
@@ -133,8 +135,39 @@ def seed_connectors(conn: Connection, manifest: Manifest, config: dict[str, Any]
     return n
 
 
-def seed_all(conn: Connection, manifest: Manifest, connectors_config: Path, *, actor: str = "hai-db") -> dict[str, int]:
+def seed_demo_api_key(conn: Connection, settings: Settings) -> int:
+    """Ensure development access without rotating the key or reviving a revoked key."""
+    if settings.is_production:
+        return 0
+    result = conn.execute(
+        text(
+            "INSERT INTO hai_ops.api_keys (key_id, name, key_hmac, scopes, created_by) "
+            "VALUES (:key_id, :name, :hmac, :scopes, 'hai-db:demo') "
+            "ON CONFLICT (key_id) DO UPDATE SET key_hmac = EXCLUDED.key_hmac, "
+            "name = EXCLUDED.name, scopes = EXCLUDED.scopes "
+            "WHERE hai_ops.api_keys.revoked_at IS NULL"
+        ),
+        {
+            "key_id": DEMO_API_KEY,
+            "name": "demo",
+            "hmac": hmac_secret(settings.api_key_pepper.get_secret_value(), DEMO_API_KEY),
+            "scopes": sorted(Scope.PARTNER_DEFAULT),
+        },
+    )
+    return int(result.rowcount)
+
+
+def seed_all(
+    conn: Connection,
+    manifest: Manifest,
+    connectors_config: Path,
+    *,
+    actor: str = "hai-db",
+    settings: Settings | None = None,
+) -> dict[str, int]:
     counts = seed_methodology(conn, manifest, actor=actor)
     counts["connectors"] = seed_connectors(conn, manifest, load_connector_config(connectors_config), actor=actor)
+    if settings is not None:
+        counts["demo_api_keys"] = seed_demo_api_key(conn, settings)
     counts["seeded_at"] = int(datetime.now(UTC).timestamp())
     return counts
