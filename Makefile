@@ -13,9 +13,12 @@ export HAI_TEST_DATABASE_URL
 PY_SRC := packages/hai-ontology/src packages/hai-core/src packages/hai-pipeline/src packages/hai-engine/src services/api/src services/worker/src
 PY_TESTS := packages/hai-ontology/tests packages/hai-core/tests packages/hai-pipeline/tests packages/hai-engine/tests services/api/tests
 PG_TESTS := tests/integration tests/e2e services/api/tests
+# Preserve names and scopes as single arguments, including spaces and apostrophes.
+shell_quote = '$(subst ','"'"',$(1))'
+API_KEY_ARGS = --name $(call shell_quote,$(or $(NAME),local)) $(if $(SCOPES),--scopes $(call shell_quote,$(SCOPES)),)
 
 .PHONY: help install install-frontend hooks ontology-validate codegen codegen-check check-bump ontology-diff migrate-plan \
-        baseline db db-stop migrate seed api-key verify-audit run-api run-worker run-frontend dev fmt fmt-check lint typecheck \
+        baseline db db-stop migrate seed api-key api-key-docker verify-audit run-api run-worker run-frontend dev fmt fmt-check lint typecheck \
         test-unit test-integration test-enforced test coverage frontend-check check build up down logs reset smoke bundle clean
 
 help: ## Show this help
@@ -70,8 +73,11 @@ migrate: ## Run migrations against HAI_DATABASE_URL
 seed: ## Seed methodology and connector rows from the YAML
 	$(UV) run hai-db seed
 
-api-key: ## Create an API key: make api-key NAME=partner [SCOPES=a,b]
-	$(UV) run hai-db create-api-key --name $(or $(NAME),local) $(if $(SCOPES),--scopes $(SCOPES),)
+api-key: ## Create a key with local Python: make api-key [NAME=local] [SCOPES=a,b]
+	$(UV) run hai-db create-api-key $(API_KEY_ARGS)
+
+api-key-docker: ## Create a key in the Docker stack: make api-key-docker [NAME=local] [SCOPES=a,b]
+	$(COMPOSE) run --rm migrate hai-db create-api-key $(API_KEY_ARGS)
 
 verify-audit: ## Verify the audit hash chain
 	$(UV) run hai-db verify-audit

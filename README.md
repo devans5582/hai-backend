@@ -196,14 +196,29 @@ make dev                                             # api :8000, worker, consol
 
 ## Your First Assessment
 
-Create an API key. It is printed once.
+Create an API key with Make. For the Docker setup, run `make up` first so
+the database is initialized.
 
 ```bash
 # in the Docker stack
-docker compose run --rm migrate hai-db create-api-key --name partner
+make api-key-docker NAME=local-console
 # without Docker
 make api-key NAME=partner
 ```
+
+Each run creates a new key and prints it once. Paste the full `hai_...` value
+into **Settings → API key → Save credentials** in the console. There is no
+username/password login. To use the key with curl, export it as `HAI_API_KEY`.
+
+`NAME` defaults to `local`; quote names containing spaces. Omit `SCOPES` for
+the default partner permissions, or pass comma-separated scopes without spaces:
+
+```bash
+make api-key-docker NAME=read-only SCOPES=assessments:read,organizations:read,ontology:read
+```
+
+Default API keys can start assessments and read results; custom scopes can restrict
+these permissions. Review actions and certification signing require a named reviewer token.
 
 Start an assessment. The `Idempotency-Key` makes a retried request return the
 same assessment instead of starting a second one.
@@ -236,7 +251,7 @@ Follow it through the API:
 Reviewer and admin tokens are minted by an admin key:
 
 ```bash
-docker compose run --rm migrate hai-db create-api-key --name admin --scopes admin
+make api-key-docker NAME=admin SCOPES=admin
 curl -s -X POST http://localhost:8000/v1/auth/token \
   -H "X-API-Key: $ADMIN_KEY" -H "Content-Type: application/json" \
   -d '{"subject": "rev-1", "name": "Reviewer One", "role": "reviewer"}'
