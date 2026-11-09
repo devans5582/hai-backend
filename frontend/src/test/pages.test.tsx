@@ -31,7 +31,7 @@ const ASSESSMENT = {
 const REPORT = {
   product: { report_name: "HAI Score", long_name: "Human Alignment Index" },
   assessment: { id: ASSESSMENT.id, lifecycle_state: "completed_unverified", versions: ASSESSMENT.versions },
-  organization: { id: ASSESSMENT.org_id, name: "Acme Corp", legal_name: "Acme Corp", domain: "acme.example", industry_code: "Software" },
+  organization: { id: ASSESSMENT.org_id, name: "Acme Corp", legal_name: "Acme Corp", domain: "acme.example", industry_code: "technology" },
   result: { hai_score: 42.5, confidence_pct: 61.2, effectiveness: 25, outcome_status: "confidence_too_low", outcome_label: "Confidence too low", gate_reasons: ["confidence 61.2 below minimum 70"], review_triggers: [], caps_applied: [] },
   pillars: [
     { code: "TRU", name: "Trust", weight: 0.2, score: 50, confidence: 60, criteria_counted: 4, criteria_excluded: 0, status: "developing", status_label: "Developing", status_wording: "Evidence exists at policy level but lacks execution proof." },
@@ -79,12 +79,16 @@ describe("AssessmentDetail", () => {
       if (url.endsWith("/report")) return { body: REPORT };
       if (url.endsWith("/connector-runs")) return { body: { items: [], total: 0, limit: 1, offset: 0 } };
       if (url.includes("/v1/reviews/tasks")) return { body: { items: [], total: 0, limit: 50, offset: 0 } };
+      if (url.endsWith(`/v1/organizations/${ASSESSMENT.org_id}/history`)) return { body: { organization_id: ASSESSMENT.org_id, latest_id: "99999999-9999-4999-8999-999999999999", total: 2, items: [{ version: 2, is_latest: true, assessment: { id: "99999999-9999-4999-8999-999999999999", lifecycle_state: "queued", lifecycle_label: "Queued", created_at: "2026-10-25T12:00:00Z", finished_at: null, requested_by: "x", methodology_version: "2.0.0", ruleset_version: "1.1.0", model_id: "m", parent_assessment_id: ASSESSMENT.id, certification_requested: false }, result: null }, { version: 1, is_latest: false, assessment: { id: ASSESSMENT.id, lifecycle_state: "completed_unverified", lifecycle_label: "Completed (unverified)", created_at: ASSESSMENT.created_at, finished_at: null, requested_by: "x", methodology_version: "1.0.0", ruleset_version: "1.0.0", model_id: "m", parent_assessment_id: null, certification_requested: false }, result: { hai_score: 42.5, confidence_pct: 61.2, outcome_status: "confidence_too_low", outcome_label: "Confidence too low" } }] } };
       if (url.endsWith("/trace/SAF-02")) return { body: { assessment_id: ASSESSMENT.id, criteria: [{ criterion_code: "SAF-02", criterion_name: "User Protection Mechanisms", decision_id: "d2", level: null, coverage_state: "unavailable", confidence: 0, applied_rule_codes: ["GATE-COVERAGE"], rules: [{ rule: "GATE-COVERAGE", before: { level: null }, after: { level: null }, note: "no admissible links and the primary sources could not be reached" }], inputs: {}, caps_applied: [], adjustments: [], finding: null, evidence: [] }] } };
       return undefined;
     });
     renderWithProviders(<AssessmentDetail />, { route: `/assessments/${ASSESSMENT.id}`, path: "/assessments/:id" });
     expect(await screen.findByRole("heading", { name: "Acme Corp" })).toBeInTheDocument();
     expect(screen.getByText("Confidence too low")).toBeInTheDocument();
+    // an earlier version says so and points at the latest one
+    expect(await screen.findByText("Assessment version 1 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open the latest version" })).toHaveAttribute("href", "/assessments/99999999-9999-4999-8999-999999999999");
     expect(screen.getByRole("img", { name: "HAI Score: 42.5 out of 100" })).toBeInTheDocument();
     expect(screen.getByText(/Confidence 61.2/)).toBeInTheDocument();
     // the console never computes: the unavailable criterion is shown with its stored wording, not a zero
@@ -111,13 +115,20 @@ describe("NewAssessment", () => {
     renderWithProviders(<NewAssessment />, { route: "/assessments/new", path: "/assessments/new" });
     await userEvent.type(screen.getByLabelText("Organization name"), "Acme Corp");
     await userEvent.type(screen.getByLabelText("Official website"), "nodomain");
+    // industry is required and offered as the vocabulary's twelve categories
+    await userEvent.click(screen.getByRole("button", { name: "Start assessment" }));
+    expect(screen.getByText("Choose an industry.")).toBeInTheDocument();
+    expect(calls.some((c) => c.init?.method === "POST")).toBe(false);
+    const industry = screen.getByLabelText("Industry") as HTMLSelectElement;
+    expect(Array.from(industry.options).map((o) => o.textContent)).toEqual(["Choose an industry", "Education", "Energy", "Financial Services", "Government", "Healthcare", "Hospitality", "Manufacturing", "Professional Services", "Retail", "Technology", "Travel", "Other"]);
+    await userEvent.selectOptions(industry, "technology");
     await userEvent.click(screen.getByRole("button", { name: "Start assessment" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("website must be a domain or URL");
     expect(screen.getByLabelText("Official website")).toHaveAttribute("aria-invalid", "true");
     const post = calls.find((c) => c.init?.method === "POST");
     const headers = post?.init?.headers as Record<string, string>;
     expect(headers["Idempotency-Key"]).toBeTruthy();
-    expect(JSON.parse(String(post?.init?.body))).toMatchObject({ organization_name: "Acme Corp", website: "nodomain", stage: "growth", size: "mid" });
+    expect(JSON.parse(String(post?.init?.body))).toMatchObject({ organization_name: "Acme Corp", website: "nodomain", stage: "growth", size: "mid", industry: "technology" });
   });
 });
 

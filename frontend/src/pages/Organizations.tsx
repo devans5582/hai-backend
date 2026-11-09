@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { Icon } from "../components/Icon";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
-import { fmtDate, fmtDateTime, fmtNum, label, toneForLifecycle } from "../lib/format";
+import { fmtDate, fmtDateTime, fmtNum, label, toneForLifecycle, toneForOutcome } from "../lib/format";
 
 export function Organizations() {
   const [q, setQ] = useState("");
@@ -51,7 +51,7 @@ export function Organizations() {
                     <Link to={`/organizations/${o.id}`}>{o.display_name}</Link>
                   </td>
                   <td className="mono">{o.primary_domain}</td>
-                  <td>{o.industry_code ?? ""}</td>
+                  <td>{label("industry", o.industry_code)}</td>
                   <td className="small">
                     {o.identifiers_verified ? <Badge tone="ok">verified</Badge> : <Badge>unverified</Badge>}{" "}
                     {Object.entries(o.identifiers)
@@ -91,7 +91,7 @@ export function Organizations() {
               <tbody>
                 {bench.data?.items.map((b) => (
                   <tr key={`${b.industry}-${b.stage_band}-${b.size_band}`}>
-                    <td>{b.industry ?? "unspecified"}</td>
+                    <td>{b.industry ? label("industry", b.industry) : "unspecified"}</td>
                     <td>{label("stage_band", b.stage_band)}</td>
                     <td>{label("size_band", b.size_band)}</td>
                     <td>{b.organizations}</td>
@@ -111,7 +111,7 @@ export function Organizations() {
 export function OrganizationDetail() {
   const { id = "" } = useParams();
   const org = useQuery({ queryKey: ["organization", id], queryFn: () => api.getOrganization(id) });
-  const assessments = useQuery({ queryKey: ["org-assessments", id], queryFn: () => api.orgAssessments(id) });
+  const history = useQuery({ queryKey: ["org-history", id], queryFn: () => api.organizationHistory(id) });
   const [offset, setOffset] = useState(0);
   const evidence = useQuery({ queryKey: ["org-evidence", id, offset], queryFn: () => api.orgEvidence(id, { limit: 20, offset }) });
   return (
@@ -126,15 +126,16 @@ export function OrganizationDetail() {
               <div className="row small muted">
                 <span className="mono">{org.data.primary_domain}</span>
                 <span>{org.data.legal_name}</span>
+                {org.data.industry_code && <span>{label("industry", org.data.industry_code)}</span>}
                 {org.data.identifiers_verified ? <Badge tone="ok">identifiers verified</Badge> : <Badge>identifiers unverified</Badge>}
                 {org.data.entity_confidence !== null && <span>entity confidence {fmtNum(org.data.entity_confidence, 2)}</span>}
               </div>
             </div>
           </div>
           <section className="card table-wrap" aria-labelledby="org-assessments">
-            <h2 id="org-assessments">Assessments</h2>
-            <QueryState isLoading={assessments.isLoading} error={assessments.error}>
-              {(assessments.data?.items.length ?? 0) === 0 ? (
+            <div className="card-heading"><div><h2 id="org-assessments">Assessment history</h2><p className="muted small">One organization, every assessment as a numbered version. The latest version is what the dashboard shows; earlier versions stay readable and are never edited.</p></div>{history.data && <span className="count-tag">{history.data.total} version{history.data.total === 1 ? "" : "s"}</span>}</div>
+            <QueryState isLoading={history.isLoading} error={history.error}>
+              {(history.data?.items.length ?? 0) === 0 ? (
                 <div className="empty-state">
                   <span className="empty-icon"><Icon name="file" /></span>
                   <h3>No assessments yet</h3>
@@ -144,21 +145,25 @@ export function OrganizationDetail() {
               ) : <table>
                 <thead>
                   <tr>
-                    <th>Assessment</th>
+                    <th>Version</th>
                     <th>State</th>
-                    <th>Created</th>
+                    <th>HAI Score</th>
+                    <th>Outcome</th>
+                    <th>Methodology</th>
+                    <th>Assessed</th>
+                    <th><span className="sr-only">Open</span></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(assessments.data?.items ?? []).map((a) => (
-                    <tr key={a.id}>
-                      <td>
-                        <Link to={`/assessments/${a.id}`}>{a.id.slice(0, 8)}</Link>
-                      </td>
-                      <td>
-                        <Badge tone={toneForLifecycle(a.lifecycle_state)}>{a.lifecycle_label}</Badge>
-                      </td>
-                      <td>{fmtDateTime(a.created_at)}</td>
+                  {(history.data?.items ?? []).map((v) => (
+                    <tr key={v.assessment.id} className={v.is_latest ? "row-latest" : ""}>
+                      <td><Link to={`/assessments/${v.assessment.id}`} className="version-link">v{v.version}{v.is_latest && <Badge tone="red">Latest</Badge>}</Link><div className="small muted mono">{v.assessment.id.slice(0, 8)}</div></td>
+                      <td><Badge tone={toneForLifecycle(v.assessment.lifecycle_state)}>{v.assessment.lifecycle_label}</Badge></td>
+                      <td className="num">{v.result ? fmtNum(v.result.hai_score) : <span className="muted">n/a</span>}</td>
+                      <td>{v.result ? <Badge tone={toneForOutcome(v.result.outcome_status)}>{v.result.outcome_label}</Badge> : <span className="muted small">No result yet</span>}</td>
+                      <td className="small muted">{v.assessment.methodology_version} / {v.assessment.ruleset_version}</td>
+                      <td className="small muted">{fmtDateTime(v.assessment.created_at)}</td>
+                      <td><Link className="icon-button" to={`/assessments/${v.assessment.id}`} aria-label={`Open version ${v.version}`}><Icon name="arrow-right" /></Link></td>
                     </tr>
                   ))}
                 </tbody>

@@ -417,6 +417,19 @@ tr.clickable { cursor: pointer; }
 .focus-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; font-size: .82rem; }
 .focus-head .badge { white-space: normal; text-align: right; }
 
+/* Versioned organizations */
+.view-switch { margin-left: auto; border: 1px solid var(--border); border-radius: 8px; padding: 2px; gap: 0; }
+.view-switch button { min-height: 32px; }
+.version-pill { display: inline-flex; align-items: baseline; gap: 5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.version-pill small { font-weight: 400; color: var(--fg-3); font-size: .7rem; }
+.version-link { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.row-latest td { background: color-mix(in srgb, var(--hai-red-soft) 55%, transparent); }
+td.num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.delta { margin-left: 6px; font-size: .7rem; font-weight: 600; }
+.delta.up { color: var(--ok); }
+.delta.down { color: var(--bad); }
+.industry-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+
 @media (min-width: 1600px) { .main { padding-top: 42px; } .welcome-panel { min-height: 250px; } }
 @media (max-width: 1250px) {
   .sidebar { width: 214px; }

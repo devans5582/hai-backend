@@ -59,7 +59,7 @@ BODY: dict[str, Any] = {
     "website": "https://www.acme.example",
     "stage": "startup",
     "size": "11-50",
-    "industry": "Software",
+    "industry": "Technology",
 }
 
 
@@ -255,3 +255,48 @@ def test_cors_denies_unknown_origins(client: TestClient) -> None:
     assert "access-control-allow-origin" not in bad.headers
     plain = client.get("/health", headers={"Origin": "https://evil.example"})
     assert "access-control-allow-origin" not in plain.headers
+
+
+def test_industry_is_required_and_resolved_to_the_vocabulary(client: TestClient, api_key: str) -> None:
+    h = {"X-API-Key": api_key}
+    missing = client.post("/v1/assessments", json={k: v for k, v in BODY.items() if k != "industry"}, headers=h)
+    assert missing.status_code == 422 and "industry" in missing.json()["error"]["details"]["fields"]
+    unknown = client.post("/v1/assessments", json={**BODY, "industry": "Astrology"}, headers=h)
+    assert unknown.status_code == 422
+    assert "Financial Services" in unknown.json()["error"]["details"]["fields"]["industry"]
+    # a label, an alias and a code all land on the code
+    for spelling in ("Financial Services", "fintech", "financial_services"):
+        created = client.post(
+            "/v1/assessments",
+            json={**BODY, "website": f"{spelling[:3].lower()}.example", "industry": spelling},
+            headers=h,
+        )
+        assert created.status_code == 202, created.text
+        org = client.get(f"/v1/organizations/{created.json()['org_id']}", headers=h).json()
+        assert org["industry_code"] == "financial_services"
+
+
+def test_organizations_fold_into_one_versioned_row(client: TestClient, api_key: str) -> None:
+    h = {"X-API-Key": api_key}
+    first = client.post("/v1/assessments", json=BODY, headers=h).json()
+    second = client.post(f"/v1/assessments/{first['id']}/reassess", headers=h).json()
+    third = client.post(f"/v1/assessments/{first['id']}/reassess", headers=h).json()
+    other = client.post("/v1/assessments", json={**BODY, "website": "globex.example"}, headers=h).json()
+    # three runs of Acme and one of Globex are two rows, not four
+    overview = client.get("/v1/organizations/overview", headers=h).json()
+    assert overview["total"] == 2 and overview["items"][0]["organization"]["id"] == other["org_id"]
+    acme = next(row for row in overview["items"] if row["organization"]["id"] == first["org_id"])
+    assert acme["versions"] == 3 and acme["latest"]["id"] == third["id"] and acme["latest"]["version"] == 3
+    assert acme["previous"]["id"] == second["id"] and acme["result"] is None and acme["score_delta"] is None
+    assert acme["organization"]["industry_label"] == "Technology"
+    searched = client.get("/v1/organizations/overview?q=globex", headers=h).json()
+    assert searched["total"] == 1 and searched["items"][0]["versions"] == 1
+    # the history numbers every version, newest first, and names the latest
+    history = client.get(f"/v1/organizations/{first['org_id']}/history", headers=h).json()
+    assert [v["version"] for v in history["items"]] == [3, 2, 1]
+    assert history["latest_id"] == third["id"] and history["items"][0]["is_latest"] is True
+    assert (
+        history["items"][2]["assessment"]["id"] == first["id"]
+        and history["items"][1]["assessment"]["parent_assessment_id"] == first["id"]
+    )
+    assert client.get("/v1/organizations/00000000-0000-4000-8000-000000000000/history", headers=h).status_code == 404

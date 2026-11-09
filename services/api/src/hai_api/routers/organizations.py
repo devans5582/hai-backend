@@ -14,9 +14,10 @@ from hai_api.routers.assessments import assessment_out
 from hai_api.schemas import MonitoringCreate, OrganizationOut, Page
 from hai_core.auth import Principal, Scope
 from hai_core.errors import ValidationFailedError
+from hai_core.generated.enums import LABELS
 from hai_core.generated.models import Assessment, Organization
 from hai_core.monitoring import list_subscriptions, register_upload, subscribe
-from hai_core.visibility import require_visible_organization, visible_organization_ids
+from hai_core.visibility import require_visible_organization, restriction, visible_organization_ids
 
 router = APIRouter(prefix="/v1", tags=["organizations"])
 
@@ -82,6 +83,201 @@ def list_organizations(
             items = [org_out(o) for o in store.find(Organization, order_by="display_name", limit=limit, offset=offset)]
             total = store.count(Organization)
     return Page(items=items, total=total, limit=limit, offset=offset)
+
+
+OVERVIEW_SQL = """
+WITH visible AS (
+    SELECT o.id FROM hai.organizations o WHERE {restriction}
+      AND (CAST(:q AS text) IS NULL OR o.display_name ILIKE :q OR o.legal_name ILIKE :q OR o.primary_domain ILIKE :q)
+),
+runs AS (
+    SELECT a.org_id, a.id, a.lifecycle_state::text AS lifecycle_state, a.created_at, a.finished_at,
+           a.certification_requested,
+           row_number() OVER (PARTITION BY a.org_id ORDER BY a.created_at, a.id) AS version,
+           count(*) OVER (PARTITION BY a.org_id) AS versions
+    FROM hai.assessments a WHERE a.org_id IN (SELECT id FROM visible)
+),
+latest AS (SELECT DISTINCT ON (org_id) * FROM runs ORDER BY org_id, created_at DESC, id DESC),
+previous AS (SELECT DISTINCT ON (r.org_id) r.* FROM runs r JOIN latest l ON l.org_id = r.org_id AND r.id <> l.id ORDER BY r.org_id, r.created_at DESC, r.id DESC),
+results AS (
+    SELECT DISTINCT ON (res.assessment_id) res.assessment_id, res.hai_score, res.confidence_pct, res.outcome_status::text
+    FROM hai.assessment_results res
+    WHERE NOT EXISTS (SELECT 1 FROM hai.assessment_results later WHERE later.supersedes_id = res.id)
+    ORDER BY res.assessment_id, res.created_at DESC
+)
+SELECT o.id AS org_id, o.display_name, o.legal_name, o.primary_domain, o.industry_code, o.stage_band::text, o.size_band::text,
+       o.identifiers_verified, o.created_at AS org_created_at,
+       l.id AS latest_id, l.lifecycle_state, l.created_at AS latest_created_at, l.finished_at AS latest_finished_at,
+       l.version, l.versions, l.certification_requested,
+       lr.hai_score, lr.confidence_pct, lr.outcome_status,
+       p.id AS previous_id, p.created_at AS previous_created_at, pr.hai_score AS previous_score, pr.outcome_status AS previous_outcome
+FROM hai.organizations o
+JOIN visible v ON v.id = o.id
+LEFT JOIN latest l ON l.org_id = o.id
+LEFT JOIN results lr ON lr.assessment_id = l.id
+LEFT JOIN previous p ON p.org_id = o.id
+LEFT JOIN results pr ON pr.assessment_id = p.id
+WHERE (NOT CAST(:assessed_only AS boolean) OR l.id IS NOT NULL)
+ORDER BY coalesce(l.created_at, o.created_at) DESC, o.display_name
+LIMIT :l OFFSET :off
+"""
+OVERVIEW_COUNT_SQL = """
+SELECT count(*) FROM hai.organizations o WHERE {restriction}
+  AND (CAST(:q AS text) IS NULL OR o.display_name ILIKE :q OR o.legal_name ILIKE :q OR o.primary_domain ILIKE :q)
+  AND (NOT CAST(:assessed_only AS boolean) OR EXISTS (SELECT 1 FROM hai.assessments a WHERE a.org_id = o.id))
+"""
+
+HISTORY_SQL = """
+WITH runs AS (
+    SELECT a.id, a.lifecycle_state::text AS lifecycle_state, a.created_at, a.finished_at, a.requested_by,
+           a.methodology_version, a.ruleset_version, a.model_id, a.parent_assessment_id, a.certification_requested,
+           row_number() OVER (ORDER BY a.created_at, a.id) AS version
+    FROM hai.assessments a WHERE a.org_id = :o
+),
+results AS (
+    SELECT DISTINCT ON (res.assessment_id) res.assessment_id, res.hai_score, res.confidence_pct, res.effectiveness,
+           res.outcome_status::text
+    FROM hai.assessment_results res
+    WHERE NOT EXISTS (SELECT 1 FROM hai.assessment_results later WHERE later.supersedes_id = res.id)
+    ORDER BY res.assessment_id, res.created_at DESC
+)
+SELECT r.*, res.hai_score, res.confidence_pct, res.effectiveness, res.outcome_status
+FROM runs r LEFT JOIN results res ON res.assessment_id = r.id
+ORDER BY r.version DESC
+"""
+
+
+def _result_summary(row: Any) -> dict[str, Any] | None:
+    if row["outcome_status"] is None:
+        return None
+    return {
+        "hai_score": float(row["hai_score"]) if row["hai_score"] is not None else None,
+        "confidence_pct": float(row["confidence_pct"]) if row["confidence_pct"] is not None else None,
+        "outcome_status": row["outcome_status"],
+        "outcome_label": LABELS["outcome_status"][row["outcome_status"]],
+    }
+
+
+def _history_result(row: Any) -> dict[str, Any] | None:
+    summary = _result_summary(row)
+    if summary is None:
+        return None
+    if row["effectiveness"] is not None:
+        summary["effectiveness"] = float(row["effectiveness"])
+    return summary
+
+
+@router.get(
+    "/organizations/overview",
+    summary="One row per organization: the latest assessment version, its result, the version count and the previous score",
+)
+def organizations_overview(
+    st: State,
+    principal: Reader,
+    q: str | None = None,
+    assessed_only: bool = Query(default=True, description="hide organizations that were never assessed"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    clause, vis_params = restriction(principal, assessment="", organization="o")
+    params: dict[str, Any] = {
+        **vis_params,
+        "q": f"%{q}%" if q else None,
+        "assessed_only": assessed_only,
+        "l": limit,
+        "off": offset,
+    }
+    with st.read(principal) as (conn, _):
+        rows = conn.execute(text(OVERVIEW_SQL.format(restriction=clause)), params).mappings().all()
+        total = int(conn.execute(text(OVERVIEW_COUNT_SQL.format(restriction=clause)), params).scalar_one())
+    items = []
+    for r in rows:
+        latest = (
+            {
+                "id": str(r["latest_id"]),
+                "version": int(r["version"]),
+                "lifecycle_state": r["lifecycle_state"],
+                "lifecycle_label": LABELS["lifecycle_state"][r["lifecycle_state"]],
+                "certification_requested": bool(r["certification_requested"]),
+                "created_at": r["latest_created_at"].isoformat() if r["latest_created_at"] else None,
+                "finished_at": r["latest_finished_at"].isoformat() if r["latest_finished_at"] else None,
+            }
+            if r["latest_id"]
+            else None
+        )
+        previous = (
+            {
+                "id": str(r["previous_id"]),
+                "created_at": r["previous_created_at"].isoformat() if r["previous_created_at"] else None,
+                "hai_score": float(r["previous_score"]) if r["previous_score"] is not None else None,
+                "outcome_status": r["previous_outcome"],
+            }
+            if r["previous_id"]
+            else None
+        )
+        score = float(r["hai_score"]) if r["hai_score"] is not None else None
+        prev_score = previous["hai_score"] if previous else None
+        items.append(
+            {
+                "organization": {
+                    "id": str(r["org_id"]),
+                    "display_name": r["display_name"],
+                    "legal_name": r["legal_name"],
+                    "primary_domain": r["primary_domain"],
+                    "industry_code": r["industry_code"],
+                    "industry_label": LABELS["industry"].get(r["industry_code"], r["industry_code"])
+                    if r["industry_code"]
+                    else None,
+                    "stage_band": r["stage_band"],
+                    "size_band": r["size_band"],
+                    "identifiers_verified": bool(r["identifiers_verified"]),
+                },
+                "versions": int(r["versions"]) if r["versions"] is not None else 0,
+                "latest": latest,
+                "result": _result_summary(r),
+                "previous": previous,
+                "score_delta": round(score - prev_score, 1) if score is not None and prev_score is not None else None,
+            }
+        )
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get(
+    "/organizations/{org_id}/history", summary="Every assessment of an organization as numbered versions, newest first"
+)
+def organization_history(org_id: UUID, st: State, principal: Reader) -> dict[str, Any]:
+    with st.read(principal) as (conn, store):
+        require_visible_organization(store, principal, org_id)
+        rows = conn.execute(text(HISTORY_SQL), {"o": org_id}).mappings().all()
+    items = [
+        {
+            "version": int(r["version"]),
+            "is_latest": i == 0,
+            "assessment": {
+                "id": str(r["id"]),
+                "lifecycle_state": r["lifecycle_state"],
+                "lifecycle_label": LABELS["lifecycle_state"][r["lifecycle_state"]],
+                "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+                "finished_at": r["finished_at"].isoformat() if r["finished_at"] else None,
+                "requested_by": r["requested_by"],
+                "methodology_version": r["methodology_version"],
+                "ruleset_version": r["ruleset_version"],
+                "model_id": r["model_id"],
+                "parent_assessment_id": str(r["parent_assessment_id"]) if r["parent_assessment_id"] else None,
+                "certification_requested": bool(r["certification_requested"]),
+            },
+            "result": _history_result(r),
+        }
+        for i, r in enumerate(rows)
+    ]
+    return {
+        "organization_id": str(org_id),
+        "latest_id": str(rows[0]["id"]) if rows else None,
+        "items": items,
+        "total": len(items),
+        "limit": len(items) or 1,
+        "offset": 0,
+    }
 
 
 @router.get("/organizations/{org_id}", response_model=OrganizationOut)

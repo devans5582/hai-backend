@@ -28,6 +28,8 @@ export function AssessmentDetail() {
   const report = useQuery({ queryKey: ["report", id, assessment.data?.lifecycle_state], queryFn: () => api.getReport(id), enabled: !!assessment.data });
   const runs = useQuery({ queryKey: ["runs", id, assessment.data?.lifecycle_state], queryFn: () => api.getConnectorRuns(id), enabled: !!assessment.data });
   const tasks = useQuery({ queryKey: ["tasks", id], queryFn: () => api.listTasks({ status: "all", assessment_id: id }), enabled: !!assessment.data });
+  const history = useQuery({ queryKey: ["org-history", assessment.data?.org_id], queryFn: () => api.organizationHistory(assessment.data!.org_id), enabled: !!assessment.data });
+  const version = history.data?.items.find((v) => v.assessment.id === id) ?? null;
   const invalidate = () => qc.invalidateQueries();
   const cancel = useMutation({ mutationFn: () => api.cancelAssessment(id), onSuccess: invalidate });
   const reassess = useMutation({ mutationFn: () => api.reassess(id), onSuccess: invalidate });
@@ -41,7 +43,7 @@ export function AssessmentDetail() {
           <Link className="back-link" to="/"><Icon name="arrow-left" /> Back to dashboard</Link>
           <div className="page-head">
             <div>
-              <span className="eyebrow">Assessment overview</span>
+              <span className="eyebrow">{version ? `Assessment version ${version.version} of ${history.data?.total ?? version.version}` : "Assessment overview"}</span>
               <h1>{r?.organization.name ?? a.submitted_domain}</h1>
               <div className="row small muted assessment-meta">
                 <span className="mono">{a.submitted_domain}</span>
@@ -50,6 +52,7 @@ export function AssessmentDetail() {
                   {label("stage_band", a.stage_band)} / {label("size_band", a.size_band)}
                 </span>
                 <span>Created {fmtDateTime(a.created_at)}</span>
+                <Link to={`/organizations/${a.org_id}`}>All versions</Link>
               </div>
             </div>
             <div className="actions">
@@ -78,6 +81,11 @@ export function AssessmentDetail() {
                 <p>{PROCESSING_HELP[a.lifecycle_state]}</p>
                 {LIFECYCLE_UI[a.lifecycle_state]?.polling && <span className="small muted">This page updates automatically. You can return to the dashboard while it runs.</span>}
               </div>
+            </div>
+          )}
+          {version && !version.is_latest && history.data?.latest_id && (
+            <div className="alert info" role="status">
+              This is version {version.version}; a newer assessment of this organization exists. <Link to={`/assessments/${history.data.latest_id}`}>Open the latest version</Link>.
             </div>
           )}
           {a.failure_reason && (

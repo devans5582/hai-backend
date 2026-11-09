@@ -278,6 +278,39 @@ export interface Organization {
   created_at: string | null;
 }
 
+export interface OrganizationOverview {
+  organization: {
+    id: string;
+    display_name: string;
+    legal_name: string;
+    primary_domain: string;
+    industry_code: string | null;
+    industry_label: string | null;
+    stage_band: string | null;
+    size_band: string | null;
+    identifiers_verified: boolean;
+  };
+  versions: number;
+  latest: { id: string; version: number; lifecycle_state: LifecycleState; lifecycle_label: string; certification_requested: boolean; created_at: string | null; finished_at: string | null } | null;
+  result: { hai_score: number | null; confidence_pct: number | null; outcome_status: OutcomeStatus; outcome_label: string } | null;
+  previous: { id: string; created_at: string | null; hai_score: number | null; outcome_status: OutcomeStatus | null } | null;
+  score_delta: number | null;
+}
+
+export interface HistoryEntry {
+  version: number;
+  is_latest: boolean;
+  assessment: { id: string; lifecycle_state: LifecycleState; lifecycle_label: string; created_at: string | null; finished_at: string | null; requested_by: string; methodology_version: string; ruleset_version: string; model_id: string; parent_assessment_id: string | null; certification_requested: boolean };
+  result: { hai_score: number | null; confidence_pct: number | null; effectiveness?: number; outcome_status: OutcomeStatus; outcome_label: string } | null;
+}
+
+export interface OrganizationHistory {
+  organization_id: string;
+  latest_id: string | null;
+  items: HistoryEntry[];
+  total: number;
+}
+
 export interface Verification {
   valid: boolean;
   status: string;
@@ -494,6 +527,9 @@ export const api = {
   listOrganizations: (q?: string) => request<Page<Organization>>("GET", "/v1/organizations" + (q ? `?q=${encodeURIComponent(q)}` : "")),
   getOrganization: (id: string) => request<Organization>("GET", `/v1/organizations/${id}`),
   orgAssessments: (id: string) => request<Page<Assessment>>("GET", `/v1/organizations/${id}/assessments`),
+  organizationsOverview: (params: { q?: string; limit?: number; offset?: number } = {}) =>
+    request<Page<OrganizationOverview>>("GET", "/v1/organizations/overview?" + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]))),
+  organizationHistory: (id: string) => request<OrganizationHistory>("GET", `/v1/organizations/${id}/history`),
   orgEvidence: (id: string, params: { limit?: number; offset?: number; criterion?: string } = {}) =>
     request<Page<EvidenceItem & { criterion_code: string; publisher: string; canonical_url: string }>>("GET", `/v1/organizations/${id}/evidence?` + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))),
   benchmarks: () => request<Page<Benchmark>>("GET", "/v1/benchmarks/industries"),
