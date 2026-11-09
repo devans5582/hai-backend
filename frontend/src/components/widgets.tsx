@@ -96,6 +96,10 @@ export function QueryState({ isLoading, error, children }: { isLoading: boolean;
       <div className="alert error" role="alert">
         <strong>{e.status === 401 ? "Sign in to continue" : "We couldn’t load this information"}</strong>
         <p className="query-error-message">{e.status === 401 ? "Your session has ended or your credentials were not accepted." : e.message ?? "Check your connection and try again."}</p>
+        {e.fieldErrors && Object.keys(e.fieldErrors).length > 0 && (
+          <ul className="query-error-fields small">{Object.entries(e.fieldErrors).map(([field, msg]) => <li key={field}><code>{field}</code> {msg}</li>)}</ul>
+        )}
+        {e.status === 422 && <p className="query-error-message small muted">If this page was just updated, the API may be running an older version than the console. Restart the API so both carry the same ontology version.</p>}
         {e.status === 401 && <Link className="btn" to="/login">Go to sign in</Link>}
       </div>
     );

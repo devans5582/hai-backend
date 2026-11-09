@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { METHODOLOGY_VERSION, ONTOLOGY_VERSION } from "../generated/ontology";
 import { api } from "../lib/api";
 import { applyTheme, clearAllCredentials, readTheme, useAuth, type Theme } from "../lib/auth";
@@ -32,6 +33,10 @@ const SECTIONS = ["Workspace", "Administration", "Resources"];
 export function Layout() {
   const { reviewer, apiKey, claims, mode, session } = useAuth();
   const { me, capabilities } = useMe();
+  const health = useQuery({ queryKey: ["health"], queryFn: api.health, staleTime: 60_000, retry: false });
+  const apiVersion = health.data ? `${health.data.ontology_version}+m${health.data.methodology_version}` : null;
+  const consoleVersion = `${ONTOLOGY_VERSION}+m${METHODOLOGY_VERSION}`;
+  const skew = apiVersion !== null && apiVersion !== consoleVersion;
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [menuOpen, setMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -122,6 +127,15 @@ export function Layout() {
             </div>
           </div>
         </header>
+        {skew && (
+          <div className="alert error version-skew" role="alert">
+            <Icon name="alert-triangle" />
+            <div>
+              <strong>The API and this console are running different versions.</strong>
+              <p>The API reports ontology {health.data?.ontology_version} and methodology {health.data?.methodology_version}; this console was built for ontology {ONTOLOGY_VERSION} and methodology {METHODOLOGY_VERSION}. Pages may fail to load until the API is rebuilt and restarted (for Docker: <code>make up</code>).</p>
+            </div>
+          </div>
+        )}
         <main id="main" className="main" tabIndex={-1}><Outlet /></main>
         <footer className="app-footer"><span><span className="footer-dot" />Human Alignment Index</span><span>Ontology {ONTOLOGY_VERSION}<span className="footer-separator">/</span>Methodology {METHODOLOGY_VERSION}</span></footer>
       </div>

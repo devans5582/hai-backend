@@ -541,6 +541,12 @@ td.num { font-variant-numeric: tabular-nums; font-weight: 600; }
 .delta.down { color: var(--bad); }
 .industry-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 
+/* Version skew and validation details */
+.version-skew { display: flex; gap: 12px; align-items: flex-start; margin: 20px 36px 0; }
+.version-skew > .icon { flex-shrink: 0; margin-top: 2px; }
+.version-skew p { margin: 4px 0 0; color: var(--fg-2); font-size: .8rem; }
+.query-error-fields { margin: 0 0 10px; padding-left: 18px; color: var(--fg-2); }
+
 @media (min-width: 1600px) { .main { padding-top: 42px; } .welcome-panel { min-height: 305px; } }
 @media (max-width: 1250px) {
   .main { padding: 30px 28px 40px; }
