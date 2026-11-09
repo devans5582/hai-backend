@@ -16,6 +16,7 @@ from hai_core.errors import ConflictError, NotFoundError
 from hai_core.generated.enums import LifecycleState, OutcomeStatus, ReviewSubjectType
 from hai_core.generated.models import Assessment
 from hai_core.reviews import act, close_task, list_tasks, open_tasks_for
+from hai_core.visibility import restriction
 from hai_core.webhooks import emit
 
 router = APIRouter(prefix="/v1", tags=["reviews"])
@@ -43,6 +44,7 @@ def tasks(
             subject_type=subject_type,
             limit=limit,
             offset=offset,
+            visible=restriction(principal) if principal.is_restricted else None,
         )
     return {"items": [t.as_dict() for t in rows], "total": total, "limit": limit, "offset": offset}
 
@@ -83,7 +85,7 @@ def review(body: ReviewCreate, st: State, principal: ReviewWriter) -> dict[str, 
 )
 def sign_certification(assessment_id: UUID, body: CertificationCreate, st: State, principal: Signer) -> dict[str, Any]:
     with st.tx(principal, "hai_reviewer") as (conn, store):
-        assessment = load_assessment(store, assessment_id)
+        assessment = load_assessment(store, assessment_id, principal)
         result = st.decisions.latest_result(store, assessment_id)
         if result is None:
             raise ConflictError("the assessment has no result to certify yet")
@@ -150,7 +152,7 @@ def revoke_certification(
     with st.tx(principal, "hai_reviewer") as (conn, store):
         current = st.certification.require_current(store, assessment_id)
         revoked = st.certification.revoke(store, current=current, principal=principal, reason=reason)
-        assessment = load_assessment(store, assessment_id)
+        assessment = load_assessment(store, assessment_id, principal)
         result = st.decisions.latest_result(store, assessment_id)
         if result is not None and result.outcome_status is OutcomeStatus.HAI_CERTIFIED:
             st.queue.enqueue(

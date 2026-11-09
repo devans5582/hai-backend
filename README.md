@@ -196,10 +196,26 @@ make dev                                             # api :8000, worker, consol
 
 ## Your First Assessment
 
-For local development, the default API key is **`demo`**. `make up` initializes
-the Docker database and seeds it automatically; the non-Docker setup seeds it
-with `make seed`. Paste `demo` into **Settings → API key → Save credentials**
-in the console. There is no username/password login.
+Open the console and sign in. On a fresh database the sign-in page offers
+**Set up the platform**: create the first owner account (email, name and a
+password of at least 10 characters). The owner then invites everyone else from
+**Team and access**: administrators, reviewers, analysts and viewers for
+Humaital, and organization admins or members for a participating organization,
+which signs in with its work email and sees only its own reports. Invitation
+links are shown once to the inviter and passed on by hand; the platform sends
+no email. Without a browser, create the owner with:
+
+```bash
+make owner EMAIL=owner@humaital.com NAME="Olu Owner"        # local Python
+make owner-docker EMAIL=owner@humaital.com NAME="Olu Owner" # Docker stack
+```
+
+Each user has **Settings** with a profile, password and sessions, and **API
+access** to create account-owned API keys. For local development the default
+partner key is still **`demo`**: `make up` initializes the Docker database and
+seeds it automatically; the non-Docker setup seeds it with `make seed`. Use it
+from the sign-in page under **Use an API key or reviewer token instead**, or
+in curl.
 
 For an existing initialized Docker database, add the demo key with:
 
@@ -278,7 +294,10 @@ curl -s -X POST http://localhost:8000/v1/auth/token \
   -d '{"subject": "rev-1", "name": "Reviewer One", "role": "reviewer"}'
 ```
 
-Paste the API key or the token into the console's Settings page.
+Console users do not need minted tokens: a user invited with the reviewer role
+signs in with email and password and signs under their own name. Minted tokens
+and API keys remain for partners and operators; the sign-in page accepts them
+under **Use an API key or reviewer token instead**.
 
 ## How An Assessment Runs
 
@@ -343,7 +362,9 @@ flowchart TD
 | Verify | public certificate check |
 | Ontology | entities, vocabularies, criteria, rules and integrity constraints from the generated module |
 | Organizations | evidence ledger per organization and peer benchmarks |
-| Settings | API key or reviewer token, kept in the browser only |
+| Sign in and sign up | email and password, first-run owner setup, invitation links, access requests |
+| Team and access | invite users by role, industries and permissions; members, invitations, access requests, organization accounts |
+| Settings | profile, password and sessions, account-owned API keys, browser credentials for partners |
 
 The console uses `frontend/src/generated/ontology.ts` for every code and
 label, and contract tests check its connector list and review actions against

@@ -59,6 +59,22 @@ export const LIFECYCLE_UI: Record<LifecycleState, { polling: boolean; cancel: bo
   cancelled: { polling: false, cancel: false, reassess: false, requestCertification: false },
 };
 
+/** How the console groups lifecycle states on the dashboard. Keys are checked against the generated union. */
+export const LIFECYCLE_GROUP: Record<LifecycleState, { inProgress: boolean; completed: boolean; attention: boolean; awaitingHuman: boolean }> = {
+  queued: { inProgress: true, completed: false, attention: false, awaitingHuman: false },
+  acquiring: { inProgress: true, completed: false, attention: false, awaitingHuman: false },
+  evaluating: { inProgress: true, completed: false, attention: false, awaitingHuman: false },
+  awaiting_review: { inProgress: true, completed: false, attention: true, awaitingHuman: true },
+  completed_unverified: { inProgress: false, completed: true, attention: false, awaitingHuman: false },
+  completed: { inProgress: false, completed: true, attention: false, awaitingHuman: false },
+  failed: { inProgress: false, completed: false, attention: true, awaitingHuman: false },
+  cancelled: { inProgress: false, completed: false, attention: false, awaitingHuman: false },
+};
+
+export function lifecycleGroup(state: LifecycleState | string) {
+  return LIFECYCLE_GROUP[state as LifecycleState] ?? { inProgress: false, completed: false, attention: false, awaitingHuman: false };
+}
+
 export function isTerminal(state: LifecycleState): boolean {
   return Boolean(ATTRIBUTES["lifecycle_state"]?.[state]?.["terminal"]);
 }

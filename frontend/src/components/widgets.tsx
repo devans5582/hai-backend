@@ -94,9 +94,9 @@ export function QueryState({ isLoading, error, children }: { isLoading: boolean;
     const e = error as Partial<ApiRequestError> & { message?: string };
     return (
       <div className="alert error" role="alert">
-        <strong>{e.status === 401 ? "Connect your account to continue" : "We couldn’t load this information"}</strong>
-        <p className="query-error-message">{e.status === 401 ? "Add your API key or reviewer token in Settings to access your workspace." : e.message ?? "Check your connection and try again."}</p>
-        {e.status === 401 && <Link className="btn" to="/settings">Open Settings</Link>}
+        <strong>{e.status === 401 ? "Sign in to continue" : "We couldn’t load this information"}</strong>
+        <p className="query-error-message">{e.status === 401 ? "Your session has ended or your credentials were not accepted." : e.message ?? "Check your connection and try again."}</p>
+        {e.status === 401 && <Link className="btn" to="/login">Go to sign in</Link>}
       </div>
     );
   }

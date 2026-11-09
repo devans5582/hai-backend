@@ -1,6 +1,6 @@
 // Typed API client. Shapes mirror services/api/src/hai_api/schemas.py and the report builder.
 import type { CoverageState, CriterionCode, LifecycleState, OutcomeStatus, PillarCode, ReviewAction, ReviewSubjectType } from "../generated/ontology";
-import { authHeaders } from "./auth";
+import { authHeaders, dropSession, readCredentials } from "./auth";
 
 export interface ApiError {
   status: number;
@@ -270,6 +270,138 @@ export interface OntologySummary {
   integrity_constraints: string[];
 }
 
+// ---- accounts (services/api/src/hai_api/routers/accounts.py)
+
+export type AccountKind = "platform" | "organization";
+
+export interface Account {
+  id: string;
+  kind: AccountKind;
+  name: string;
+  org_id: string | null;
+  email_domain: string | null;
+  created_at: string;
+}
+
+export interface AccountSummary extends Account {
+  active_users: number;
+  pending_invitations: number;
+  api_keys: number;
+}
+
+export interface User {
+  id: string;
+  account_id: string;
+  email: string;
+  name: string;
+  role: string;
+  role_label: string;
+  scopes: string[];
+  industries: string[];
+  status: "active" | "disabled";
+  created_at: string;
+  last_login_at: string | null;
+  invited_by: string | null;
+}
+
+export interface TeamUser extends User {
+  account: Account;
+}
+
+export interface RoleCatalog {
+  roles: { code: string; label: string; description: string; account_kind: AccountKind; scopes: string[]; narrowable: boolean }[];
+  scopes: { code: string; label: string; description: string }[];
+}
+
+export interface Me {
+  principal: {
+    kind: string;
+    id: string;
+    name: string;
+    actor: string;
+    scopes: string[];
+    is_reviewer: boolean;
+    is_platform_admin: boolean;
+    manages_team: boolean;
+    restricted_to_organizations: string[];
+    restricted_to_industries: string[];
+  };
+  user: User | null;
+  account: Account | null;
+  session_id: string | null;
+  roles: RoleCatalog;
+}
+
+export interface LoginResponse {
+  token: string;
+  token_type: string;
+  expires_at: string;
+  me: Me;
+}
+
+export interface Invitation {
+  id: string;
+  kind: "invite" | "password_reset";
+  account_id: string;
+  user_id: string | null;
+  email: string;
+  role: string;
+  role_label: string;
+  scopes: string[];
+  industries: string[];
+  invited_by: string;
+  invited_by_name: string | null;
+  message: string | null;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+}
+
+export interface InvitationWithLink extends Invitation {
+  token: string;
+  invite_path: string;
+  invite_url: string;
+  account: Account;
+  domain_match?: boolean;
+}
+
+export interface AccessRequest {
+  id: string;
+  email: string;
+  name: string;
+  organization_name: string;
+  website: string | null;
+  message: string | null;
+  status: "pending" | "invited" | "dismissed";
+  resolved_by: string | null;
+  resolved_at: string | null;
+  created_at: string;
+}
+
+export interface SessionInfo {
+  id: string;
+  created_at: string;
+  expires_at: string;
+  last_seen_at: string | null;
+  user_agent: string | null;
+  current: boolean;
+}
+
+export interface ApiKey {
+  id: string;
+  key_id: string;
+  name: string;
+  scopes: string[];
+  created_by: string;
+  account_id: string | null;
+  created_at: string;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  status: "active" | "revoked";
+}
+
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
 async function request<T>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
@@ -286,6 +418,9 @@ async function request<T>(method: string, path: string, body?: unknown, extraHea
   const data = text ? (JSON.parse(text) as unknown) : null;
   if (!response.ok) {
     const err = (data as { error?: { code?: string; message?: string; details?: Record<string, unknown> } } | null)?.error;
+    // A session the server no longer accepts (signed out elsewhere, disabled, expired) is dropped here;
+    // the auth gate then shows the sign-in page. Sign-in itself is excluded so a wrong password stays an error.
+    if (response.status === 401 && readCredentials().session && !path.startsWith("/v1/auth/login")) dropSession();
     throw new ApiRequestError(response.status, err?.code ?? "http_error", err?.message ?? response.statusText, err?.details ?? {});
   }
   return data as T;
@@ -323,6 +458,36 @@ export const api = {
   vocabulary: (code: string) => request<{ code: string; title: string; description: string; values: { code: string; label: string; description: string; attributes?: Record<string, unknown> }[] }>("GET", `/v1/ontology/vocabularies/${code}`),
   integrityConstraints: () => request<Page<{ id: string; rule: string; enforced_in: string; implementation: string; acceptance_test: string }>>("GET", "/v1/ontology/integrity-constraints"),
   criteria: () => request<Page<Record<string, unknown>>>("GET", "/v1/methodology/criteria"),
+  // accounts
+  authStatus: () => request<{ bootstrapped: boolean; signup: string; platform_name: string }>("GET", "/v1/auth/status"),
+  login: (body: { email: string; password: string; remember_me: boolean }) => request<LoginResponse>("POST", "/v1/auth/login", body),
+  bootstrap: (body: { email: string; name: string; password: string; platform_name: string }) => request<LoginResponse>("POST", "/v1/auth/bootstrap", body),
+  logout: (everywhere = false) => request<void>("POST", `/v1/auth/logout${everywhere ? "?everywhere=true" : ""}`),
+  me: () => request<Me>("GET", "/v1/auth/me"),
+  updateMe: (body: { name: string }) => request<Me>("PATCH", "/v1/auth/me", body),
+  changePassword: (body: { current_password: string; new_password: string }) => request<void>("POST", "/v1/auth/password", body),
+  mySessions: () => request<Page<SessionInfo>>("GET", "/v1/auth/sessions"),
+  invitationByToken: (token: string) => request<Invitation & { account: Account }>("GET", `/v1/auth/invitations/${encodeURIComponent(token)}`),
+  register: (body: { token: string; name: string; password: string }) => request<LoginResponse>("POST", "/v1/auth/register", body),
+  requestAccess: (body: { email: string; name: string; organization_name: string; website?: string; message?: string }) =>
+    request<{ id: string; status: string; created_at: string }>("POST", "/v1/auth/access-requests", body),
+  // team
+  teamRoles: () => request<RoleCatalog>("GET", "/v1/team/roles"),
+  teamUsers: () => request<Page<TeamUser>>("GET", "/v1/team/users"),
+  updateUser: (id: string, body: { name?: string; role?: string; scopes?: string[]; industries?: string[]; status?: "active" | "disabled" }) =>
+    request<TeamUser>("PATCH", `/v1/team/users/${id}`, body),
+  resetLink: (id: string) => request<InvitationWithLink>("POST", `/v1/team/users/${id}/reset-link`),
+  teamInvitations: () => request<Page<Invitation & { account: Account }>>("GET", "/v1/team/invitations"),
+  invite: (body: { email: string; role: string; org_id?: string; industries?: string[]; scopes?: string[]; message?: string }) =>
+    request<InvitationWithLink>("POST", "/v1/team/invitations", body),
+  revokeInvitation: (id: string) => request<void>("DELETE", `/v1/team/invitations/${id}`),
+  teamAccounts: () => request<Page<AccountSummary>>("GET", "/v1/team/accounts"),
+  accessRequests: (status: "pending" | "all" = "pending") => request<Page<AccessRequest>>("GET", `/v1/team/access-requests?status=${status}`),
+  dismissAccessRequest: (id: string) => request<AccessRequest>("POST", `/v1/team/access-requests/${id}/dismiss`),
+  // API keys
+  apiKeys: () => request<Page<ApiKey>>("GET", "/v1/api-keys"),
+  createApiKey: (body: { name: string; scopes?: string[] }) => request<ApiKey & { api_key: string }>("POST", "/v1/api-keys", body),
+  revokeApiKey: (keyId: string) => request<void>("DELETE", `/v1/api-keys/${encodeURIComponent(keyId)}`),
 };
 
 export function idempotencyKey(): string {

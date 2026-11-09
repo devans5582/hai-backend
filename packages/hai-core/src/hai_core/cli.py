@@ -1,11 +1,15 @@
-"""The ``hai-db`` command line: wait, migrate, status, seed, create-api-key, revoke-api-key, verify-audit."""
+"""The ``hai-db`` command line: wait, migrate, status, seed, create-owner, create-api-key, revoke-api-key,
+verify-audit."""
 
 from __future__ import annotations
 
 import argparse
+import os
+import secrets
 import sys
 from pathlib import Path
 
+from hai_core.accounts import bootstrap_owner, is_bootstrapped
 from hai_core.audit import verify_chain
 from hai_core.auth import DEMO_API_KEY, Scope, create_api_key, list_api_keys, revoke_api_key
 from hai_core.db.engine import Database
@@ -88,6 +92,26 @@ def cmd_seed(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_create_owner(args: argparse.Namespace) -> int:
+    """Create the platform account and its first owner without the console (first run only)."""
+    password = os.environ.get("HAI_OWNER_PASSWORD") or secrets.token_urlsafe(18)
+    db = _db()
+    with db.transaction("hai-db", "hai_api") as conn:
+        if is_bootstrapped(conn):
+            print("the platform already has users; invite more from the console Team page", file=sys.stderr)
+            return 1
+        user = bootstrap_owner(
+            conn, email=args.email, name=args.name, password=password, platform_name=args.platform, created_by="hai-db"
+        )
+    print(f"owner: {user.email} ({user.name})")
+    if os.environ.get("HAI_OWNER_PASSWORD"):
+        print("password: from HAI_OWNER_PASSWORD")
+    else:
+        print(f"password (shown once): {password}")
+    print("sign in at the console and change it under Settings > Security")
+    return 0
+
+
 def cmd_create_api_key(args: argparse.Namespace) -> int:
     s = get_settings()
     scopes = frozenset(args.scopes.split(",")) if args.scopes else Scope.PARTNER_DEFAULT
@@ -140,6 +164,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("migrate", help="apply pending migrations").set_defaults(func=cmd_migrate)
     sub.add_parser("status", help="show migration status").set_defaults(func=cmd_status)
     sub.add_parser("seed", help="seed methodology, connectors and development demo access").set_defaults(func=cmd_seed)
+    s = sub.add_parser(
+        "create-owner", help="create the first platform owner (password from HAI_OWNER_PASSWORD or generated)"
+    )
+    s.add_argument("--email", required=True)
+    s.add_argument("--name", required=True)
+    s.add_argument("--platform", default="Humaital", help="platform account name")
+    s.set_defaults(func=cmd_create_owner)
     s = sub.add_parser("create-api-key", help="create an API key (plaintext shown once)")
     s.add_argument("--name", required=True)
     s.add_argument("--scopes", help="comma-separated scopes (default: partner scopes)")

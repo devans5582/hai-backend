@@ -18,7 +18,7 @@ shell_quote = '$(subst ','"'"',$(1))'
 API_KEY_ARGS = --name $(call shell_quote,$(or $(NAME),demo)) $(if $(SCOPES),--scopes $(call shell_quote,$(SCOPES)),)
 
 .PHONY: help install install-frontend hooks ontology-validate codegen codegen-check check-bump ontology-diff migrate-plan \
-        baseline db db-stop migrate seed seed-docker api-key api-key-docker verify-audit run-api run-worker run-frontend dev fmt fmt-check lint typecheck \
+        baseline db db-stop migrate seed seed-docker owner owner-docker api-key api-key-docker verify-audit run-api run-worker run-frontend dev fmt fmt-check lint typecheck \
         test-unit test-integration test-enforced test coverage frontend-check check build up down logs reset smoke bundle clean
 
 help: ## Show this help
@@ -75,6 +75,12 @@ seed: ## Seed methodology, connectors and the development demo key with local Py
 
 seed-docker: ## Seed an initialized Docker database, including the development demo key
 	$(COMPOSE) run --rm migrate hai-db seed
+
+owner: ## Create the first console owner with local Python: make owner EMAIL=x NAME="y" (password printed once or from HAI_OWNER_PASSWORD)
+	$(UV) run hai-db create-owner --email $(call shell_quote,$(EMAIL)) --name $(call shell_quote,$(or $(NAME),Owner))
+
+owner-docker: ## Create the first console owner in the Docker stack: make owner-docker EMAIL=x NAME="y"
+	$(COMPOSE) run --rm -e HAI_OWNER_PASSWORD migrate hai-db create-owner --email $(call shell_quote,$(EMAIL)) --name $(call shell_quote,$(or $(NAME),Owner))
 
 api-key: ## Create an additional key with local Python: make api-key [NAME=demo] [SCOPES=a,b]
 	$(UV) run hai-db create-api-key $(API_KEY_ARGS)

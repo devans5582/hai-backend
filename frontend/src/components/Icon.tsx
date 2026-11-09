@@ -30,6 +30,13 @@ const paths = {
   x: "m6 6 12 12 M6 18 18 6",
   sparkles: "m12 3 3 6 6 3-6 3-3 6-3-6-6-3 6-3z",
   refresh: "M20 7a9 9 0 1 0 1 9 M20 2v6h-6",
+  users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M22 21v-2a4 4 0 0 0-3-3.9 M16 3.1a4 4 0 0 1 0 7.8",
+  user: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0",
+  mail: "M4 5h16v14H4z M4 7l8 6 8-6",
+  copy: "M9 9h11v11H9z M5 15H4V4h11v1",
+  "log-out": "M9 21H5V3h4 M16 17l5-5-5-5 M21 12H9",
+  "user-plus": "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M19 8v6 M22 11h-6",
+  "alert-triangle": "M12 3 2 21h20z M12 10v5 M12 18h.01",
 } as const;
 export type IconName = keyof typeof paths;
 export function Icon({ name, className = "", style }: { name: IconName; className?: string; style?: CSSProperties }) {

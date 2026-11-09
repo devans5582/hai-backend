@@ -18,6 +18,7 @@ from hai_core.db.store import Store
 from hai_core.errors import NotFoundError
 from hai_core.generated.enums import LABELS
 from hai_core.generated.models import Assessment, CriterionFinding
+from hai_core.visibility import visible_assessment_ids
 from hai_engine.reporting import build_report, coverage_wording
 
 router = APIRouter(prefix="/v1/assessments", tags=["assessments"])
@@ -115,9 +116,17 @@ def list_assessments(
         where["org_id"] = org_id
     if state:
         where["lifecycle_state"] = state
-    with st.read(principal) as (_, store):
-        rows = store.find(Assessment, where=where, order_by="created_at", descending=True, limit=limit, offset=offset)
-        total = store.count(Assessment, where=where)
+    with st.read(principal) as (conn, store):
+        if principal.is_restricted:
+            ids, total = visible_assessment_ids(
+                conn, principal, org_id=org_id, lifecycle_state=state, limit=limit, offset=offset
+            )
+            rows = [store.require(Assessment, i) for i in ids]
+        else:
+            rows = store.find(
+                Assessment, where=where, order_by="created_at", descending=True, limit=limit, offset=offset
+            )
+            total = store.count(Assessment, where=where)
     return Page(
         items=[assessment_out(a, st.settings.public_base_url) for a in rows], total=total, limit=limit, offset=offset
     )
@@ -126,11 +135,11 @@ def list_assessments(
 @router.get("/{assessment_id}", response_model=AssessmentOut, summary="Lifecycle state and version pins")
 def get_assessment(assessment_id: UUID, st: State, principal: Reader) -> AssessmentOut:
     with st.read(principal) as (_, store):
-        return assessment_out(load_assessment(store, assessment_id), st.settings.public_base_url)
+        return assessment_out(load_assessment(store, assessment_id, principal), st.settings.public_base_url)
 
 
-def result_out(st: AppState, store: Store, assessment_id: UUID) -> ResultOut:
-    load_assessment(store, assessment_id)
+def result_out(st: AppState, store: Store, assessment_id: UUID, principal: Principal | None = None) -> ResultOut:
+    load_assessment(store, assessment_id, principal)
     result = st.decisions.latest_result(store, assessment_id)
     if result is None:
         raise NotFoundError("no result yet; the assessment has not been decided")
@@ -171,7 +180,7 @@ def result_out(st: AppState, store: Store, assessment_id: UUID) -> ResultOut:
 )
 def get_result(assessment_id: UUID, st: State, principal: Reader) -> ResultOut:
     with st.read(principal) as (_, store):
-        return result_out(st, store, assessment_id)
+        return result_out(st, store, assessment_id, principal)
 
 
 @router.get(
@@ -179,7 +188,7 @@ def get_result(assessment_id: UUID, st: State, principal: Reader) -> ResultOut:
 )
 def get_report(assessment_id: UUID, st: State, principal: Reader) -> dict[str, Any]:
     with st.read(principal) as (conn, store):
-        load_assessment(store, assessment_id)
+        load_assessment(store, assessment_id, principal)
         return build_report(conn, store, st.manifest, assessment_id)
 
 
@@ -188,7 +197,7 @@ def get_report(assessment_id: UUID, st: State, principal: Reader) -> dict[str, A
 )
 def get_decisions(assessment_id: UUID, st: State, principal: Reader) -> Page[DecisionOut]:
     with st.read(principal) as (_, store):
-        load_assessment(store, assessment_id)
+        load_assessment(store, assessment_id, principal)
         rows = st.decisions.latest_decisions(store, assessment_id)
     items = []
     order = {c.code: i for i, c in enumerate(st.manifest.criteria)}
@@ -217,7 +226,7 @@ def get_decisions(assessment_id: UUID, st: State, principal: Reader) -> Page[Dec
 @router.get("/{assessment_id}/findings", summary="LLM and heuristic findings (advisory; accepted and rejected)")
 def get_findings(assessment_id: UUID, st: State, principal: Reader) -> dict[str, Any]:
     with st.read(principal) as (_, store):
-        load_assessment(store, assessment_id)
+        load_assessment(store, assessment_id, principal)
         rows = store.find(CriterionFinding, where={"assessment_id": assessment_id}, order_by="created_at")
     items = [
         {
@@ -242,8 +251,10 @@ def get_findings(assessment_id: UUID, st: State, principal: Reader) -> dict[str,
     return {"items": items, "total": len(items), "limit": len(items) or 1, "offset": 0}
 
 
-def _trace_for(st: AppState, store: Store, assessment_id: UUID, criterion_code: str | None) -> dict[str, Any]:
-    load_assessment(store, assessment_id)
+def _trace_for(
+    st: AppState, store: Store, assessment_id: UUID, criterion_code: str | None, principal: Principal
+) -> dict[str, Any]:
+    load_assessment(store, assessment_id, principal)
     decisions = st.decisions.latest_decisions(store, assessment_id)
     result = st.decisions.latest_result(store, assessment_id)
     from hai_core.generated.models import EvidenceSnapshot
@@ -353,7 +364,7 @@ def _trace_for(st: AppState, store: Store, assessment_id: UUID, criterion_code: 
 @router.get("/{assessment_id}/trace", summary="Every decision, rule and quote behind the score")
 def get_trace(assessment_id: UUID, st: State, principal: Reader) -> dict[str, Any]:
     with st.read(principal) as (_, store):
-        return _trace_for(st, store, assessment_id, None)
+        return _trace_for(st, store, assessment_id, None, principal)
 
 
 @router.get("/{assessment_id}/trace/{criterion_code}", summary="Trace for one criterion down to the exact quote")
@@ -362,13 +373,13 @@ def get_criterion_trace(assessment_id: UUID, criterion_code: str, st: State, pri
     if alias is None:
         raise NotFoundError(f"unknown criterion {criterion_code}")
     with st.read(principal) as (_, store):
-        return _trace_for(st, store, assessment_id, alias)
+        return _trace_for(st, store, assessment_id, alias, principal)
 
 
 @router.get("/{assessment_id}/connector-runs", summary="What each source returned (IC-16)")
 def get_connector_runs(assessment_id: UUID, st: State, principal: Reader) -> dict[str, Any]:
     with st.read(principal) as (conn, store):
-        load_assessment(store, assessment_id)
+        load_assessment(store, assessment_id, principal)
         rows = (
             conn.execute(
                 text(
@@ -396,7 +407,7 @@ def get_connector_runs(assessment_id: UUID, st: State, principal: Reader) -> dic
 @router.post("/{assessment_id}/cancel", response_model=AssessmentOut, summary="Cancel a queued or running assessment")
 def cancel_assessment(assessment_id: UUID, st: State, principal: Writer) -> AssessmentOut:
     with st.tx(principal, "hai_api") as (_, store):
-        updated = cancel(store, load_assessment(store, assessment_id), principal)
+        updated = cancel(store, load_assessment(store, assessment_id, principal), principal)
     return assessment_out(updated, st.settings.public_base_url)
 
 
@@ -407,7 +418,7 @@ def cancel_assessment(assessment_id: UUID, st: State, principal: Writer) -> Asse
 )
 def certification_request(assessment_id: UUID, st: State, principal: Writer) -> AssessmentOut:
     with st.tx(principal, "hai_api") as (conn, store):
-        updated = request_certification(conn, store, load_assessment(store, assessment_id), principal)
+        updated = request_certification(conn, store, load_assessment(store, assessment_id, principal), principal)
     return assessment_out(updated, st.settings.public_base_url)
 
 
@@ -422,7 +433,7 @@ def reassess_assessment(assessment_id: UUID, st: State, principal: Writer, respo
         new = reassess(
             conn,
             store,
-            assessment=load_assessment(store, assessment_id),
+            assessment=load_assessment(store, assessment_id, principal),
             principal=principal,
             settings=st.settings,
             manifest=st.manifest,

@@ -114,9 +114,19 @@ def list_tasks(
     subject_type: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    visible: tuple[str, dict[str, Any]] | None = None,
 ) -> tuple[list[ReviewTask], int]:
+    """Tasks newest-last. ``visible`` is a restriction over assessments ``a`` and organizations ``o``
+    (see ``hai_core.visibility.restriction``); tasks without an assessment are hidden from restricted callers."""
     where = ["1=1"]
     params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if visible is not None:
+        clause, extra = visible
+        where.append(
+            "EXISTS (SELECT 1 FROM hai.assessments a JOIN hai.organizations o ON o.id = a.org_id "
+            f"WHERE a.id = hai_ops.review_tasks.assessment_id AND {clause})"
+        )
+        params.update(extra)
     if status == "open":
         where.append("status IN ('open', 'escalated')")
     elif status:

@@ -18,6 +18,7 @@ x-hai-env: &hai-env
   HAI_CERT_SIGNING_KEY: ${HAI_CERT_SIGNING_KEY:-dev-cert-signing-key-not-for-production-01}
   HAI_WEBHOOK_SIGNING_KEY: ${HAI_WEBHOOK_SIGNING_KEY:-dev-webhook-signing-key-not-for-prod-0001}
   HAI_PUBLIC_BASE_URL: ${HAI_PUBLIC_BASE_URL:-http://localhost:8080}
+  HAI_CONSOLE_BASE_URL: ${HAI_CONSOLE_BASE_URL:-http://localhost:${FRONTEND_PORT:-8080}}
   HAI_CORS_ORIGINS: ${HAI_CORS_ORIGINS:-["http://localhost:8080","http://localhost:5173"]}
   HAI_LLM_PROVIDER: ${HAI_LLM_PROVIDER:-heuristic}
   HAI_LLM_MODEL: ${HAI_LLM_MODEL:-ladder-1}

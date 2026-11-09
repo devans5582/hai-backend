@@ -5,16 +5,18 @@ import { Icon, type IconName } from "../components/Icon";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { fmtDateTime, label, toneForLifecycle } from "../lib/format";
-
-const IN_PROGRESS_STATES = new Set(["queued", "acquiring", "evaluating", "awaiting_review"]);
+import { useMe } from "../lib/me";
+import { fmtDateTime, label, lifecycleGroup, toneForLifecycle } from "../lib/format";
 
 type Filter = "all" | "active" | "completed" | "attention";
 const FILTERS: { id: Filter; label: string }[] = [{ id: "all", label: "All assessments" }, { id: "active", label: "In progress" }, { id: "completed", label: "Completed" }, { id: "attention", label: "Needs attention" }];
 
 export function Dashboard() {
-  const { apiKey, reviewerToken } = useAuth();
-  const connected = !!(apiKey || reviewerToken);
+  const { apiKey, reviewerToken, session } = useAuth();
+  const { me, capabilities } = useMe();
+  const connected = !!(apiKey || reviewerToken || session);
+  const organizationView = capabilities.organizationAccount;
+  const canStart = !me || capabilities.startAssessments;
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [offset, setOffset] = useState(0);
@@ -22,10 +24,11 @@ export function Dashboard() {
   const tasks = useQuery({ queryKey: ["tasks", "open"], queryFn: () => api.listTasks({ status: "open" }), enabled: connected });
   const health = useQuery({ queryKey: ["health"], queryFn: api.health });
   const items = assessments.data?.items ?? [];
-  const inProgress = items.filter((a) => IN_PROGRESS_STATES.has(a.lifecycle_state)).length;
+  const inProgress = items.filter((a) => lifecycleGroup(a.lifecycle_state).inProgress).length;
   const filtered = items.filter((a) => {
     const matchesSearch = `${a.submitted_domain} ${a.id}`.toLowerCase().includes(search.trim().toLowerCase());
-    const matchesFilter = filter === "all" || (filter === "active" && IN_PROGRESS_STATES.has(a.lifecycle_state)) || (filter === "completed" && ["completed", "completed_unverified"].includes(a.lifecycle_state)) || (filter === "attention" && ["failed", "awaiting_review"].includes(a.lifecycle_state));
+    const group = lifecycleGroup(a.lifecycle_state);
+    const matchesFilter = filter === "all" || (filter === "active" && group.inProgress) || (filter === "completed" && group.completed) || (filter === "attention" && group.attention);
     return matchesSearch && matchesFilter;
   });
   const available = connected && !!assessments.data && !assessments.error;
@@ -38,8 +41,8 @@ export function Dashboard() {
   return (
     <div className="stack dashboard">
       <div className="page-head">
-        <div><span className="eyebrow">Workspace overview</span><h1>Dashboard</h1><p className="page-description">A clearer view of your AI governance assessments.</p></div>
-        <Link className="btn primary" to="/assessments/new"><Icon name="plus" />New assessment</Link>
+        <div><span className="eyebrow">{organizationView ? me?.account?.name : "Workspace overview"}</span><h1>{organizationView ? "Your reports" : "Dashboard"}</h1><p className="page-description">{organizationView ? "Every HAI Score assessment of your organization, with the evidence behind each result." : "A clearer view of your AI governance assessments."}</p></div>
+        {canStart && <Link className="btn primary" to="/assessments/new"><Icon name="plus" />New assessment</Link>}
       </div>
       <section className="welcome-panel" aria-labelledby="welcome-title">
         <div className="welcome-copy"><span className="eyebrow">Human Alignment Index</span><h2 id="welcome-title">Good governance starts<br className="desktop-break" /> with a clear picture.</h2><p>Turn public evidence into a transparent assessment of how an organization governs AI.</p><Link className="text-link" to="/ontology">Explore the six pillars <Icon name="arrow-right" /></Link></div>
@@ -50,8 +53,8 @@ export function Dashboard() {
         <section className="card assessments-card" aria-labelledby="recent">
           <div className="card-heading"><div><h2 id="recent">Recent assessments</h2><p className="muted small">Track progress and explore the evidence behind your results.</p></div><span className="count-tag">{available ? assessments.data!.total : "—"}</span></div>
           <div className="assessment-toolbar"><div className="filter-group" role="group" aria-label="Filter assessments">{FILTERS.map((f) => <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}</div><div className="search-input"><Icon name="search" /><label className="sr-only" htmlFor="assessment-search">Search assessments</label><input id="assessment-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search domain or ID…" /></div></div>
-          {!connected ? <div className="empty-state"><span className="empty-icon"><Icon name="key" /></span><h3>Your workspace starts here</h3><p>Connect an API key or reviewer token to see your assessments and start exploring results.</p><Link className="btn primary" to="/settings">Connect your workspace<Icon name="arrow-right" /></Link><span className="empty-footnote"><Icon name="lock" />Credentials stay in your browser</span></div> : <QueryState isLoading={assessments.isLoading} error={assessments.error}>
-            {filtered.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name={items.length ? "search" : "file"} /></span><h3>{items.length ? "No matching assessments" : "Ready for your first assessment?"}</h3><p>{items.length ? "Try another domain or choose a different filter." : "Start with an organization and its website. We’ll gather the evidence from there."}</p>{items.length ? <button type="button" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</button> : <Link className="btn primary" to="/assessments/new"><Icon name="plus" />New assessment</Link>}</div> : <div className="table-wrap"><table><thead><tr><th>Organization / domain</th><th>Status</th><th>Context</th><th>Created</th><th><span className="sr-only">View assessment</span></th></tr></thead><tbody>{filtered.map((a) => <tr key={a.id}><td><Link className="assessment-name" to={`/assessments/${a.id}`}><span className="domain-avatar">{a.submitted_domain[0]?.toUpperCase() ?? "O"}</span><span>{a.submitted_domain}<small className="mono">{a.id.slice(0, 8)}</small></span></Link></td><td><Badge tone={toneForLifecycle(a.lifecycle_state)}>{a.lifecycle_label}</Badge></td><td><span>{label("stage_band", a.stage_band)}</span><div className="small muted">{label("size_band", a.size_band)}</div></td><td className="small muted">{fmtDateTime(a.created_at)}</td><td><Link className="icon-button" to={`/assessments/${a.id}`} aria-label={`View assessment for ${a.submitted_domain}`}><Icon name="arrow-right" /></Link></td></tr>)}</tbody></table></div>}
+          {!connected ? <div className="empty-state"><span className="empty-icon"><Icon name="key" /></span><h3>Your workspace starts here</h3><p>Connect an API key or reviewer token to see your assessments and start exploring results.</p><Link className="btn primary" to="/login">Connect your workspace<Icon name="arrow-right" /></Link><span className="empty-footnote"><Icon name="lock" />Credentials stay in your browser</span></div> : <QueryState isLoading={assessments.isLoading} error={assessments.error}>
+            {filtered.length === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name={items.length ? "search" : "file"} /></span><h3>{items.length ? "No matching assessments" : canStart ? "Ready for your first assessment?" : "No reports yet"}</h3><p>{items.length ? "Try another domain or choose a different filter." : canStart ? "Start with an organization and its website. We’ll gather the evidence from there." : "Reports appear here once Humaital has assessed your organization."}</p>{items.length ? <button type="button" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</button> : canStart ? <Link className="btn primary" to="/assessments/new"><Icon name="plus" />New assessment</Link> : null}</div> : <div className="table-wrap"><table><thead><tr><th>Organization / domain</th><th>Status</th><th>Context</th><th>Created</th><th><span className="sr-only">View assessment</span></th></tr></thead><tbody>{filtered.map((a) => <tr key={a.id}><td><Link className="assessment-name" to={`/assessments/${a.id}`}><span className="domain-avatar">{a.submitted_domain[0]?.toUpperCase() ?? "O"}</span><span>{a.submitted_domain}<small className="mono">{a.id.slice(0, 8)}</small></span></Link></td><td><Badge tone={toneForLifecycle(a.lifecycle_state)}>{a.lifecycle_label}</Badge></td><td><span>{label("stage_band", a.stage_band)}</span><div className="small muted">{label("size_band", a.size_band)}</div></td><td className="small muted">{fmtDateTime(a.created_at)}</td><td><Link className="icon-button" to={`/assessments/${a.id}`} aria-label={`View assessment for ${a.submitted_domain}`}><Icon name="arrow-right" /></Link></td></tr>)}</tbody></table></div>}
             {available && <div className="table-footer"><span>{search || filter !== "all" ? `${filtered.length} matching in this page` : `Showing ${items.length ? offset + 1 : 0}–${offset + items.length} of ${assessments.data!.total}`}</span>{(assessments.data!.total > 50 || offset > 0) && <div className="actions"><button type="button" onClick={() => setOffset(Math.max(0, offset - 50))} disabled={offset === 0}>Previous</button><button type="button" onClick={() => setOffset(offset + 50)} disabled={offset + 50 >= assessments.data!.total}>Next</button></div>}<span>Updates automatically</span></div>}
           </QueryState>}
         </section>

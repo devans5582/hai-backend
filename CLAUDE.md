@@ -74,7 +74,7 @@ creates a throwaway database per session. Run them twice, with
 ```
 ontology/            manifest: ontology.yaml, vocabularies/, methodology/, examples/
 packages/hai-ontology  meta-model, loader, validator, versioning, codegen, CLI
-packages/hai-core      settings, db, typed store, audit chain, job queue, blob store, auth
+packages/hai-core      settings, db, typed store, audit chain, job queue, blob store, auth, accounts, visibility
 packages/hai-pipeline  connectors, entity resolution, text, spans, clustering, admissibility, incidents, snapshot
 packages/hai-engine    classification, packs, LLM providers, validator, rules, scoring, decisions, certification, reports
 services/api           FastAPI (hai-api)

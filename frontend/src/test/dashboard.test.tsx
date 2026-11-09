@@ -53,7 +53,7 @@ describe("Dashboard", () => {
     renderWithProviders(<Dashboard />);
 
     expect(screen.getByRole("heading", { name: "Your workspace starts here" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Connect your workspace" })).toHaveAttribute("href", "/settings");
+    expect(screen.getByRole("link", { name: "Connect your workspace" })).toHaveAttribute("href", "/login");
     expect(await screen.findByText("Operational")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(calls.map((call) => call.url)).toEqual(["/health"]);

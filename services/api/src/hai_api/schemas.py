@@ -158,3 +158,73 @@ class OrganizationOut(BaseModel):
 class ReassessOut(BaseModel):
     assessment: AssessmentOut
     parent_assessment_id: UUID
+
+
+# ----------------------------------------------------------------- accounts
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
+    remember_me: bool = False
+
+
+class BootstrapRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=320)
+    name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=1, max_length=1024)
+    platform_name: str = Field(default="Humaital", max_length=200)
+
+
+class RegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=8, max_length=200)
+    name: str = Field(default="", max_length=200)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=200)
+
+
+class PasswordChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_password: str = Field(min_length=1, max_length=1024)
+    new_password: str = Field(min_length=1, max_length=1024)
+
+
+class AccessRequestCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=320)
+    name: str = Field(min_length=1, max_length=200)
+    organization_name: str = Field(min_length=1, max_length=200)
+    website: str | None = Field(default=None, max_length=500)
+    message: str | None = Field(default=None, max_length=2000)
+
+
+class InvitationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=320)
+    role: str = Field(min_length=1, max_length=40)
+    org_id: UUID | None = None
+    industries: list[str] | None = Field(default=None, max_length=20)
+    scopes: list[str] | None = None
+    message: str | None = Field(default=None, max_length=2000)
+
+
+class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    role: str | None = Field(default=None, max_length=40)
+    scopes: list[str] | None = None
+    industries: list[str] | None = Field(default=None, max_length=20)
+    status: str | None = Field(default=None, pattern="^(active|disabled)$")
+
+
+class ApiKeyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)
+    scopes: list[str] | None = None

@@ -290,13 +290,48 @@ flowchart LR
     pipeline_role & engine_role & reviewer_role & api_role & admin_role -. every write .-> audit
 ```
 
-* Principals: API key (`X-API-Key`, scopes from `hai_ops.api_keys`), reviewer
-  or admin JWT (`Authorization: Bearer`, HS256, minted by an admin at
-  `POST /v1/auth/token`), anonymous (health, ready, verify, ontology).
+* Principals: API key (`X-API-Key`, scopes from `hai_ops.api_keys`), a
+  console session (`Authorization: Bearer`, HS256 JWT issued at
+  `POST /v1/auth/login` whose `sid` claim is checked against
+  `hai_ops.sessions` on every request), an admin-minted reviewer or admin
+  JWT (`POST /v1/auth/token`, stateless), anonymous (health, ready, verify,
+  ontology, invitation lookup, access requests).
 * Scopes gate routes; the database role gates writes. Both are needed to
   change decision-bearing rows.
 * Every write through the typed store is audited; decision-bearing entities
   require a reason.
+
+### Console Accounts
+
+Console users live in `hai_ops` (migration 0003), not in the ontology: they
+describe who may use the console, not what is scored.
+
+| Table | Holds |
+|---|---|
+| `accounts` | one platform account (Humaital) and one account per participating organization, linked to `hai.organizations` |
+| `users` | email, name, role, explicit scopes, industries, scrypt password hash, lockout counters |
+| `sessions` | revocable sessions; a disabled user or a changed role takes effect on the next request |
+| `invitations` | one-time invite and password-reset tokens, stored as HMACs, with the role, scopes and industries they grant |
+| `access_requests` | sign-up requests from people without an invitation, resolved by inviting or dismissing |
+
+Roles are fixed in `hai_core.accounts.ROLES`. Platform roles: owner and admin
+(every scope), reviewer (`Scope.REVIEWER_DEFAULT`, a named reviewer who may
+sign), analyst (start assessments, submit evidence, read), viewer (read).
+Organization roles: org_admin (read own reports, submit evidence, invite
+colleagues) and org_member (read own reports). An inviter may narrow a role's
+scopes, never widen them, and may limit a platform user to industries.
+
+Visibility (`hai_core.visibility`): an organization account sees only its
+organization; a platform user with industries sees only organizations in those
+industries. Lists filter in SQL, single resources answer 404, review tasks
+follow their assessment. API keys created by a console user belong to the
+user's account and inherit the organization restriction.
+
+First run: `POST /v1/auth/bootstrap` (or `hai-db create-owner`) creates the
+platform account and its owner while no user exists. The platform sends no
+email; invitation and reset links are shown once to the inviter, who passes
+them on. The console (`/login`, `/signup`, `/team`, `/settings`) renders what
+`GET /v1/auth/me` returns and never derives permissions itself.
 
 ## Versioning And Reproducibility
 

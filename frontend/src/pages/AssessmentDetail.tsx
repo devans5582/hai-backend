@@ -7,7 +7,7 @@ import { Badge, CoverageStrip, PillarBars, QueryState, ScoreDial, Tabs } from ".
 import { api, ApiRequestError, type Assessment } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { connectorLabel } from "../lib/connectors";
-import { LIFECYCLE_UI, fmtDate, fmtDateTime, fmtNum, label, toneForLifecycle, toneForOutcome } from "../lib/format";
+import { fmtDate, fmtDateTime, fmtNum, label, LIFECYCLE_UI, lifecycleGroup, toneForLifecycle, toneForOutcome } from "../lib/format";
 
 type Tab = "overview" | "criteria" | "sources" | "reviews";
 
@@ -72,7 +72,7 @@ export function AssessmentDetail() {
           </div>
           {PROCESSING_HELP[a.lifecycle_state] && (
             <div className="alert info assessment-progress" role="status">
-              <Icon name={a.lifecycle_state === "awaiting_review" ? "reviews" : "clock"} />
+              <Icon name={lifecycleGroup(a.lifecycle_state).awaitingHuman ? "reviews" : "clock"} />
               <div>
                 <strong>{a.lifecycle_label}</strong>
                 <p>{PROCESSING_HELP[a.lifecycle_state]}</p>

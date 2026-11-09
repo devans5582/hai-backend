@@ -13,9 +13,10 @@ from hai_api.deps import State
 from hai_api.routers.assessments import assessment_out
 from hai_api.schemas import MonitoringCreate, OrganizationOut, Page
 from hai_core.auth import Principal, Scope
-from hai_core.errors import NotFoundError, ValidationFailedError
+from hai_core.errors import ValidationFailedError
 from hai_core.generated.models import Assessment, Organization
 from hai_core.monitoring import list_subscriptions, register_upload, subscribe
+from hai_core.visibility import require_visible_organization, visible_organization_ids
 
 router = APIRouter(prefix="/v1", tags=["organizations"])
 
@@ -58,7 +59,10 @@ def list_organizations(
     offset: int = Query(default=0, ge=0),
 ) -> Page[OrganizationOut]:
     with st.read(principal) as (conn, store):
-        if q:
+        if principal.is_restricted:
+            ids, total = visible_organization_ids(conn, principal, q=q, limit=limit, offset=offset)
+            items = [org_out(store.require(Organization, i)) for i in ids]
+        elif q:
             rows = conn.execute(
                 text(
                     "SELECT id FROM hai.organizations WHERE display_name ILIKE :q OR legal_name ILIKE :q OR primary_domain ILIKE :q ORDER BY display_name LIMIT :l OFFSET :o"
@@ -83,9 +87,7 @@ def list_organizations(
 @router.get("/organizations/{org_id}", response_model=OrganizationOut)
 def get_organization(org_id: UUID, st: State, principal: Reader) -> OrganizationOut:
     with st.read(principal) as (_, store):
-        org = store.get(Organization, org_id)
-    if org is None:
-        raise NotFoundError(f"organization {org_id} not found")
+        org = require_visible_organization(store, principal, org_id)
     return org_out(org)
 
 
@@ -98,8 +100,7 @@ def org_assessments(
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     with st.read(principal) as (_, store):
-        if store.get(Organization, org_id) is None:
-            raise NotFoundError(f"organization {org_id} not found")
+        require_visible_organization(store, principal, org_id)
         rows = store.find(
             Assessment, where={"org_id": org_id}, order_by="created_at", descending=True, limit=limit, offset=offset
         )
@@ -161,8 +162,7 @@ def org_evidence(
         raise ValidationFailedError(f"unknown criterion {criterion}", details={"field": "criterion"})
     params = {"o": org_id, "crit": crit, "adm": admissibility, "l": limit, "off": offset}
     with st.read(principal) as (conn, store):
-        if store.get(Organization, org_id) is None:
-            raise NotFoundError(f"organization {org_id} not found")
+        require_visible_organization(store, principal, org_id)
         rows = conn.execute(text(EVIDENCE_SQL), params).mappings().all()
         total = int(conn.execute(text(EVIDENCE_COUNT_SQL), params).scalar_one())
     items = []
@@ -184,15 +184,15 @@ def org_evidence(
 )
 def add_monitoring(org_id: UUID, body: MonitoringCreate, st: State, principal: Writer) -> dict[str, Any]:
     with st.tx(principal, "hai_api") as (conn, store):
-        if store.get(Organization, org_id) is None:
-            raise NotFoundError(f"organization {org_id} not found")
+        require_visible_organization(store, principal, org_id)
         sub = subscribe(conn, org_id=org_id, interval_days=body.interval_days, requested_by=principal.actor)
     return sub.as_dict()
 
 
 @router.get("/organizations/{org_id}/monitoring", summary="Monitoring subscriptions of an organization")
 def get_monitoring(org_id: UUID, st: State, principal: Reader) -> dict[str, Any]:
-    with st.read(principal) as (conn, _):
+    with st.read(principal) as (conn, store):
+        require_visible_organization(store, principal, org_id)
         subs = list_subscriptions(conn, org_id=org_id)
     return {"items": [s.as_dict() for s in subs], "total": len(subs), "limit": len(subs) or 1, "offset": 0}
 
@@ -215,8 +215,7 @@ async def upload_evidence(
     if len(content) > MAX_UPLOAD_BYTES:
         raise ValidationFailedError("the uploaded file is larger than 20 MB", details={"field": "file"})
     with st.tx(principal, "hai_api") as (conn, store):
-        if store.get(Organization, org_id) is None:
-            raise NotFoundError(f"organization {org_id} not found")
+        require_visible_organization(store, principal, org_id)
         up = register_upload(
             conn,
             st.blobs,

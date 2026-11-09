@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from hai_api.deps import AppState
 from hai_api.errors import install_error_handlers
-from hai_api.routers import assessments, ontology, organizations, reviews, system
+from hai_api.routers import accounts, assessments, ontology, organizations, reviews, system
 from hai_core.logging import configure_logging
 from hai_core.manifest import get_manifest, verify_generated_code
 from hai_core.settings import Settings, get_settings
@@ -34,6 +34,10 @@ TAGS = [
     {"name": "benchmarks", "description": "Peer benchmarks by industry, stage and size."},
     {"name": "ontology", "description": "The running ontology and methodology."},
     {"name": "system", "description": "Health, readiness, tokens, webhooks, audit."},
+    {
+        "name": "accounts",
+        "description": "Console sign-in, invitations, team management and API keys owned by an account.",
+    },
 ]
 
 
@@ -92,6 +96,7 @@ def create_app(
         return response
 
     app.include_router(system.router)
+    app.include_router(accounts.router)
     app.include_router(assessments.router)
     app.include_router(reviews.router)
     app.include_router(organizations.router)
@@ -109,7 +114,7 @@ def _install_cors(app: FastAPI, settings: Settings) -> None:
         allow_origins=list(settings.cors_origins),
         allow_origin_regex=origin_regex,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization", "X-API-Key", "X-Request-Id", "Idempotency-Key"],
         expose_headers=["X-Request-Id"],
         max_age=86400,

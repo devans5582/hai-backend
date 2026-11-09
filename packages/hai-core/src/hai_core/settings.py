@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     cert_signing_key: SecretStr = SecretStr("dev-cert-signing-key-not-for-production-01")
     webhook_signing_key: SecretStr = SecretStr("dev-webhook-signing-key-not-for-prod-0001")
 
+    # Console accounts (email and password sign-in)
+    session_ttl_minutes: int = 720
+    session_remember_days: int = 30
+    invitation_ttl_hours: int = 168
+    password_reset_ttl_hours: int = 24
+    login_max_failures: int = 10
+    login_lockout_minutes: int = 15
+    console_base_url: str = "http://localhost:5173"  # where invitation links point
+
     # Storage
     blob_store_url: str = "file://./var/blobs"
 

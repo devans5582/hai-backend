@@ -33,7 +33,7 @@ export function Reviews() {
       </div>
       {!reviewer && (
         <div className="alert info">
-          Review actions need a reviewer token. Add one on the <Link to="/settings">Settings</Link> page.
+          Review actions need the reviewer role. You can read the queue; ask an administrator for reviewer access, or add a minted reviewer token under <Link to="/settings?tab=access">Settings</Link>.
         </div>
       )}
       <QueryState isLoading={tasks.isLoading} error={tasks.error}>

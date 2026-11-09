@@ -20,6 +20,7 @@ from hai_core.generated.models import Assessment
 from hai_core.manifest import role_codes
 from hai_core.queue import JobQueue
 from hai_core.settings import Settings
+from hai_core.visibility import require_visible_assessment
 from hai_engine.certification import CertificationService
 from hai_engine.decision import DecisionService
 from hai_ontology.meta import Manifest
@@ -71,8 +72,11 @@ def get_state(request: Request) -> AppState:
 State = Annotated[AppState, Depends(get_state)]
 
 
-def load_assessment(store: Store, assessment_id: UUID) -> Assessment:
+def load_assessment(store: Store, assessment_id: UUID, principal: Principal | None = None) -> Assessment:
+    """The assessment, or not found; a restricted principal only sees its own organizations."""
     found = store.get(Assessment, assessment_id)
     if found is None:
         raise NotFoundError(f"assessment {assessment_id} not found")
+    if principal is not None:
+        return require_visible_assessment(store, principal, found)
     return found
