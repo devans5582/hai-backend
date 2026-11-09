@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { BrandLogo } from "../components/BrandLogo";
 import { Icon } from "../components/Icon";
 import { api, ApiRequestError } from "../lib/api";
 import { saveCredentials } from "../lib/auth";
@@ -50,7 +51,7 @@ export function Login() {
     await signIn({ email, password });
   };
 
-  const useDemo = async () => {
+  const signInWithDemo = async () => {
     if (!demo) return;
     setError(null);
     setEmail(demo.email);
@@ -75,6 +76,7 @@ export function Login() {
         <div className="alert info auth-setup-note"><Icon name="sparkles" /><div><strong>This platform has no owner yet.</strong><p>Create the first administrator account to set up the console.</p><Link className="btn primary" to="/signup">Set up the platform<Icon name="arrow-right" /></Link></div></div>
       )}
       <form className="card auth-card" onSubmit={(e) => void submit(e)} noValidate aria-labelledby="login-title">
+        <BrandLogo height={30} className="auth-logo" />
         <span className="eyebrow">Welcome back</span>
         <h1 id="login-title">Sign in</h1>
         <p className="page-description">Use the email address you were invited with.</p>
@@ -97,7 +99,7 @@ export function Login() {
           <div className="demo-signin" role="note">
             <Icon name="sparkles" />
             <div><strong>Development demo account</strong><span className="small muted">{demo.email} with password <code>{demo.password}</code>. Seeded outside production only.</span></div>
-            <button type="button" onClick={() => void useDemo()} disabled={busy}>Use demo account</button>
+            <button type="button" onClick={() => void signInWithDemo()} disabled={busy}>Use demo account</button>
           </div>
         )}
         <div className="auth-links">

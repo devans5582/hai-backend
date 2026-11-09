@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { BrandLogo } from "../components/BrandLogo";
 import { Icon } from "../components/Icon";
 import { Badge, QueryState } from "../components/widgets";
 import { api, ApiRequestError, type Account, type Invitation } from "../lib/api";
@@ -104,6 +105,7 @@ function AcceptInvitation({ token }: { token: string }) {
       <QueryState isLoading={invitation.isLoading} error={null}>
         {invitation.data && (
           <form className="card auth-card" onSubmit={(e) => void submit(e)} noValidate aria-labelledby="signup-title">
+            <BrandLogo height={30} className="auth-logo" />
             <span className="eyebrow">{reset ? "Password reset" : "You're invited"}</span>
             <h1 id="signup-title">{reset ? "Choose a new password" : `Join ${invitation.data.account.name}`}</h1>
             <p className="page-description">{reset ? "Your other sessions will be signed out once the new password is saved." : invitation.data.account.kind === "organization" ? "You will see your organization's HAI Score reports and the evidence behind them." : "You will work in the Humaital governance workspace."}</p>
@@ -171,6 +173,7 @@ function Bootstrap() {
   };
   return (
     <form className="card auth-card" onSubmit={(e) => void submit(e)} noValidate aria-labelledby="bootstrap-title">
+      <BrandLogo height={30} className="auth-logo" />
       <span className="eyebrow">First-run setup</span>
       <h1 id="bootstrap-title">Set up the platform</h1>
       <p className="page-description">Create the first owner account. The owner invites administrators, reviewers, analysts and participating organizations from the Team page.</p>
@@ -241,6 +244,7 @@ function RequestAccess() {
   }
   return (
     <form className="card auth-card" onSubmit={(e) => void submit(e)} noValidate aria-labelledby="request-title">
+      <BrandLogo height={30} className="auth-logo" />
       <span className="eyebrow">Create an account</span>
       <h1 id="request-title">Request access</h1>
       <p className="page-description">Accounts are created by invitation. Tell us who you are and which organization you represent; participating organizations sign in with their work email to see their reports.</p>

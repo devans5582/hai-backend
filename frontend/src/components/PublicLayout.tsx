@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, Outlet } from "react-router-dom";
 import { METHODOLOGY_VERSION, ONTOLOGY_VERSION, PILLARS } from "../generated/ontology";
 import { applyTheme, readTheme, type Theme } from "../lib/auth";
+import { BrandLogo } from "./BrandLogo";
 import { Icon } from "./Icon";
 
 /** The shell for pages that work without a sign-in: sign in, sign up, certificate verification. */
@@ -15,8 +16,8 @@ export function PublicLayout() {
       <a className="skip-link" href="#main">Skip to content</a>
       <aside className="auth-brand" aria-label="About HAI Score">
         <Link to="/login" className="wordmark" aria-label="HAI Score console">
-          <span className="brand-symbol"><Icon name="activity" /></span>
-          <span>HAI Score<span className="brand-caption">by humaital</span></span>
+          <BrandLogo height={26} plate />
+          <span className="brand-product">HAI Score<span className="brand-caption">console</span></span>
         </Link>
         <div className="auth-brand-copy">
           <span className="eyebrow">Human Alignment Index</span>
