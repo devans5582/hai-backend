@@ -138,8 +138,8 @@ def test_login_lockout_after_repeated_failures(client: TestClient, settings: Set
 
 def test_invited_organization_users_see_only_their_reports(client: TestClient) -> None:
     owner = bootstrap(client)["token"]
-    acme = start_assessment(client, owner, "Acme Corp", "https://www.acme.example", "Software")
-    other = start_assessment(client, owner, "Globex", "https://globex.example", "Finance")
+    acme = start_assessment(client, owner, "Acme Corp", "https://www.acme.example", "Technology")
+    other = start_assessment(client, owner, "Globex", "https://globex.example", "Financial Services")
     # an organization role needs an organization
     missing = client.post(
         "/v1/team/invitations", json={"email": "cfo@acme.example", "role": "org_admin"}, headers=bearer(owner)
@@ -175,7 +175,13 @@ def test_invited_organization_users_see_only_their_reports(client: TestClient) -
     assert (
         client.post(
             "/v1/assessments",
-            json={"organization_name": "Acme Corp", "website": "acme.example", "stage": "growth", "size": "mid"},
+            json={
+                "organization_name": "Acme Corp",
+                "website": "acme.example",
+                "stage": "growth",
+                "size": "mid",
+                "industry": "Technology",
+            },
             headers=bearer(org_admin),
         ).status_code
         == 403
@@ -217,14 +223,16 @@ def test_invited_organization_users_see_only_their_reports(client: TestClient) -
 
 def test_platform_roles_industries_and_team_rules(client: TestClient, settings: Settings) -> None:
     owner = bootstrap(client)["token"]
-    software = start_assessment(client, owner, "Acme Corp", "https://www.acme.example", "Software")
-    finance = start_assessment(client, owner, "Globex", "https://globex.example", "Finance")
+    software = start_assessment(client, owner, "Acme Corp", "https://www.acme.example", "Technology")
+    finance = start_assessment(client, owner, "Globex", "https://globex.example", "Financial Services")
     # a reviewer limited to the software industry
-    rev = invite(client, owner, email="rev@humaital.example", role="reviewer", industries=["Software"])
-    assert rev["industries"] == ["software"] and rev["account"]["kind"] == "platform"
+    rev = invite(
+        client, owner, email="rev@humaital.example", role="reviewer", industries=["Software"]
+    )  # alias of technology
+    assert rev["industries"] == ["technology"] and rev["account"]["kind"] == "platform"
     reviewer = register(client, rev["token"], name="Rae Reviewer")
     assert reviewer["me"]["principal"]["is_reviewer"] is True
-    assert reviewer["me"]["principal"]["restricted_to_industries"] == ["software"]
+    assert reviewer["me"]["principal"]["restricted_to_industries"] == ["technology"]
     rt = reviewer["token"]
     seen = client.get("/v1/assessments", headers=bearer(rt)).json()
     assert [a["id"] for a in seen["items"]] == [software["id"]]
@@ -246,7 +254,13 @@ def test_platform_roles_industries_and_team_rules(client: TestClient, settings: 
     assert (
         client.post(
             "/v1/assessments",
-            json={"organization_name": "Initech", "website": "initech.example", "stage": "growth", "size": "mid"},
+            json={
+                "organization_name": "Initech",
+                "website": "initech.example",
+                "stage": "growth",
+                "size": "mid",
+                "industry": "Technology",
+            },
             headers=bearer(analyst),
         ).status_code
         == 403

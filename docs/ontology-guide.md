@@ -145,6 +145,14 @@ snapshot freezes them as `target_states`, so the rules
 * `report.evidence_strength_labels` and the `maturity_status` vocabulary
   (pillar status with the report's wording).
 
+## Industry
+
+`vocabularies/industry.yaml` holds the twelve industry categories Humaital
+supplied on 2026-11-09. Every assessment request names one (code, label or
+alias); the organization stores the code; benchmarks and the industry scope of
+platform users use the same codes. Adding a category is a minor ontology
+change.
+
 ## Coverage States
 
 | State | In score | Report wording |

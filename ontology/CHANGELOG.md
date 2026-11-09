@@ -5,6 +5,17 @@ methodology are versioned separately with semver. A diff tool classifies each
 change (patch, minor, major) and CI refuses a version that did not move far
 enough.
 
+## Ontology 1.2.0 (2026-11-09)
+
+* `industry` vocabulary: the twelve categories Humaital supplied (Education,
+  Energy, Financial Services, Government, Healthcare, Hospitality,
+  Manufacturing, Professional Services, Retail, Technology, Travel, Other)
+  with aliases for common and Phase 6 spellings. `Organization.industry_code`
+  stays text and now holds the vocabulary code; an assessment request must
+  name an industry and the API resolves codes, labels and aliases. Platform
+  users scoped to industries use the same codes. Delta in
+  `db/migrations/0005_ontology_1_2.sql`.
+
 ## Ontology 1.1.0, Methodology 2.0.0, Ruleset 1.1.0 (2026-11-09)
 
 Change request of 2026-11-09 (seven focus areas) and the scoring review

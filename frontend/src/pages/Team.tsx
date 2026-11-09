@@ -4,7 +4,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Icon } from "../components/Icon";
 import { Badge, QueryState, Tabs } from "../components/widgets";
 import { api, ApiRequestError, type AccessRequest, type InvitationWithLink, type RoleCatalog, type TeamUser } from "../lib/api";
-import { fmtDateTime } from "../lib/format";
+import { INDUSTRY_VALUES, LABELS } from "../generated/ontology";
+import { fmtDateTime, label } from "../lib/format";
 import { useMe } from "../lib/me";
 
 type Tab = "members" | "invitations" | "requests" | "accounts";
@@ -62,7 +63,6 @@ function InviteForm({ catalog, platformAdmin, initialEmail, initialOpen, onDone 
   const [orgId, setOrgId] = useState("");
   const [orgQuery, setOrgQuery] = useState("");
   const [industries, setIndustries] = useState<string[]>([]);
-  const [industryDraft, setIndustryDraft] = useState("");
   const [scopes, setScopes] = useState<string[] | null>(null);
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<InvitationWithLink | null>(null);
@@ -91,12 +91,6 @@ function InviteForm({ catalog, platformAdmin, initialEmail, initialOpen, onDone 
       { title: "Participating organization", roles: list.filter((r) => r.account_kind === "organization") },
     ].filter((g) => g.roles.length);
   }, [catalog]);
-  const addIndustry = () => {
-    const cleaned = industryDraft.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-    if (!cleaned.length) return;
-    setIndustries(Array.from(new Set([...industries, ...cleaned])));
-    setIndustryDraft("");
-  };
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -152,21 +146,22 @@ function InviteForm({ catalog, platformAdmin, initialEmail, initialOpen, onDone 
           <div className="org-picker">
             <div className="search-input"><Icon name="search" /><label className="sr-only" htmlFor="invite-org-search">Search organizations</label><input id="invite-org-search" type="search" value={orgQuery} onChange={(e) => setOrgQuery(e.target.value)} placeholder="Filter by name or domain" /></div>
             <select id="invite-org" value={orgId} onChange={(e) => setOrgId(e.target.value)} size={Math.min(6, Math.max(2, orgs.data?.items.length ?? 2))}>
-              {(orgs.data?.items ?? []).map((o) => <option key={o.id} value={o.id}>{o.display_name} ({o.primary_domain}){o.industry_code ? ` · ${o.industry_code}` : ""}</option>)}
+              {(orgs.data?.items ?? []).map((o) => <option key={o.id} value={o.id}>{o.display_name} ({o.primary_domain}){o.industry_code ? ` · ${label("industry", o.industry_code)}` : ""}</option>)}
             </select>
           </div>
           <div className="help">{orgs.data && orgs.data.total === 0 ? "No organizations yet: an organization appears here once it has been assessed." : "Only assessed organizations can be invited. Their users see that organization's reports and nothing else."}</div>
         </div>
       )}
       {roleSpec && !isOrgRole && (
-        <div className="field">
-          <label htmlFor="invite-industries">Industries they serve <span className="muted">(optional)</span></label>
-          <div className="chip-input">
-            {industries.map((i) => <span className="chip" key={i}>{i}<button type="button" aria-label={`Remove ${i}`} onClick={() => setIndustries(industries.filter((x) => x !== i))}><Icon name="x" /></button></span>)}
-            <input id="invite-industries" value={industryDraft} onChange={(e) => setIndustryDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addIndustry(); } }} onBlur={addIndustry} placeholder={industries.length ? "" : "Software, Finance, Health care"} />
+        <fieldset className="field permissions">
+          <legend>Industries they serve <span className="muted">(optional)</span></legend>
+          <div className="permission-grid industry-grid">
+            {INDUSTRY_VALUES.map((code) => (
+              <label key={code} className="checkbox-card"><input type="checkbox" checked={industries.includes(code)} onChange={(e) => setIndustries(e.target.checked ? [...industries, code] : industries.filter((x) => x !== code))} /><span><strong>{LABELS["industry"]?.[code] ?? code}</strong></span></label>
+            ))}
           </div>
-          <div className="help">Leave empty for every industry. With industries set, this person sees only organizations whose industry matches.</div>
-        </div>
+          <div className="help">Leave every box empty for all industries. With industries ticked, this person sees only organizations in those industries.</div>
+        </fieldset>
       )}
       {roleSpec && roleSpec.narrowable && catalog && (
         <fieldset className="field permissions">
@@ -234,7 +229,7 @@ function Members({ query, catalog, selfId, isOwner, platformAdmin }: { query: Re
                         )}
                       </td>
                       {platformAdmin && <td className="small">{u.account.kind === "platform" ? <span className="muted">{u.account.name}</span> : <Link to={u.account.org_id ? `/organizations/${u.account.org_id}` : "#"}>{u.account.name}</Link>}</td>}
-                      <td className="small muted">{u.industries.length ? u.industries.join(", ") : u.account.kind === "platform" ? "All" : ""}</td>
+                      <td className="small muted">{u.industries.length ? u.industries.map((i) => label("industry", i)).join(", ") : u.account.kind === "platform" ? "All" : ""}</td>
                       <td>{u.status === "active" ? <Badge tone="ok">Active</Badge> : <Badge tone="bad">Disabled</Badge>}</td>
                       <td className="small muted">{u.last_login_at ? fmtDateTime(u.last_login_at) : "Never"}</td>
                       <td>
@@ -272,7 +267,7 @@ function Invitations({ query }: { query: ReturnType<typeof useQuery<{ items: (In
             <tbody>
               {items.map((i) => (
                 <tr key={i.id}>
-                  <td><span>{i.email}</span>{i.industries.length > 0 && <div className="small muted">{i.industries.join(", ")}</div>}</td>
+                  <td><span>{i.email}</span>{i.industries.length > 0 && <div className="small muted">{i.industries.map((x) => label("industry", x)).join(", ")}</div>}</td>
                   <td><Badge tone="red">{i.role_label}</Badge></td>
                   <td className="small">{i.account.name}</td>
                   <td className="small muted">{i.invited_by_name ?? i.invited_by}</td>

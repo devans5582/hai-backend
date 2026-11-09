@@ -16,7 +16,15 @@ from sqlalchemy import Connection
 from hai_core.auth import Principal
 from hai_core.db.store import Store
 from hai_core.errors import ConflictError, InvalidTransitionError, ValidationFailedError
-from hai_core.generated.enums import ATTRIBUTES, TRANSITIONS, LifecycleState, SizeBand, StageBand, resolve_alias
+from hai_core.generated.enums import (
+    ATTRIBUTES,
+    LABELS,
+    TRANSITIONS,
+    LifecycleState,
+    SizeBand,
+    StageBand,
+    resolve_alias,
+)
 from hai_core.generated.models import Assessment, Organization
 from hai_core.queue import JobQueue
 from hai_core.settings import Settings
@@ -75,13 +83,33 @@ def resolve_bands(stage: str, size: str) -> tuple[StageBand, SizeBand]:
     return StageBand(s), SizeBand(z)
 
 
+def resolve_industry(value: str | None) -> str | None:
+    """The industry vocabulary code for a code, label or alias; None stays None. Unknown values are refused."""
+    if value is None or not value.strip():
+        return None
+    needle = " ".join(value.strip().lower().replace("_", " ").replace("-", " ").split())
+    code = resolve_alias("industry", value) or resolve_alias("industry", needle)
+    if code is None:
+        for candidate, label_text in LABELS["industry"].items():
+            if needle in (candidate.replace("_", " "), label_text.lower()):
+                code = candidate
+                break
+    if code is None:
+        accepted = ", ".join(LABELS["industry"].values())
+        raise ValidationFailedError(
+            "unknown industry", details={"fields": {"industry": f"choose one of: {accepted}"}, "accepted": accepted}
+        )
+    return code
+
+
 def find_or_create_organization(store: Store, request: AssessmentRequest) -> Organization:
     domain = _registrable(request.website)
+    industry = resolve_industry(request.industry)
     existing = store.first(Organization, where={"primary_domain": domain})
     if existing:
         changes: dict[str, Any] = {}
-        if request.industry and existing.industry_code != request.industry:
-            changes["industry_code"] = request.industry
+        if industry and existing.industry_code != industry:
+            changes["industry_code"] = industry
         if changes:
             return store.update(Organization, existing.id, changes, reason="assessment request")
         return existing
@@ -92,7 +120,7 @@ def find_or_create_organization(store: Store, request: AssessmentRequest) -> Org
             display_name=request.organization_name,
             primary_domain=domain,
             aliases=list(request.aliases),
-            industry_code=request.industry,
+            industry_code=industry,
             stage_band=stage,
             size_band=size,
         ),

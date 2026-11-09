@@ -13,7 +13,7 @@
 
 ontology:
   name: hai
-  version: 1.1.0
+  version: 1.2.0
   title: HAI Ontology
   description: Domain model for the Human Alignment Index (HAI Score) from source document to certification decision.
   spec: docs/spec/HAI_Ontology_v1_Specification.docx
@@ -62,7 +62,7 @@ entities:
       - { name: lei, type: text, description: "Legal Entity Identifier. Stored only when verified." }
       - { name: wikidata_qid, type: text, description: "Wikidata item id. Stored only when verified." }
       - { name: github_handle, type: text, description: "GitHub organization handle found on the official site or in Wikidata." }
-      - { name: industry_code, type: text, description: "Industry classification label used for peer benchmarks." }
+      - { name: industry_code, type: text, description: "Industry code from the industry vocabulary (required on every assessment request since methodology 2.0.0; the API resolves labels and aliases to the code). Drives peer benchmarks." }
       - { name: stage_band, type: enum, vocabulary: stage_band, description: "Default stage band. Also captured per assessment." }
       - { name: size_band, type: enum, vocabulary: size_band, description: "Default size band. Also captured per assessment." }
       - { name: jurisdictions, type: array, items: text, description: "ISO country codes where the organization operates." }

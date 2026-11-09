@@ -277,7 +277,7 @@ curl -s -X POST http://localhost:8000/v1/assessments \
         "website": "https://www.acme.example",
         "stage": "growth",
         "size": "mid",
-        "industry": "Software",
+        "industry": "Technology",
         "direct_urls": ["https://www.acme.example/responsible-ai"]
       }'
 ```

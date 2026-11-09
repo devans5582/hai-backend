@@ -1,0 +1,17 @@
+vocabulary:
+  code: industry
+  title: Industry
+  description: "The industry an organization operates in. The twelve categories were supplied by Humaital on 2026-11-09 and are the only values an assessment request accepts; aliases map common spellings and the Phase 6 free-text values onto them. Drives peer benchmarks and the industry scope of platform users."
+  values:
+    - { code: education, label: Education, description: "Schools, universities, training and education technology.", aliases: [edtech, school, university, academic] }
+    - { code: energy, label: Energy, description: "Energy production, utilities, oil and gas, renewables.", aliases: [utilities, utility, oil and gas, renewables, power] }
+    - { code: financial_services, label: Financial Services, description: "Banking, insurance, investment, payments and fintech.", aliases: [finance, financial, banking, bank, insurance, fintech, payments, investment] }
+    - { code: government, label: Government, description: "Public administration and public bodies.", aliases: [public sector, public administration, municipal, federal, agency] }
+    - { code: healthcare, label: Healthcare, description: "Providers, payers, pharmaceuticals, medical devices and life sciences.", aliases: [health, health care, medical, pharma, pharmaceutical, pharmaceuticals, life sciences, biotech, hospital] }
+    - { code: hospitality, label: Hospitality, description: "Hotels, restaurants, food service and leisure.", aliases: [hotel, hotels, restaurants, food service, leisure] }
+    - { code: manufacturing, label: Manufacturing, description: "Industrial and consumer goods production.", aliases: [industrial, automotive, aerospace, electronics manufacturing] }
+    - { code: professional_services, label: Professional Services, description: "Consulting, legal, accounting, marketing and other services firms.", aliases: [consulting, consultancy, legal, law, accounting, advisory, marketing, staffing] }
+    - { code: retail, label: Retail, description: "Retail and e-commerce.", aliases: [ecommerce, e-commerce, consumer goods, wholesale] }
+    - { code: technology, label: Technology, description: "Software, hardware, internet, cloud, telecommunications and AI companies.", aliases: [software, saas, tech, it, information technology, internet, cloud, telecommunications, telecom, ai, artificial intelligence, hardware, semiconductors, "software development"] }
+    - { code: travel, label: Travel, description: "Airlines, transport, mobility and travel services.", aliases: [transport, transportation, airline, airlines, mobility, logistics, tourism] }
+    - { code: other, label: Other, description: "Anything not covered above.", aliases: [none, unknown, misc, miscellaneous] }

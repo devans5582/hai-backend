@@ -3,7 +3,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon";
 import { Field } from "../components/widgets";
-import { LABELS, SIZE_BAND_VALUES, STAGE_BAND_VALUES } from "../generated/ontology";
+import { INDUSTRY_VALUES, LABELS, SIZE_BAND_VALUES, STAGE_BAND_VALUES } from "../generated/ontology";
 import { api, ApiRequestError, idempotencyKey } from "../lib/api";
 
 export function NewAssessment() {
@@ -20,7 +20,7 @@ export function NewAssessment() {
           website: form.website.trim(),
           stage: form.stage,
           size: form.size,
-          industry: form.industry.trim() || undefined,
+          industry: form.industry,
           direct_urls: form.direct_urls
             .split(/\n|,/)
             .map((s) => s.trim())
@@ -47,6 +47,7 @@ export function NewAssessment() {
     const errors: Record<string, string> = {};
     if (!form.organization_name.trim()) errors.organization_name = "Enter the organization's name.";
     if (!form.website.trim()) errors.website = "Enter the organization's official website.";
+    if (!form.industry) errors.industry = "Choose an industry.";
     setLocalErrors(errors);
     const firstInvalidField = Object.keys(errors)[0];
     if (firstInvalidField) {
@@ -100,13 +101,16 @@ export function NewAssessment() {
                   {SIZE_BAND_VALUES.map((v) => <option key={v} value={v}>{LABELS["size_band"]?.[v] ?? v}</option>)}
                 </select>
               </Field>
+              <Field id="industry" label="Industry" error={fieldErrors["industry"]} help="Required. Peer benchmarks compare organizations within the same industry.">
+                <select id="industry" value={form.industry} onChange={set("industry")} aria-invalid={!!fieldErrors["industry"]} aria-describedby={fieldErrors["industry"] ? "industry-error" : "industry-help"}>
+                  <option value="">Choose an industry</option>
+                  {INDUSTRY_VALUES.map((code) => <option key={code} value={code}>{LABELS["industry"]?.[code] ?? code}</option>)}
+                </select>
+              </Field>
             </div>
-            <details className="optional-details" open={detailsOpen || !!fieldErrors["industry"] || !!fieldErrors["direct_urls"]} onToggle={(e) => setDetailsOpen(e.currentTarget.open)}>
-              <summary><Icon name="plus" /> Add industry and evidence links <span className="muted small">Optional</span></summary>
+            <details className="optional-details" open={detailsOpen || !!fieldErrors["direct_urls"]} onToggle={(e) => setDetailsOpen(e.currentTarget.open)}>
+              <summary><Icon name="plus" /> Add evidence links <span className="muted small">Optional</span></summary>
               <div className="stack">
-                <Field id="industry" label="Industry (optional)" error={fieldErrors["industry"]} help="Helps you compare results with similar organizations.">
-                  <input id="industry" value={form.industry} onChange={set("industry")} placeholder="e.g. Financial services" aria-invalid={!!fieldErrors["industry"]} aria-describedby={fieldErrors["industry"] ? "industry-error" : "industry-help"} />
-                </Field>
                 <Field id="direct_urls" label="Governance page URLs (optional)" error={fieldErrors["direct_urls"]} help="Add links to AI policies, transparency reports, or other governance evidence. Use one URL per line.">
                   <textarea id="direct_urls" rows={3} value={form.direct_urls} onChange={set("direct_urls")} placeholder="https://acme.com/responsible-ai" autoCapitalize="none" spellCheck={false} aria-invalid={!!fieldErrors["direct_urls"]} aria-describedby={fieldErrors["direct_urls"] ? "direct_urls-error" : "direct_urls-help"} />
                 </Field>

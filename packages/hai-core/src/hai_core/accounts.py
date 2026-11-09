@@ -157,11 +157,14 @@ def effective_scopes(role: str, requested: list[str] | None) -> frozenset[str]:
 
 
 def normalize_industries(values: list[str] | None) -> list[str]:
+    """Industry vocabulary codes, resolved from codes, labels or aliases; unknown values are refused."""
+    from hai_core.assessments import resolve_industry
+
     out: list[str] = []
     for v in values or []:
-        cleaned = " ".join(v.strip().lower().split())
-        if cleaned and cleaned not in out:
-            out.append(cleaned)
+        code = resolve_industry(v)
+        if code and code not in out:
+            out.append(code)
     if len(out) > MAX_INDUSTRIES:
         raise ValidationFailedError("too many industries", details={"fields": {"industries": "at most 20"}})
     return out

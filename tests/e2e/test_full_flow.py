@@ -41,7 +41,7 @@ BODY: dict[str, Any] = {
     "website": ORG_DOMAIN,
     "stage": "growth",
     "size": "51-200",
-    "industry": "Software",
+    "industry": "Technology",
 }
 
 

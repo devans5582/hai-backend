@@ -38,7 +38,11 @@ class AssessmentCreate(BaseModel):
     )
     stage: str = Field(description="Stage band or a Phase 6 alias such as startup")
     size: str = Field(description="Size band or a Phase 6 alias such as 11-50")
-    industry: str | None = Field(default=None, max_length=120)
+    industry: str = Field(
+        min_length=1,
+        max_length=120,
+        description="Industry code or label from the industry vocabulary (Education, Energy, Financial Services, Government, Healthcare, Hospitality, Manufacturing, Professional Services, Retail, Technology, Travel, Other)",  # noqa: E501
+    )
     direct_urls: list[str] = Field(default_factory=list, max_length=10)
     certification_requested: bool = False
     legal_name: str | None = None

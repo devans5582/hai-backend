@@ -79,7 +79,13 @@ def test_normalization_of_emails_and_industries() -> None:
     assert normalize_email("  Owner@Acme.Example ") == "owner@acme.example"
     with pytest.raises(ValidationFailedError):
         normalize_email("not an email")
-    assert normalize_industries([" Software ", "software", "Health  Care", ""]) == ["software", "health care"]
+    assert normalize_industries([" Software ", "technology", "Health  Care", "Financial Services", ""]) == [
+        "technology",
+        "healthcare",
+        "financial_services",
+    ]
+    with pytest.raises(ValidationFailedError):
+        normalize_industries(["Astrology"])
 
 
 def _user(role: str, account: Account, industries: list[str] | None = None) -> User:

@@ -36,6 +36,7 @@ def test_seeded_demo_can_read_and_create_assessments_but_cannot_review_or_admini
                 "website": "demo.example",
                 "stage": "growth",
                 "size": "mid",
+                "industry": "Technology",
             },
             headers=headers,
         )
