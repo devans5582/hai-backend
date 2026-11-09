@@ -77,7 +77,7 @@ export function Layout() {
       <aside className={`sidebar ${menuOpen ? "is-open" : ""}`}>
         <div className="sidebar-brand">
           <NavLink to="/" className="wordmark" aria-label="HAI Score console home">
-            <BrandLogo height={22} plate />
+            <BrandLogo height={18} plate />
             <span className="brand-product">HAI Score<span className="brand-caption">console</span></span>
           </NavLink>
           <button className="mobile-menu icon-button" type="button" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} aria-controls="sidebar-content" onClick={() => setMenuOpen(!menuOpen)}><Icon name={menuOpen ? "x" : "menu"} /></button>

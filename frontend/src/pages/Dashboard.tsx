@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Icon, type IconName } from "../components/Icon";
+import { FrameworkVisual } from "../components/FrameworkVisual";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -49,8 +50,8 @@ export function Dashboard() {
   const shown = grouped ? filteredRows.length : filteredRuns.length;
   const pageSize = grouped ? rows.length : items.length;
   const stats: { label: string; value: string | number; detail: string; icon: IconName; color: string; to?: string }[] = [
-    { label: grouped ? "Organizations assessed" : "Assessment runs", value: available ? total : "—", detail: grouped ? "One row per organization, latest version shown" : "Every run, including earlier versions", icon: grouped ? "building" : "file", color: "red" },
-    { label: "In progress", value: available ? inProgress : "—", detail: grouped ? "Organizations whose latest version is running" : "In the current 50 runs", icon: "clock", color: "amber" },
+    { label: grouped ? "Organizations assessed" : "Assessment runs", value: available ? total : "—", detail: grouped ? "Latest assessment for each organization" : "Every run, including earlier versions", icon: grouped ? "building" : "file", color: "red" },
+    { label: "In progress", value: available ? inProgress : "—", detail: grouped ? "Running in the current page" : "In the current 50 runs", icon: "clock", color: "amber" },
     { label: "Awaiting review", value: tasks.data && !tasks.error ? tasks.data.total : "—", detail: tasks.error ? "Review queue unavailable" : "Open tasks in the review queue", icon: "reviews", color: "blue", to: "/reviews" },
     { label: "Platform status", value: health.data ? (health.data.status === "ok" ? "Operational" : health.data.status) : health.error ? "Unavailable" : "Checking", detail: health.data ? "Connected to the HAI API" : health.error ? "Unable to reach the HAI API" : "Checking the HAI API", icon: "activity", color: health.data?.status === "ok" ? "green" : "neutral" },
   ];
@@ -59,20 +60,20 @@ export function Dashboard() {
   return (
     <div className="stack dashboard">
       <div className="page-head">
-        <div><span className="eyebrow">{organizationView ? me?.account?.name : "Workspace overview"}</span><h1>{organizationView ? "Your reports" : "Dashboard"}</h1><p className="page-description">{organizationView ? "Every HAI Score assessment of your organization, folded into one versioned record with the evidence behind each result." : "One row per organization: the latest assessment version, its result and how many versions exist."}</p></div>
+        <div><span className="eyebrow">{organizationView ? me?.account?.name : "Your governance workspace"}</span><h1>{organizationView ? "Your reports" : "Dashboard"}</h1><p className="page-description">{organizationView ? "Your assessments, results, and the evidence behind every version." : "A clearer view of AI governance, backed by evidence."}</p></div>
         {canStart && <Link className="btn primary" to="/assessments/new"><Icon name="plus" />New assessment</Link>}
       </div>
       <section className="welcome-panel" aria-labelledby="welcome-title">
-        <div className="welcome-copy"><span className="eyebrow">Human Alignment Index</span><h2 id="welcome-title">Good governance starts<br className="desktop-break" /> with a clear picture.</h2><p>Turn public evidence into a transparent assessment of how an organization governs AI.</p><Link className="text-link" to="/ontology">Explore the six pillars <Icon name="arrow-right" /></Link></div>
-        <div className="pillar-visual" aria-hidden="true"><div className="pillar-orbit"><div className="orbit-center"><Icon name="shield" /><span>HAI Score</span></div><span className="orbit-label orbit-1">Trust</span><span className="orbit-label orbit-2">Accountability</span><span className="orbit-label orbit-3">Purpose</span><span className="orbit-label orbit-4">Safety</span><span className="orbit-label orbit-5">Transparency</span><span className="orbit-label orbit-6">Impact</span></div></div>
+        <div className="welcome-copy"><span className="eyebrow"><span className="welcome-kicker-line" />Human Alignment Index</span><h2 id="welcome-title">Good governance starts<br className="desktop-break" /> with <em>a clear picture.</em></h2><p>Turn public evidence into a transparent assessment of how an organization governs AI.</p><Link className="text-link" to="/ontology">Explore the six pillars <Icon name="arrow-right" /></Link></div>
+        <FrameworkVisual />
       </section>
       <div className="stats-grid">{stats.map((stat) => <div className="card stat" key={stat.label}><div className="stat-top"><span>{stat.label}</span><span className={`stat-icon ${stat.color}`}><Icon name={stat.icon} /></span></div><span className={`value ${stat.label === "Platform status" ? "status-value" : ""}`}>{stat.label === "Platform status" && <span className={`status-dot ${health.data?.status === "ok" ? "ok" : ""}`} />}{stat.value}</span><span className="stat-detail">{stat.to ? <Link to={stat.to}>{stat.detail}<Icon name="arrow-right" /></Link> : stat.detail}</span></div>)}</div>
       <div className="dashboard-columns">
         <section className="card assessments-card" aria-labelledby="recent">
-          <div className="card-heading"><div><h2 id="recent">{grouped ? "Organizations" : "Assessment runs"}</h2><p className="muted small">{grouped ? "Each organization appears once with its latest version. Open an organization for the full version history." : "Every assessment run, newest first. Earlier versions of the same organization appear as separate rows."}</p></div><span className="count-tag">{available ? total : "—"}</span></div>
+          <div className="card-heading"><div><h2 id="recent">{grouped ? "Organizations" : "Assessment runs"}<span className="count-tag">{available ? total : "—"}</span></h2><p className="muted small">{grouped ? "Latest results at a glance. Open an organization to explore its assessment history." : "All assessment versions, with the most recent first."}</p></div>{available && <span className="live-label"><span className="status-dot" />Auto-updating</span>}</div>
           <div className="assessment-toolbar">
             <div className="filter-group" role="group" aria-label="Filter assessments">{FILTERS.map((f) => <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}</div>
-            <div className="filter-group view-switch" role="group" aria-label="View"><button type="button" aria-pressed={grouped} onClick={() => { setView("organizations"); setOffset(0); }}>By organization</button><button type="button" aria-pressed={!grouped} onClick={() => { setView("runs"); setOffset(0); }}>All runs</button></div>
+            <div className="filter-group view-switch" role="group" aria-label="View"><button type="button" aria-pressed={grouped} onClick={() => { setView("organizations"); setOffset(0); }}><Icon name="building" />By organization</button><button type="button" aria-pressed={!grouped} onClick={() => { setView("runs"); setOffset(0); }}><Icon name="layers" />All runs</button></div>
             <div className="search-input"><Icon name="search" /><label className="sr-only" htmlFor="assessment-search">Search assessments</label><input id="assessment-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={grouped ? "Search organization or domain…" : "Search domain or ID…"} /></div>
           </div>
           {!connected ? <div className="empty-state"><span className="empty-icon"><Icon name="key" /></span><h3>Your workspace starts here</h3><p>Connect an API key or reviewer token to see your assessments and start exploring results.</p><Link className="btn primary" to="/login">Connect your workspace<Icon name="arrow-right" /></Link><span className="empty-footnote"><Icon name="lock" />Credentials stay in your browser</span></div> : <QueryState isLoading={active.isLoading} error={active.error}>
