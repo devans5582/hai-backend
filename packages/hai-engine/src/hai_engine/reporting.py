@@ -1,8 +1,11 @@
-"""The report resource: criteria, evidence, sources, coverage wording and execution notes.
+"""The report resource: criteria, evidence, sources, coverage wording, execution notes, evidence
+basis, pillar status, evidence strength, focus-area coverage, control verification, incident response
+and impact measures.
 
 Built from stored rows only. The browser never computes a score or a status;
 it renders what this returns (AT-10). A source is listed as collected only when
-a connector run succeeded for it (IC-16).
+a connector run succeeded for it (IC-16). Counts here describe stored decisions
+and frozen snapshot rows; they never change a level or a score.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ from uuid import UUID
 from sqlalchemy import Connection, text
 
 from hai_core.db.store import Store
-from hai_core.generated.enums import ATTRIBUTES, LABELS
+from hai_core.generated.enums import ATTRIBUTES, LABELS, RANKS
 from hai_core.generated.models import (
     Assessment,
     AssessmentResult,
@@ -80,7 +83,15 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
     }
     runs, documents = collected_sources(conn, assessment_id)
     link_states = snapshot.link_states if snapshot else {}
+    target_states: dict[str, Any] = (
+        snapshot.target_states if snapshot and isinstance(snapshot.target_states, dict) else {}
+    )
+    incident_states: dict[str, Any] = snapshot.incident_states if snapshot else {}
     product = manifest.methodology.product
+    rung_order = [code for code, _ in sorted(RANKS["maturity_rung"].items(), key=lambda kv: kv[1])]
+    overall_basis = dict.fromkeys(rung_order, 0)
+    class_presence: dict[str, int] = dict.fromkeys(LABELS["evidence_class"], 0)
+    counted_criteria = 0
 
     criteria_out: list[dict[str, Any]] = []
     execution_notes: list[dict[str, Any]] = []
@@ -110,6 +121,9 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
                         "span_id",
                         "char_start",
                         "char_end",
+                        "target_type",
+                        "target_id",
+                        "focus_area",
                     )
                 },
             }
@@ -120,6 +134,17 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
             link for link in links if link["admissibility"] == "admissible" and link["polarity"] == "supports"
         ]  # hai-codes: ok
         coverage = _enum_str(d.coverage_state) if d else None
+        basis = dict.fromkeys(rung_order, 0)
+        for link in admissible_support:
+            rung = str(link["maturity_rung"])
+            basis[rung] = basis.get(rung, 0) + 1
+            overall_basis[rung] = overall_basis.get(rung, 0) + 1
+        counts_in_score = bool(coverage and ATTRIBUTES["coverage_state"][coverage]["counts_in_score"])
+        if counts_in_score:
+            counted_criteria += 1
+            for cls in {str(link["evidence_class"]) for link in admissible_support}:
+                class_presence[cls] = class_presence.get(cls, 0) + 1
+        trace_inputs = d.trace.get("inputs", {}) if d and isinstance(d.trace, dict) else {}
         entry = {
             "code": criterion.code,
             "name": criterion.name,
@@ -134,6 +159,14 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
             "review_required": d.review_required if d else False,
             "applied_rule_codes": list(d.applied_rule_codes) if d else [],
             "evidence": links,
+            "evidence_basis": basis,
+            "best_rung": max(
+                (str(link["maturity_rung"]) for link in admissible_support),
+                key=lambda r: RANKS["maturity_rung"].get(r, 0),
+                default=None,
+            ),
+            "focus_areas": list(criterion.focus_areas),
+            "confidence_components": trace_inputs.get("confidence_components") or {},
             "decision_id": str(d.id) if d else None,
         }
         criteria_out.append(entry)
@@ -147,18 +180,39 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
                     "note": "Governance documentation was found but no artefact showing the practice operated was identified in public sources. This does not mean the practice is absent; public evidence of execution was not detected.",  # noqa: E501
                 }
             )
-    pillars_out = [
-        {
-            "code": p.code,
-            "name": p.name,
-            "weight": p.weight,
-            "score": float(pillars[p.code].score) if p.code in pillars else None,
-            "confidence": float(pillars[p.code].confidence) if p.code in pillars else None,
-            "criteria_counted": pillars[p.code].criteria_counted if p.code in pillars else 0,
-            "criteria_excluded": pillars[p.code].criteria_excluded if p.code in pillars else 0,
+    pillars_out = []
+    for p in manifest.pillars:
+        stored = pillars.get(p.code)
+        status = _enum_str(stored.status) if stored and stored.status else None
+        pillars_out.append(
+            {
+                "code": p.code,
+                "name": p.name,
+                "weight": p.weight,
+                "score": float(stored.score) if stored else None,
+                "confidence": float(stored.confidence) if stored else None,
+                "criteria_counted": stored.criteria_counted if stored else 0,
+                "criteria_excluded": stored.criteria_excluded if stored else 0,
+                "status": status,
+                "status_label": LABELS["maturity_status"][status] if status else None,
+                "status_wording": str(ATTRIBUTES["maturity_status"][status]["report_wording"]) if status else None,
+            }
+        )
+    report_cfg = manifest.methodology.report
+    evidence_strength = {
+        cls: {
+            "label": LABELS["evidence_class"][cls],
+            "criteria_with_evidence": n,
+            "share": round(n / counted_criteria, 3) if counted_criteria else 0.0,
+            "strength": report_cfg.strength_label(n / counted_criteria) if counted_criteria else "None",
         }
-        for p in manifest.pillars
-    ]
+        for cls, n in class_presence.items()
+    }
+    focus_coverage = _focus_area_coverage(manifest, link_states, rung_order)
+    verification = _verification_summary(target_states, rung_order)
+    incident_response = _incident_response(incident_states)
+    impact_measures = _impact_measures(target_states)
+    comps = manifest.methodology.confidence.components
     return {
         "product": {"report_name": product.report_name, "long_name": product.long_name},
         "assessment": {
@@ -205,6 +259,22 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
         ),
         "pillars": pillars_out,
         "criteria": criteria_out,
+        "evidence_basis": {
+            "by_rung": overall_basis,
+            "labels": {code: LABELS["maturity_rung"][code] for code in rung_order},
+            "criteria_counted": counted_criteria,
+        },
+        "evidence_strength": evidence_strength,
+        "focus_areas": focus_coverage,
+        "verification": verification,
+        "incident_response": incident_response,
+        "impact_measures": impact_measures,
+        "confidence_methodology": {
+            "model": manifest.methodology.confidence.model,
+            "source": comps.source,
+            "weights": comps.weights,
+            "evidence_type_credit": dict(comps.evidence_type_credit),
+        },
         "coverage_summary": {
             state: sum(1 for c in criteria_out if c["coverage_state"] == state) for state in LABELS["coverage_state"]
         },
@@ -236,4 +306,159 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
         if snapshot
         else None,
         "drafts_notice": "Criterion definitions and level descriptors marked draft are placeholders pending Humaital's canonical methodology text.",  # noqa: E501
+    }
+
+
+def _focus_area_coverage(
+    manifest: Manifest, link_states: dict[str, Any], rung_order: list[str]
+) -> list[dict[str, Any]]:
+    """Per focus area: the criteria that list it, the tagged admissible supporting links and their best rung."""
+    out: list[dict[str, Any]] = []
+    ranks = RANKS["maturity_rung"]
+    for code, label in LABELS["focus_area"].items():
+        attrs = ATTRIBUTES["focus_area"][code]
+        criteria = [c.code for c in manifest.criteria if code in c.focus_areas]
+        tagged = [
+            st
+            for st in link_states.values()
+            if st.get("focus_area") == code
+            and st.get("admissibility") == "admissible"  # hai-codes: ok - the single admissible value
+            and st.get("polarity") == "supports"
+        ]
+        by_rung = dict.fromkeys(rung_order, 0)
+        for st in tagged:
+            by_rung[str(st.get("maturity_rung"))] = by_rung.get(str(st.get("maturity_rung")), 0) + 1
+        best = max((str(st.get("maturity_rung")) for st in tagged), key=lambda r: ranks.get(r, 0), default=None)
+        out.append(
+            {
+                "code": code,
+                "label": label,
+                "question": str(attrs.get("question", "")),
+                "cross_cutting": bool(attrs.get("cross_cutting")),
+                "criteria": criteria,
+                "links": len(tagged),
+                "by_rung": by_rung,
+                "best_rung": best,
+                "best_rung_label": LABELS["maturity_rung"][best] if best else None,
+            }
+        )
+    return out
+
+
+def _verification_summary(target_states: dict[str, Any], rung_order: list[str]) -> dict[str, Any]:
+    """Controls with claimed capabilities, whether a passing test exercised them, and tests by method and threat."""
+    del rung_order
+    controls = target_states.get("controls") or {}
+    tests = target_states.get("test_outcomes") or []
+    exercised_by_control: dict[str, set[str]] = {}
+    for t in tests:
+        method = t.get("method")
+        exercises = method is None or bool(ATTRIBUTES["verification_method"][str(method)]["exercises_control"])
+        if t.get("result") == "pass" and exercises:  # hai-codes: ok - test_result value
+            exercised_by_control.setdefault(str(t.get("control_id")), set()).update(
+                str(x) for x in t.get("capabilities_exercised") or []
+            )
+    controls_out = []
+    for cid, c in controls.items():
+        claimed = [str(x) for x in c.get("capabilities") or []]
+        if not claimed and c.get("can_pause_or_rollback"):
+            claimed = ["pause", "rollback"]  # hai-codes: ok - control_capability values
+        exercised = sorted(set(claimed) & exercised_by_control.get(cid, set()))
+        controls_out.append(
+            {
+                "control_id": cid,
+                "name": c.get("name"),
+                "claimed_capabilities": claimed,
+                "exercised_capabilities": exercised,
+                "unexercised_capabilities": sorted(set(claimed) - set(exercised)),
+                "monitoring_mode": c.get("monitoring_mode"),
+                "operational_status": c.get("operational_status"),
+                "tests": sum(1 for t in tests if str(t.get("control_id")) == cid),
+            }
+        )
+    by_method: dict[str, int] = {}
+    threats: dict[str, int] = {}
+    for t in tests:
+        by_method[str(t.get("method") or "unspecified")] = by_method.get(str(t.get("method") or "unspecified"), 0) + 1
+        for th in t.get("threats_exercised") or []:
+            threats[str(th)] = threats.get(str(th), 0) + 1
+    systems = [
+        {
+            "system_id": sid,
+            **{k: v for k, v in sv.items() if k in ("name", "autonomy_level", "monitoring_mode", "criticality")},
+        }
+        for sid, sv in (target_states.get("ai_systems") or {}).items()
+    ]
+    return {
+        "controls": controls_out,
+        "tests_by_method": by_method,
+        "threats_exercised": threats,
+        "ai_systems": systems,
+        "controls_with_unexercised_capabilities": sum(1 for c in controls_out if c["unexercised_capabilities"]),
+    }
+
+
+def _incident_response(incident_states: dict[str, Any]) -> list[dict[str, Any]]:
+    """Response timeline per incident: days to disclose, contain and correct, and whether the fix was verified."""
+
+    def days(a: str | None, b: str | None) -> int | None:
+        if not a or not b:
+            return None
+        from datetime import date
+
+        return (date.fromisoformat(b) - date.fromisoformat(a)).days
+
+    out = []
+    for incident_id, st in incident_states.items():
+        start = st.get("detected_at") or st.get("occurred_at")
+        out.append(
+            {
+                "incident_id": incident_id,
+                "title": st.get("title"),
+                "status": st.get("status"),
+                "severity": st.get("severity"),
+                "containment_threat": st.get("containment_threat"),
+                "occurred_at": st.get("occurred_at"),
+                "detected_at": st.get("detected_at"),
+                "disclosed_at": st.get("disclosed_at"),
+                "contained_at": st.get("contained_at"),
+                "corrected_at": st.get("corrected_at"),
+                "correction_verified_at": st.get("correction_verified_at"),
+                "days_to_disclose": days(start, st.get("disclosed_at")),
+                "days_to_contain": days(start, st.get("contained_at")),
+                "days_to_correct": days(start, st.get("corrected_at")),
+                "correction_verified": bool(st.get("correction_verified_at") and st.get("correction_verified_by")),
+            }
+        )
+    return out
+
+
+def _impact_measures(target_states: dict[str, Any]) -> dict[str, Any]:
+    """Impact measures by kind: stated intention and output counts versus measured and evaluated outcomes."""
+    measures = target_states.get("impact_measures") or []
+    by_kind = dict.fromkeys(LABELS["impact_evidence_kind"], 0)
+    for m in measures:
+        by_kind[str(m.get("kind"))] = by_kind.get(str(m.get("kind")), 0) + 1
+    demonstrated = sum(
+        1 for m in measures if ATTRIBUTES["impact_evidence_kind"][str(m.get("kind"))]["demonstrates_benefit"]
+    )
+    return {
+        "items": [
+            {
+                "id": m.get("id"),
+                "kind": m.get("kind"),
+                "kind_label": LABELS["impact_evidence_kind"][str(m.get("kind"))],
+                "outcome": m.get("outcome"),
+                "measured_at": m.get("measured_at"),
+                "period_months": m.get("period_months"),
+                "verified_independently": bool(m.get("verifier_org_id")),
+                "demonstrates_benefit": bool(
+                    ATTRIBUTES["impact_evidence_kind"][str(m.get("kind"))]["demonstrates_benefit"]
+                ),
+            }
+            for m in measures
+        ],
+        "by_kind": by_kind,
+        "demonstrated_benefit": demonstrated,
+        "total": len(measures),
     }

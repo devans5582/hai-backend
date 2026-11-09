@@ -377,11 +377,25 @@ class LowConfidenceCap(Strict):
     cap: float
 
 
+class PillarWeightProfiles(Strict):
+    """Pillar weights per stage band (decision D11). ``fixed`` uses pillars.yaml for everyone."""
+
+    mode: Literal["fixed", "stage_profile"] = "fixed"
+    content_status: str = "draft"
+    profiles: dict[str, dict[str, float]] = {}
+
+    def weights_for(self, stage_band: str, default: dict[str, float]) -> dict[str, float]:
+        if self.mode == "stage_profile" and stage_band in self.profiles:
+            return dict(self.profiles[stage_band])
+        return dict(default)
+
+
 class Scoring(Strict):
     level_min: int
     level_max: int
     criterion_ratio: str
     pillar_aggregation: Literal["equal_mean", "materiality_weighted"]
+    pillar_weight_profiles: PillarWeightProfiles = PillarWeightProfiles()
     score_scale: float
     score_cap: float
     low_confidence_cap: LowConfidenceCap
@@ -425,7 +439,31 @@ class SecondOpinion(Strict):
     content_status: str
 
 
+class ConfidenceComponents(Strict):
+    """The published decomposition of evidence confidence (decision D13). Weights sum to 1."""
+
+    source: str = ""
+    source_credibility: float = 0.40
+    evidence_type: float = 0.30
+    cross_source_validation: float = 0.20
+    recency: float = 0.10
+    cross_source_full_at: int = 3
+    evidence_type_credit: dict[str, float] = {}
+    content_status: str = "draft"
+
+    @property
+    def weights(self) -> dict[str, float]:
+        return {
+            "source_credibility": self.source_credibility,
+            "evidence_type": self.evidence_type,
+            "cross_source_validation": self.cross_source_validation,
+            "recency": self.recency,
+        }
+
+
 class Confidence(Strict):
+    model: Literal["components", "legacy_contribution"] = "legacy_contribution"
+    components: ConfidenceComponents = ConfidenceComponents()
     base_contribution: float
     corroboration_bonus: CorroborationBonus
     execution_bonus_from: str
@@ -452,6 +490,7 @@ class Certification(Strict):
     threshold_mode: Literal["universal", "stage_size"]
     threshold: float
     min_confidence: float
+    require_evidence_in_every_pillar: bool = False
     validity_months: int
     stage_size_table: StageSizeTable
 
@@ -499,6 +538,9 @@ class ReviewTriggers(Strict):
     unverified_incidents: bool
     certification_request: bool
     no_finding_with_admissible_support: bool
+    unexercised_capability: bool = True
+    incident_response: bool = True
+    self_reported_monitoring: bool = True
     content_status: str
 
 
@@ -568,6 +610,26 @@ class Lexicons(Strict):
     negative_signals: NegativeSignals
     injection: TermList
     irrelevance: Irrelevance
+    focus_areas: dict[str, TermList] = {}
+
+
+class EvidenceStrengthLabel(Strict):
+    min_share: float
+    label: str
+
+
+class ReportConfig(Strict):
+    """Report-only settings: labels for evidence strength and how pillar status is derived."""
+
+    evidence_strength_labels: list[EvidenceStrengthLabel] = []
+    maturity_status_from: Literal["rung_reached_by_half"] = "rung_reached_by_half"
+    content_status: str = "draft"
+
+    def strength_label(self, share: float) -> str:
+        for row in sorted(self.evidence_strength_labels, key=lambda r: -r.min_share):
+            if share >= row.min_share:
+                return row.label
+        return "None"
 
 
 class Methodology(Strict):
@@ -584,6 +646,7 @@ class Methodology(Strict):
     freshness: Freshness
     review_triggers: ReviewTriggers
     lexicons: Lexicons
+    report: ReportConfig = ReportConfig()
 
 
 class MethodologyFile(Strict):
@@ -636,6 +699,7 @@ class CriterionDef(Strict):
     levels: list[LevelDef]
     retrieval_hints: list[str]
     indicators: list[IndicatorDef]
+    focus_areas: list[str] = []
 
     def level_for_rung(self, rung_rank: int, rung_ranks: dict[str, int]) -> int:
         """Highest level whose required rung rank is at or below ``rung_rank``."""

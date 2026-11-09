@@ -430,7 +430,7 @@ make check               # the full gate CI runs
 | Frontend | typecheck, lint, component and contract tests, production build |
 | Docker | image builds and a compose smoke test on `/health`, `/ready` and `/v1/ontology` |
 
-Acceptance tests AT-01 to AT-15 are listed in the manifest with the test
+Acceptance tests AT-01 to AT-16 are listed in the manifest with the test
 functions that prove them; a guard test fails when a listed function does not
 exist. `docs/architecture.md` renders the mapping.
 
@@ -465,7 +465,7 @@ Every setting is an environment variable with the `HAI_` prefix;
 ## Status And Ownership
 
 The platform is feature complete for v1 and green on every gate. The
-methodology version is `1.0.0` with status `draft`: criterion definitions,
+methodology version is `2.0.0` with status `draft`: criterion definitions,
 level descriptors, some weights and the framework crosswalk are placeholders
 until Humaital approves them. Nothing is presented as approved content.
 

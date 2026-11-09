@@ -13,7 +13,7 @@
 
 ontology:
   name: hai
-  version: 1.0.0
+  version: 1.1.0
   title: HAI Ontology
   description: Domain model for the Human Alignment Index (HAI Score) from source document to certification decision.
   spec: docs/spec/HAI_Ontology_v1_Specification.docx
@@ -97,6 +97,8 @@ entities:
       - { name: use_case, type: text, description: "What the system is used for." }
       - { name: deployment_context, type: text, description: "Where and to whom it is deployed." }
       - { name: criticality, type: enum, vocabulary: criticality, description: "Potential harm if the system fails." }
+      - { name: autonomy_level, type: enum, vocabulary: autonomy_level, description: "How independently the system acts (focus area autonomous_monitoring)." }
+      - { name: monitoring_mode, type: enum, vocabulary: observability, description: "How the system's behavior can be seen: its own explanations, operator logs or independent recording (focus area independent_auditability)." }
       - { name: valid_from, type: date, description: "When operation began." }
       - { name: valid_to, type: date, description: "When operation ended." }
 
@@ -129,7 +131,10 @@ entities:
       - { name: owner_role, type: text, description: "Named accountable role." }
       - { name: threshold, type: text, description: "Measurable threshold the control enforces." }
       - { name: monitoring, type: text, description: "How operation is monitored." }
-      - { name: can_pause_or_rollback, type: bool, description: "Whether the control can halt or roll back the system." }
+      - { name: can_pause_or_rollback, type: bool, description: "Whether the control can halt or roll back the system. Summarises capabilities." }
+      - { name: capabilities, type: array, items: enum, vocabulary: control_capability, description: "What the control can do to the running system: pause, shut down, roll back, override, isolate, rate limit (focus area control_verification)." }
+      - { name: monitoring_mode, type: enum, vocabulary: observability, description: "How the control's operation is observed (focus area independent_auditability)." }
+      - { name: last_exercised_at, type: date, description: "Most recent test outcome that exercised the control, if any." }
       - { name: operational_status, type: enum, vocabulary: control_operational_status, required: true, default: unknown, description: "Lifecycle of the control." }
       - { name: valid_from, type: date, description: "When the control came into force." }
       - { name: valid_to, type: date, description: "When it was retired." }
@@ -143,6 +148,9 @@ entities:
     fields:
       - { name: control_id, type: ref, ref: Control, required: true, description: "Tested control." }
       - { name: protocol, type: text, description: "Test protocol." }
+      - { name: method, type: enum, vocabulary: verification_method, description: "How the control was tested, from document review to independent audit. Only methods that exercise the control count as exercising a capability." }
+      - { name: capabilities_exercised, type: array, items: enum, vocabulary: control_capability, description: "Which control capabilities the test actually operated (focus area control_verification)." }
+      - { name: threats_exercised, type: array, items: enum, vocabulary: containment_threat, description: "Which containment threats the test attempted (focus area containment_security)." }
       - { name: performed_at, type: date, required: true, description: "When the test ran." }
       - { name: result, type: enum, vocabulary: test_result, required: true, description: "Pass, fail or inconclusive." }
       - { name: measured_value, type: text, description: "Measured value, if any." }
@@ -166,6 +174,15 @@ entities:
       - { name: status, type: enum, vocabulary: incident_status, required: true, default: alleged, description: "Verification status." }
       - { name: affected_control_ids, type: array, items: uuid, description: "Controls the event touched." }
       - { name: most_material_criterion, type: enum, vocabulary: criterion_code, description: "The one criterion this incident adjusts (IC-10)." }
+      - { name: containment_threat, type: enum, vocabulary: containment_threat, description: "The containment threat that materialised, when the event was one (focus area containment_security)." }
+      - { name: detected_at, type: date, description: "When the organization identified the failure (focus area incident_response)." }
+      - { name: disclosed_at, type: date, description: "When the organization disclosed it publicly or to those affected." }
+      - { name: contained_at, type: date, description: "When the failure stopped causing harm." }
+      - { name: corrected_at, type: date, description: "When the corrective action was completed." }
+      - { name: correction_verified_at, type: date, description: "When an independent party confirmed the correction works (IC-19)." }
+      - { name: correction_verified_by_org_id, type: ref, ref: Organization, description: "The independent verifier of the correction." }
+    checks:
+      - { id: IC-19, sql: "correction_verified_at IS NULL OR correction_verified_by_org_id IS NOT NULL", py: "correction_verified_at is None or correction_verified_by_org_id is not None", description: "A correction counts as verified only when a verifier is named (IC-19)." }
     transitions: { field: status, vocabulary: incident_status }
 
   - name: Remediation
@@ -180,6 +197,30 @@ entities:
       - { name: committed_at, type: date, description: "When the remediation was committed to." }
       - { name: completed_at, type: date, description: "When it was completed." }
       - { name: verified_by_org_id, type: ref, ref: Organization, description: "Independent verifier, if any." }
+
+  - name: ImpactMeasure
+    table: impact_measures
+    layer: subject
+    mutability: append_only
+    writers: [hai_pipeline, hai_api, hai_reviewer]
+    description: "A measured effect of the organization's AI on people (focus area human_benefit). Separates what is intended from what is counted, what is measured in people's lives and what an independent party evaluated. Evidence links may target it."
+    fields:
+      - { name: org_id, type: ref, ref: Organization, required: true, description: "The organization whose AI produced the effect." }
+      - { name: ai_system_id, type: ref, ref: AISystem, description: "The system, when identifiable." }
+      - { name: kind, type: enum, vocabulary: impact_evidence_kind, required: true, default: stated_intention, description: "Stated intention, output metric, outcome metric or independently evaluated." }
+      - { name: outcome, type: text, required: true, description: "The human outcome claimed or measured, in plain words." }
+      - { name: metric, type: text, description: "What was measured and how." }
+      - { name: unit, type: text, description: "Unit of the values." }
+      - { name: baseline_value, type: numeric, description: "Value before the AI application, when known." }
+      - { name: measured_value, type: numeric, description: "Value measured." }
+      - { name: population, type: text, description: "Who was affected and how many." }
+      - { name: measured_at, type: date, description: "When the measurement was taken." }
+      - { name: period_months, type: int, min: 1, description: "Length of the measurement period; durability needs more than one period." }
+      - { name: measured_by_org_id, type: ref, ref: Organization, description: "Who took the measurement." }
+      - { name: verifier_org_id, type: ref, ref: Organization, description: "Independent verifier, if any. Required for independently_evaluated." }
+      - { name: source_document_id, type: ref, ref: SourceDocument, description: "The document reporting the measure." }
+    checks:
+      - { id: CK-IMPACT-VERIFIER, sql: "kind <> 'independently_evaluated' OR verifier_org_id IS NOT NULL", py: "kind != 'independently_evaluated' or verifier_org_id is not None", description: "An independently evaluated impact measure names its verifier." }
 
   # --------------------------------------------------------------- evidence
   - name: Publisher
@@ -290,7 +331,7 @@ entities:
     fields:
       - { name: span_id, type: ref, ref: EvidenceSpan, required: true, immutable: true, description: "The quoted span." }
       - { name: target_type, type: enum, vocabulary: target_type, required: true, immutable: true, description: "Kind of thing the span is about." }
-      - { name: target_id, type: uuid, required: true, immutable: true, description: "Id of the organization, system, claim, control, test outcome or incident." }
+      - { name: target_id, type: uuid, required: true, immutable: true, description: "Id of the organization, system, claim, control, test outcome, incident or impact measure." }
       - { name: criterion_code, type: enum, vocabulary: criterion_code, required: true, immutable: true, description: "The one criterion this link bears on (IC-08)." }
       - { name: polarity, type: enum, vocabulary: polarity, required: true, immutable: true, description: "Support, contradict or neutral. Never updated (IC-01)." }
       - { name: admissibility, type: enum, vocabulary: admissibility, required: true, description: "Usable in scoring at all. Changed only via review." }
@@ -300,6 +341,7 @@ entities:
       - { name: evidence_class, type: enum, vocabulary: evidence_class, required: true, description: "Foundational, core governance, operational or external validation." }
       - { name: independence, type: enum, vocabulary: independence, required: true, description: "Who stands behind the statement. Recomputed from relations." }
       - { name: source_tier, type: enum, vocabulary: source_tier, required: true, description: "Potential authority of the publisher type. Never sets maturity." }
+      - { name: focus_area, type: enum, vocabulary: focus_area, description: "The one focus area the quote speaks to, when it does. Reporting only; never changes a weight." }
       - { name: proposer, type: text, required: true, description: "Who proposed the link, heuristic or provider:model." }
       - { name: relevance, type: numeric, min: 0, max: 1, description: "Proposer's relevance estimate." }
       - { name: valid_from, type: date, description: "When the evidence was true." }
@@ -443,7 +485,8 @@ entities:
       - { name: span_ids, type: array, items: uuid, required: true, description: "Spans included." }
       - { name: link_ids, type: array, items: uuid, required: true, description: "Links included." }
       - { name: link_states, type: json, required: true, description: "Frozen judgment columns per link." }
-      - { name: incident_states, type: json, required: true, description: "Frozen status and severity per targeted incident." }
+      - { name: incident_states, type: json, required: true, description: "Frozen status, severity and response timeline per targeted incident." }
+      - { name: target_states, type: json, description: "Frozen controls, test outcomes, AI systems and impact measures of the organization, so verification rules read only the snapshot." }
       - { name: connector_runs, type: json, required: true, description: "Outcome per connector for IC-15 and IC-16." }
       - { name: version_pins, type: json, required: true, description: "ontology, methodology, ruleset, prompt and model." }
       - { name: snapshot_sha256, type: text, required: true, description: "SHA-256 over the canonical snapshot content." }
@@ -500,6 +543,7 @@ entities:
     writers: [hai_engine]
     description: Derived per pillar; never edited.
     fields:
+      - { name: status, type: enum, vocabulary: maturity_status, description: "Needs Attention, Developing, Progressing or Strong, from the rung reached by at least half of the pillar's counted criteria." }
       - { name: assessment_id, type: ref, ref: Assessment, required: true, description: "The assessment." }
       - { name: pillar_code, type: enum, vocabulary: pillar_code, required: true, description: "The pillar." }
       - { name: score, type: numeric, required: true, min: 0, max: 100, description: "Pillar score 0 to 100." }
@@ -592,12 +636,15 @@ relations:
   - { name: controls_entity, from: Organization, to: [Organization], cardinality: many_to_many, time_bound: true, via: OrganizationRelation, fks: [{ entity: OrganizationRelation, field: parent_org_id, to: Organization }, { entity: OrganizationRelation, field: child_org_id, to: Organization }], description: "Subsidiary, affiliate or acquisition. Drives independence." }
   - { name: protected_by, from: Organization, to: [Control, AISystem], cardinality: many_to_many, time_bound: true, fks: [{ entity: Control, field: org_id, to: Organization }, { entity: Control, field: ai_system_id, to: AISystem }], description: "A control may cover several systems." }
   - { name: asserts, from: Organization, to: [Claim], cardinality: one_to_many, time_bound: false, fks: [{ entity: Claim, field: claimant_org_id, to: Organization }], description: "The organization is the claimant." }
-  - { name: describes, from: Claim, to: [Control, Incident, AISystem, Organization], cardinality: many_to_one, time_bound: false, polymorphic: { type_field: scope_type, id_field: scope_id, entity: Claim }, description: "What the claim is about." }
+  - { name: describes, from: Claim, to: [Control, Incident, AISystem, Organization, ImpactMeasure], cardinality: many_to_one, time_bound: false, polymorphic: { type_field: scope_type, id_field: scope_id, entity: Claim }, description: "What the claim is about." }
   - { name: evaluated_by, from: Control, to: [TestOutcome], cardinality: one_to_many, time_bound: false, fks: [{ entity: TestOutcome, field: control_id, to: Control }], description: "Tests are point-in-time." }
   - { name: affected, from: Incident, to: [AISystem, Control], cardinality: many_to_many, time_bound: false, fks: [{ entity: Incident, field: ai_system_id, to: AISystem }], array_field: { entity: Incident, field: affected_control_ids, to: Control }, description: "Which systems and controls the event touched." }
   - { name: incident_of, from: Incident, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: Incident, field: org_id, to: Organization }], description: "The organization an incident concerns." }
+  - { name: measures, from: Organization, to: [ImpactMeasure, AISystem], cardinality: one_to_many, time_bound: true, fks: [{ entity: ImpactMeasure, field: org_id, to: Organization }, { entity: ImpactMeasure, field: ai_system_id, to: AISystem }], description: "Measured human outcomes of the organization's AI, optionally per system." }
+  - { name: measured_by, from: ImpactMeasure, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: ImpactMeasure, field: measured_by_org_id, to: Organization }], description: "Who took the measurement." }
+  - { name: reported_in, from: ImpactMeasure, to: [SourceDocument], cardinality: many_to_one, time_bound: false, fks: [{ entity: ImpactMeasure, field: source_document_id, to: SourceDocument }], description: "The document that reports the measure." }
   - { name: remediates, from: Remediation, to: [Incident], cardinality: many_to_one, time_bound: false, fks: [{ entity: Remediation, field: incident_id, to: Incident }], description: "Remediation of an incident." }
-  - { name: verified_by, from: TestOutcome, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: TestOutcome, field: verifier_org_id, to: Organization }, { entity: Remediation, field: verified_by_org_id, to: Organization }, { entity: Claim, field: verified_by_org_id, to: Organization }], description: "Verifier must be independent to count as verified." }
+  - { name: verified_by, from: TestOutcome, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: TestOutcome, field: verifier_org_id, to: Organization }, { entity: Remediation, field: verified_by_org_id, to: Organization }, { entity: Claim, field: verified_by_org_id, to: Organization }, { entity: ImpactMeasure, field: verifier_org_id, to: Organization }, { entity: Incident, field: correction_verified_by_org_id, to: Organization }], description: "Verifier must be independent to count as verified." }
   - { name: assessed_by, from: TestOutcome, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: TestOutcome, field: assessor_org_id, to: Organization }], description: "Who performed the test." }
   - { name: published_by, from: SourceDocument, to: [Publisher], cardinality: many_to_one, time_bound: false, fks: [{ entity: SourceDocument, field: publisher_id, to: Publisher }], description: "Publisher of the document." }
   - { name: publisher_is, from: Publisher, to: [Organization], cardinality: many_to_one, time_bound: false, fks: [{ entity: Publisher, field: org_id, to: Organization }], description: "The organization behind a publisher." }
@@ -607,7 +654,7 @@ relations:
   - { name: member_of, from: SourceDocument, to: [SourceCluster], cardinality: many_to_one, time_bound: false, fks: [{ entity: SourceDocument, field: cluster_id, to: SourceCluster }], description: "Syndication and duplicates." }
   - { name: uploaded_as, from: Claim, to: [SourceDocument], cardinality: many_to_one, time_bound: false, fks: [{ entity: Claim, field: source_document_id, to: SourceDocument }], description: "Uploaded evidence enters as a claim." }
   - { name: excerpted_from, from: EvidenceSpan, to: [SourceDocument], cardinality: many_to_one, time_bound: false, fks: [{ entity: EvidenceSpan, field: source_document_id, to: SourceDocument }], description: "The document a span is cut from." }
-  - { name: bears_on, from: EvidenceSpan, to: [Organization, AISystem, Claim, Control, TestOutcome, Incident], cardinality: many_to_many, time_bound: true, via: EvidenceLink, fks: [{ entity: EvidenceLink, field: span_id, to: EvidenceSpan }], polymorphic: { type_field: target_type, id_field: target_id, entity: EvidenceLink }, description: "Supports, contradicts or neutral, stored as polarity on the link, scoped to one criterion." }
+  - { name: bears_on, from: EvidenceSpan, to: [Organization, AISystem, Claim, Control, TestOutcome, Incident, ImpactMeasure], cardinality: many_to_many, time_bound: true, via: EvidenceLink, fks: [{ entity: EvidenceLink, field: span_id, to: EvidenceSpan }], polymorphic: { type_field: target_type, id_field: target_id, entity: EvidenceLink }, description: "Supports, contradicts or neutral, stored as polarity on the link, scoped to one criterion." }
   - { name: supersedes, from: SourceDocument, to: [SourceDocument], cardinality: one_to_one, time_bound: false, fks: [{ entity: SourceDocument, field: supersedes_id, to: SourceDocument }, { entity: EvidenceSpan, field: supersedes_id, to: EvidenceSpan }, { entity: EvidenceLink, field: supersedes_id, to: EvidenceLink }, { entity: CriterionDecision, field: supersedes_id, to: CriterionDecision }, { entity: PillarScore, field: supersedes_id, to: PillarScore }, { entity: AssessmentResult, field: supersedes_id, to: AssessmentResult }, { entity: CertificationDecision, field: supersedes_id, to: CertificationDecision }], description: "Corrections and re-fetches add a row that supersedes the old one." }
   - { name: part_of_methodology, from: Pillar, to: [MethodologyVersion], cardinality: many_to_one, time_bound: false, fks: [{ entity: Pillar, field: methodology_version_id, to: MethodologyVersion }, { entity: Criterion, field: methodology_version_id, to: MethodologyVersion }], description: "Fixed per methodology version." }
   - { name: belongs_to, from: Criterion, to: [Pillar], cardinality: many_to_one, time_bound: false, fks: [{ entity: Criterion, field: pillar_id, to: Pillar }], description: "Fixed per methodology version." }
@@ -643,6 +690,7 @@ integrity_constraints:
   - { id: IC-16, rule: "No source may be reported as collected unless a connector_run with succeeded exists for it.", enforced_in: report_generator, implementation: hai_engine.reporting.collected_sources, acceptance_test: AT-11 }
   - { id: IC-17, rule: "Crawled text is stored as data only and never concatenated into system instructions.", enforced_in: evaluation_worker, implementation: hai_engine.llm.prompts.build_messages, acceptance_test: AT-15 }
   - { id: IC-18, rule: "Each assessment pins ontology, methodology, ruleset, prompt and model versions; none may be null.", enforced_in: db_not_null, implementation: "generated NOT NULL on assessments.ontology_version, methodology_version, ruleset_version, prompt_version, model_id", acceptance_test: AT-07 }
+  - { id: IC-19, rule: "A claimed control capability counts as exercised only through a passing test outcome that operated it; an incident correction counts as verified only with a named verifier; an impact measure is independently evaluated only with a named verifier.", enforced_in: rules_engine, implementation: "generated CHECK IC-19 on incidents and CK-IMPACT-VERIFIER on impact_measures plus hai_engine.rules.builtin.cap_unexercised_capability (CAP-UNEXERCISED-CAPABILITY)", acceptance_test: AT-16 }
 
 # Acceptance tests (spec section 12 plus prompt section 11). tests lists the
 # automated test functions that prove each one.
@@ -662,3 +710,4 @@ acceptance_tests:
   - { id: AT-13, title: "Complete append-only ledger", description: "Documents and spans are insert-only; news carries real dates, URLs and publishers.", tests: [test_append_only_tables_refuse_updates, test_news_items_carry_real_dates_and_publishers] }
   - { id: AT-14, title: "Review workflow", description: "Reviews require a reason; escalation keeps the task open for a different reviewer; four-eyes on certification.", tests: [test_escalation_and_four_eyes, test_review_requires_reason] }
   - { id: AT-15, title: "Tamper evidence and prompt isolation", description: "The audit chain verifies and detects tampering; crawled text never enters the system prompt.", tests: [test_audit_tampering_is_detected, test_every_write_is_audited_and_the_chain_verifies, test_injection_never_reaches_the_model] }
+  - { id: AT-16, title: "Verification over assertion", description: "A claimed pause, shutdown or rollback capability without a passing exercise is capped; confidence follows the published components; a pillar's status follows its criteria's rungs; an unverified correction routes to review.", tests: [test_claimed_capability_without_exercise_is_capped, test_confidence_components_follow_the_published_weights, test_pillar_status_follows_the_rung_reached_by_half_the_criteria, test_incident_response_without_verified_correction_routes_to_review] }

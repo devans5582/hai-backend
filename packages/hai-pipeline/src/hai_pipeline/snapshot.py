@@ -1,4 +1,5 @@
-"""Snapshot freeze: copy every link's judgment columns, incident states, connector-run outcomes
+"""Snapshot freeze: copy every link's judgment columns, incident states and response timelines,
+the organization's controls, test outcomes, AI systems and impact measures, connector-run outcomes
 and version pins into an EvidenceSnapshot. The rules engine reads only this (AT-07)."""
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ def _canonical(data: Any) -> str:
 LINK_QUERY = """
 SELECT l.id AS link_id, l.span_id, l.target_type::text, l.target_id, l.criterion_code::text, l.polarity::text,
        l.admissibility::text, l.admissibility_reason, l.maturity_rung::text, l.execution_level::text,
-       l.evidence_class::text, l.independence::text, l.source_tier::text, l.relevance, l.proposer,
+       l.evidence_class::text, l.independence::text, l.source_tier::text, l.focus_area::text, l.relevance, l.proposer,
        s.quote, s.char_start, s.char_end, s.section_heading,
        d.id AS document_id, d.cluster_id, d.canonical_url, d.published_at, d.title AS document_title,
        d.valid_to AS certificate_valid_until, d.text_sha256,
@@ -48,8 +49,32 @@ ORDER BY l.created_at, l.id
 """
 
 INCIDENT_QUERY = """
-SELECT id, canonical_event_key, status::text, severity::text, most_material_criterion::text, occurred_at, title
+SELECT id, canonical_event_key, status::text, severity::text, most_material_criterion::text, occurred_at, title,
+       containment_threat::text, detected_at, disclosed_at, contained_at, corrected_at, correction_verified_at,
+       correction_verified_by_org_id
 FROM hai.incidents WHERE org_id = :org_id ORDER BY created_at
+"""
+
+CONTROLS_QUERY = """
+SELECT id, name, ai_system_id, capabilities, monitoring_mode::text, operational_status::text, can_pause_or_rollback
+FROM hai.controls WHERE org_id = :org_id ORDER BY created_at
+"""
+
+TESTS_QUERY = """
+SELECT t.id, t.control_id, t.result::text, t.method::text, t.capabilities_exercised, t.threats_exercised,
+       t.performed_at, t.verifier_org_id
+FROM hai.test_outcomes t JOIN hai.controls c ON c.id = t.control_id
+WHERE c.org_id = :org_id ORDER BY t.performed_at, t.created_at
+"""
+
+SYSTEMS_QUERY = """
+SELECT id, name, autonomy_level::text, monitoring_mode::text, criticality::text
+FROM hai.ai_systems WHERE owner_org_id = :org_id ORDER BY created_at
+"""
+
+IMPACT_QUERY = """
+SELECT id, kind::text, outcome, verifier_org_id, measured_at, period_months, ai_system_id
+FROM hai.impact_measures WHERE org_id = :org_id ORDER BY created_at
 """
 
 RUNS_QUERY = """
@@ -84,6 +109,7 @@ def build_snapshot(
             "evidence_class": r["evidence_class"],
             "independence": r["independence"],
             "source_tier": r["source_tier"],
+            "focus_area": r["focus_area"],
             "relevance": float(r["relevance"]) if r["relevance"] is not None else None,
             "proposer": r["proposer"],
             "quote": r["quote"],
@@ -115,9 +141,19 @@ def build_snapshot(
             "most_material_criterion": r["most_material_criterion"],
             "occurred_at": r["occurred_at"].isoformat() if r["occurred_at"] else None,
             "title": r["title"],
+            "containment_threat": r["containment_threat"],
+            "detected_at": _iso(r["detected_at"]),
+            "disclosed_at": _iso(r["disclosed_at"]),
+            "contained_at": _iso(r["contained_at"]),
+            "corrected_at": _iso(r["corrected_at"]),
+            "correction_verified_at": _iso(r["correction_verified_at"]),
+            "correction_verified_by": str(r["correction_verified_by_org_id"])
+            if r["correction_verified_by_org_id"]
+            else None,
         }
         for r in incident_rows
     }
+    target_states = _target_states(conn, assessment.org_id)
     run_rows = conn.execute(text(RUNS_QUERY), {"assessment_id": assessment.id}).mappings().all()
     connector_runs: dict[str, dict[str, Any]] = {}
     for r in run_rows:
@@ -141,6 +177,7 @@ def build_snapshot(
         "frozen_at": when.isoformat(),
         "link_states": link_states,
         "incident_states": incident_states,
+        "target_states": target_states,
         "connector_runs": connector_runs,
         "version_pins": version_pins,
     }
@@ -153,11 +190,67 @@ def build_snapshot(
         link_ids=link_ids,
         link_states=link_states,
         incident_states=incident_states,
+        target_states=target_states,
         connector_runs=connector_runs,
         version_pins=version_pins,
         snapshot_sha256=digest,
     )
     return store.insert(snapshot, reason="snapshot frozen before evaluation")
+
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _target_states(conn: Connection, org_id: UUID) -> dict[str, Any]:
+    """The organization's controls, tests, systems and impact measures, frozen for the verification rules."""
+    params = {"org_id": org_id}
+    controls = {
+        str(r["id"]): {
+            "name": r["name"],
+            "ai_system_id": str(r["ai_system_id"]) if r["ai_system_id"] else None,
+            "capabilities": [str(x) for x in (r["capabilities"] or [])],
+            "monitoring_mode": r["monitoring_mode"],
+            "operational_status": r["operational_status"],
+            "can_pause_or_rollback": r["can_pause_or_rollback"],
+        }
+        for r in conn.execute(text(CONTROLS_QUERY), params).mappings().all()
+    }
+    tests = [
+        {
+            "id": str(r["id"]),
+            "control_id": str(r["control_id"]),
+            "result": r["result"],
+            "method": r["method"],
+            "capabilities_exercised": [str(x) for x in (r["capabilities_exercised"] or [])],
+            "threats_exercised": [str(x) for x in (r["threats_exercised"] or [])],
+            "performed_at": _iso(r["performed_at"]),
+            "verifier_org_id": str(r["verifier_org_id"]) if r["verifier_org_id"] else None,
+        }
+        for r in conn.execute(text(TESTS_QUERY), params).mappings().all()
+    ]
+    systems = {
+        str(r["id"]): {
+            "name": r["name"],
+            "autonomy_level": r["autonomy_level"],
+            "monitoring_mode": r["monitoring_mode"],
+            "criticality": r["criticality"],
+        }
+        for r in conn.execute(text(SYSTEMS_QUERY), params).mappings().all()
+    }
+    measures = [
+        {
+            "id": str(r["id"]),
+            "kind": r["kind"],
+            "outcome": r["outcome"],
+            "verifier_org_id": str(r["verifier_org_id"]) if r["verifier_org_id"] else None,
+            "measured_at": _iso(r["measured_at"]),
+            "period_months": r["period_months"],
+            "ai_system_id": str(r["ai_system_id"]) if r["ai_system_id"] else None,
+        }
+        for r in conn.execute(text(IMPACT_QUERY), params).mappings().all()
+    ]
+    return {"controls": controls, "test_outcomes": tests, "ai_systems": systems, "impact_measures": measures}
 
 
 def load_snapshot(store: Store, assessment_id: UUID) -> EvidenceSnapshot | None:

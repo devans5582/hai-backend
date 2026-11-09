@@ -280,6 +280,12 @@ class _Validator:
             for t in c.target_types:
                 if t not in target_types:
                     self.err("E_ENUM_VALUE", f"target type {t!r} unknown", c.code)
+            focus_codes = self.m.vocabularies["focus_area"].codes if "focus_area" in self.m.vocabularies else []
+            for fa in c.focus_areas:
+                if fa not in focus_codes:
+                    self.err("E_ENUM_VALUE", f"focus area {fa!r} unknown", c.code)
+                elif self.m.vocabularies["focus_area"].attribute(fa, "cross_cutting"):
+                    self.err("E_FOCUS_AREA_CROSS_CUTTING", f"focus area {fa!r} is cross-cutting; do not map it", c.code)
             levels = sorted(lv.level for lv in c.levels)
             if levels != [1, 2, 3, 4, 5]:
                 self.err("E_LEVELS_COUNT", f"levels are {levels}, expected 1 to 5", c.code)
@@ -385,6 +391,43 @@ class _Validator:
             self.err("E_ENUM_VALUE", "effectiveness_min_rung unknown", "methodology.scoring")
         if not (md.scoring.level_min == 1 and md.scoring.level_max == 5):
             self.err("E_RANGE", "levels must run 1 to 5", "methodology.scoring")
+        pillar_codes = {p.code for p in self.m.pillars}
+        stages = self.m.vocabularies["stage_band"].codes
+        for stage, weights in md.scoring.pillar_weight_profiles.profiles.items():
+            if stage not in stages:
+                self.err("E_ENUM_VALUE", f"pillar weight profile for unknown stage band {stage}", "methodology.scoring")
+            if set(weights) != pillar_codes:
+                self.err("E_PILLAR_WEIGHTS", f"profile {stage} must name every pillar once", "methodology.scoring")
+            elif abs(sum(weights.values()) - 1.0) > 1e-9:
+                self.err(
+                    "E_PILLAR_WEIGHTS",
+                    f"profile {stage} weights sum to {sum(weights.values()):.6f}",
+                    "methodology.scoring",
+                )
+        comps = md.confidence.components
+        if abs(sum(comps.weights.values()) - 1.0) > 1e-9:
+            self.err(
+                "E_CONFIDENCE_COMPONENTS", "confidence component weights must sum to 1.0", "methodology.confidence"
+            )
+        if md.confidence.model == "components":
+            for rung in rungs:
+                if rung not in comps.evidence_type_credit:
+                    self.err(
+                        "E_CONFIDENCE_COMPONENTS", f"evidence_type_credit misses rung {rung}", "methodology.confidence"
+                    )
+            for rung, credit in comps.evidence_type_credit.items():
+                if rung not in rungs:
+                    self.err(
+                        "E_RUNG_UNKNOWN", f"evidence_type_credit names unknown rung {rung}", "methodology.confidence"
+                    )
+                elif not 0.0 <= credit <= 1.0:
+                    self.err(
+                        "E_RANGE", f"evidence_type_credit for {rung} must be within 0 and 1", "methodology.confidence"
+                    )
+        focus_codes = self.m.vocabularies["focus_area"].codes if "focus_area" in self.m.vocabularies else []
+        for area in md.lexicons.focus_areas:
+            if area not in focus_codes:
+                self.err("E_ENUM_VALUE", f"focus area lexicon for unknown area {area}", "methodology.lexicons")
         voc, _, attr = md.confidence.execution_bonus_from.partition(".")
         if voc not in self.m.vocabularies or attr not in self.m.vocabularies[voc].attributes:
             self.err(

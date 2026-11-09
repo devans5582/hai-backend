@@ -1,0 +1,11 @@
+vocabulary:
+  code: containment_threat
+  title: Containment threat
+  description: "Ways an AI system could act outside its intended boundaries (focus area containment_security). Recorded on test outcomes that exercised the threat and on incidents where it materialised."
+  values:
+    - { code: restriction_bypass, label: Restriction bypass, description: The system circumvented a usage restriction or guardrail. }
+    - { code: unauthorized_access, label: Unauthorized access, description: "The system reached data, tools or resources it was not granted." }
+    - { code: privilege_escalation, label: Privilege escalation, description: The system obtained permissions beyond those assigned. }
+    - { code: safeguard_disablement, label: Safeguard disablement, description: "The system switched off, degraded or evaded a safeguard or monitor." }
+    - { code: data_exfiltration, label: Data exfiltration, description: The system moved data outside its permitted boundary. }
+    - { code: boundary_violation, label: Boundary violation, description: The system took an action outside its intended scope of operation. }

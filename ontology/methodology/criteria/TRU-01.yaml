@@ -22,6 +22,7 @@ criterion:
     - ai_system
     - control
   applicability: []
+  focus_areas: []
   levels:
     - level: 1
       required_maturity_rung: none

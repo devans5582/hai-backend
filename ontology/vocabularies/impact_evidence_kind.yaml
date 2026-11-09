@@ -1,0 +1,11 @@
+vocabulary:
+  code: impact_evidence_kind
+  title: Impact evidence kind
+  description: "What an impact measure actually shows (focus area human_benefit). Stated intention and output counts are not evidence of benefit; outcome metrics and independent evaluation are."
+  ordered: true
+  attributes: { demonstrates_benefit: boolean }
+  values:
+    - { code: stated_intention, label: Stated intention, rank: 0, description: "The organization says its AI is meant to benefit people.", attributes: { demonstrates_benefit: false } }
+    - { code: output_metric, label: Output metric, rank: 1, description: "Counts of activity: users served, queries answered, hours saved by the organization's own account.", attributes: { demonstrates_benefit: false } }
+    - { code: outcome_metric, label: Outcome metric, rank: 2, description: "A measured change in people's lives: health, income, access, safety or time, with a baseline and a population.", attributes: { demonstrates_benefit: true } }
+    - { code: independently_evaluated, label: Independently evaluated, rank: 3, description: An independent party measured or audited the outcome., attributes: { demonstrates_benefit: true } }

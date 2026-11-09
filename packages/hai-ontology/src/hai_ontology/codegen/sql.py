@@ -14,6 +14,7 @@ from hai_ontology.meta import (
     EntityDef,
     FieldDef,
     FieldType,
+    FKDef,
     Manifest,
     Mutability,
     RelationDef,
@@ -147,15 +148,21 @@ def fk_block(manifest: Manifest, e: EntityDef) -> str:
 
 
 def fk_block_for_relation(manifest: Manifest, rel: RelationDef) -> str:
+    return fk_statements(manifest, list(rel.fks))
+
+
+def fk_statements(manifest: Manifest, fks: list[FKDef]) -> str:
+    """FOREIGN KEY constraints and indexes for the given keys only (relation deltas)."""
     s = manifest.schema_name
     out = []
-    for fk in rel.fks:
+    for fk in fks:
         e = manifest.entity(fk.entity)
         target = manifest.entity(fk.to)
         out.append(
             f"ALTER TABLE {s}.{e.table} ADD CONSTRAINT fk_{e.table}_{fk.field} "
             f"FOREIGN KEY ({fk.field}) REFERENCES {s}.{target.table}(id);"
         )
+        out.append(f"CREATE INDEX IF NOT EXISTS ix_{e.table}_{fk.field} ON {s}.{e.table} ({fk.field});")
     return "\n".join(out) + ("\n" if out else "")
 
 

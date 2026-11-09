@@ -25,7 +25,7 @@ def _test_functions() -> set[str]:
 def test_every_acceptance_test_maps_to_a_test_function(manifest: Manifest) -> None:
     existing = _test_functions()
     assert manifest.ontology.acceptance_tests, "the manifest lists no acceptance tests"
-    assert len(manifest.ontology.acceptance_tests) == 15
+    assert len(manifest.ontology.acceptance_tests) == 16
     missing = {(at.id, name) for at in manifest.ontology.acceptance_tests for name in at.tests if name not in existing}
     assert not missing, f"acceptance tests name functions that do not exist: {sorted(missing)}"
     assert all(at.tests for at in manifest.ontology.acceptance_tests)

@@ -22,18 +22,18 @@ def test_manifest_is_valid(manifest: Manifest) -> None:
 
 
 def test_shape_matches_spec(manifest: Manifest) -> None:
-    assert len(manifest.entities) == 30
+    assert len(manifest.entities) == 31
     by_layer = {layer: [e for e in manifest.entities if e.layer == layer] for layer in Layer}
-    assert len(by_layer[Layer.SUBJECT]) == 8
+    assert len(by_layer[Layer.SUBJECT]) == 9
     assert len(by_layer[Layer.EVIDENCE]) == 7
     assert len(by_layer[Layer.METHODOLOGY]) == 6
     assert len(by_layer[Layer.ASSESSMENT]) == 9
     assert len(manifest.pillars) == 6
     assert len(manifest.criteria) == 20
     ics = [ic.id for ic in manifest.ontology.integrity_constraints]
-    assert ics == [f"IC-{i:02d}" for i in range(1, 19)]
+    assert ics == [f"IC-{i:02d}" for i in range(1, 20)]
     ats = [at.id for at in manifest.ontology.acceptance_tests]
-    assert ats == [f"AT-{i:02d}" for i in range(1, 16)]
+    assert ats == [f"AT-{i:02d}" for i in range(1, 17)]
     assert {c.pillar for c in manifest.criteria} == {p.code for p in manifest.pillars}
     assert [len(manifest.criteria_for_pillar(p.code)) for p in manifest.pillars] == [4, 3, 3, 3, 3, 4]
 

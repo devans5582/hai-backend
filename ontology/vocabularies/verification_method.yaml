@@ -1,0 +1,13 @@
+vocabulary:
+  code: verification_method
+  title: Verification method
+  description: "How a control was tested or verified, from reading documents to an independent audit (focus areas control_verification and containment_security). exercises_control says whether the method actually operated the control rather than reviewing its description."
+  ordered: true
+  attributes: { exercises_control: boolean }
+  values:
+    - { code: document_review, label: Document review, rank: 0, description: "The control's documentation was reviewed; the control itself was not operated.", attributes: { exercises_control: false } }
+    - { code: tabletop_exercise, label: Tabletop exercise, rank: 1, description: The response was walked through without operating the system., attributes: { exercises_control: false } }
+    - { code: simulated_test, label: Simulated test, rank: 2, description: The control was operated in a test or staging environment., attributes: { exercises_control: true } }
+    - { code: live_drill, label: Live drill, rank: 3, description: The control was operated on the production system., attributes: { exercises_control: true } }
+    - { code: red_team, label: Red team or penetration test, rank: 4, description: "An adversarial team tried to defeat the control or the system's boundaries.", attributes: { exercises_control: true } }
+    - { code: independent_audit, label: Independent audit, rank: 5, description: An independent party verified the control's operation., attributes: { exercises_control: true } }

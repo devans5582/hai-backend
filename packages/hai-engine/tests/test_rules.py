@@ -444,9 +444,17 @@ def test_low_severity_incident_caps_confidence(manifest: Manifest) -> None:
     assert state.confidence == 20
 
 
+def legacy_confidence(manifest: Manifest) -> Manifest:
+    """The manifest with the Phase 6 multiplicative confidence model switched on."""
+    md = manifest.methodology
+    legacy = md.model_copy(update={"confidence": md.confidence.model_copy(update={"model": "legacy_contribution"})})
+    return manifest.model_copy(update={"methodology": legacy})
+
+
 def test_confidence_formula(manifest: Manifest) -> None:
     from hai_core.freshness import decay_multiplier
 
+    manifest = legacy_confidence(manifest)
     md = manifest.methodology
     published = date(2026, 10, 1)
     c = ctx(manifest, links=[link("SAF-01", "documented_execution", published=published)])
@@ -461,6 +469,7 @@ def test_confidence_formula(manifest: Manifest) -> None:
 
 
 def test_a_source_cluster_counts_once(manifest: Manifest) -> None:
+    manifest = legacy_confidence(manifest)
     one = ctx(manifest, links=[link("SAF-01", "documented_execution", publisher="a.example", cluster="c1")])
     s1 = CriterionState()
     rules.gate_coverage(one, s1, {})
@@ -621,9 +630,14 @@ def test_pillar_weights_carry_phase6_pillar_max_in_scoring(manifest: Manifest) -
 
 
 def test_materiality_weighting_is_switchable(manifest: Manifest) -> None:
-    weighted = manifest.methodology.model_copy(
+    # 2.0.0 weights by materiality (the published report does); equal_mean is the spec's alternative
+    assert manifest.methodology.scoring.pillar_aggregation == "materiality_weighted"
+    weighted = manifest.methodology
+    manifest = manifest.model_copy(
         update={
-            "scoring": manifest.methodology.scoring.model_copy(update={"pillar_aggregation": "materiality_weighted"})
+            "methodology": manifest.methodology.model_copy(
+                update={"scoring": manifest.methodology.scoring.model_copy(update={"pillar_aggregation": "equal_mean"})}
+            )
         }
     )
     states = _states(manifest, 1)
@@ -818,3 +832,330 @@ def test_replay_matches_stored_result(manifest: Manifest, engine: RuleEngine) ->
         return result.result_hash(methodology_version="1.0.0", ruleset_version="1.0.0", snapshot_sha256="snap")
 
     assert run() == run()
+
+
+# ------------------------------------------------------------ AT-16: verification over assertion
+from hai_engine.rules.context import FrozenControl, FrozenTestOutcome, TargetStates  # noqa: E402
+
+
+def _control(control_id: str, *capabilities: str, monitoring: str | None = None) -> FrozenControl:
+    return FrozenControl(
+        control_id=control_id,
+        name="Model kill switch",
+        capabilities=tuple(capabilities),
+        monitoring_mode=monitoring,
+        operational_status="implemented",
+        can_pause_or_rollback=None,
+        ai_system_id=None,
+    )
+
+
+def _test(
+    control_id: str, *capabilities: str, result: str = "pass", method: str | None = "live_drill"
+) -> FrozenTestOutcome:
+    return FrozenTestOutcome(
+        test_id=str(uuid4()),
+        control_id=control_id,
+        result=result,
+        method=method,
+        capabilities_exercised=tuple(capabilities),
+        threats_exercised=(),
+        performed_at=date(2026, 6, 1),
+        verifier_org_id=None,
+    )
+
+
+def _control_ctx(manifest: Manifest, targets: TargetStates, control_id: str) -> CriterionContext:
+    base = ctx(manifest, links=[link("SAF-01", "documented_execution", execution="partial")])
+    supporting = FrozenLink(**{**base.links[0].__dict__, "target_type": "control", "target_id": control_id})
+    return CriterionContext(**{**base.__dict__, "links": (supporting,), "targets": targets})
+
+
+def test_claimed_capability_without_exercise_is_capped(manifest: Manifest) -> None:
+    """A control that says it can pause or roll back the system is documented, not verified, until a passing
+    test exercised that capability (IC-19). Document review does not count as exercising."""
+    control_id = str(uuid4())
+    params = {"cap_level": 3, "capabilities": ["pause", "shutdown", "rollback", "isolate"]}
+    claimed_only = TargetStates(controls={control_id: _control(control_id, "pause", "rollback")})
+    c = _control_ctx(manifest, claimed_only, control_id)
+    state = CriterionState()
+    rules.gate_coverage(c, state, {})
+    rules.adj_start_from_finding(c, state, {})
+    assert state.level == 4  # the ladder alone allows documented execution
+    note = rules.cap_unexercised_capability(c, state, params)
+    assert state.level == 3 and "CAP-UNEXERCISED-CAPABILITY" in state.caps_applied and "capped" in note
+    assert any(f.startswith("unexercised_capability:") for f in state.review_flags)
+    # a document review is not an exercise; a failed drill is not either
+    reviewed = TargetStates(
+        controls={control_id: _control(control_id, "pause")},
+        tests=(_test(control_id, "pause", method="document_review"), _test(control_id, "pause", result="fail")),
+    )
+    state = CriterionState()
+    c = _control_ctx(manifest, reviewed, control_id)
+    rules.gate_coverage(c, state, {})
+    rules.adj_start_from_finding(c, state, {})
+    rules.cap_unexercised_capability(c, state, params)
+    assert state.level == 3
+    # a passing live drill of the claimed capability lifts the cap
+    exercised = TargetStates(controls={control_id: _control(control_id, "pause")}, tests=(_test(control_id, "pause"),))
+    state = CriterionState()
+    c = _control_ctx(manifest, exercised, control_id)
+    rules.gate_coverage(c, state, {})
+    rules.adj_start_from_finding(c, state, {})
+    note = rules.cap_unexercised_capability(c, state, params)
+    assert state.level == 4 and not state.caps_applied and "no control claims" in note
+    # a control without a stopping capability is not affected
+    other = TargetStates(controls={control_id: _control(control_id, "rate_limit")})
+    state = CriterionState()
+    c = _control_ctx(manifest, other, control_id)
+    rules.gate_coverage(c, state, {})
+    rules.adj_start_from_finding(c, state, {})
+    rules.cap_unexercised_capability(c, state, params)
+    assert state.level == 4
+    # the review trigger carries the criterion
+    engine = RuleEngine(manifest)
+    outcome = engine.run_criterion(_control_ctx(manifest, claimed_only, control_id))
+    assert "CAP-UNEXERCISED-CAPABILITY" in outcome.applied_rule_codes and outcome.state.level == 3
+    result = engine.run_assessment(
+        [outcome],
+        stage_band="growth",
+        size_band="mid",
+        certification_requested=False,
+        signed_certification=False,
+        connector_runs=runs(WEBSITE="succeeded"),
+        incidents=(),
+        as_of=AS_OF,
+    )
+    assert "verification:SAF-01" in result.state.review_triggers
+
+
+def test_confidence_components_follow_the_published_weights(manifest: Manifest) -> None:
+    """Confidence is the published decomposition: credibility 40, evidence type 30, cross-source 20, recency 10."""
+    from hai_core.freshness import decay_multiplier
+
+    md = manifest.methodology
+    comps = md.confidence.components
+    assert md.confidence.model == "components"
+    assert comps.weights == {
+        "source_credibility": 0.40,
+        "evidence_type": 0.30,
+        "cross_source_validation": 0.20,
+        "recency": 0.10,
+    }
+    # one policy quote from the organization's own website, undated: the profile of the published report
+    c = ctx(manifest, links=[link("SAF-01", "stated_commitment", published=None)])
+    state = CriterionState()
+    rules.gate_coverage(c, state, {})
+    rules.conf_evidence(c, state, {})
+    decay = decay_multiplier(md, "org_disclosure", None, AS_OF)
+    expected = 0.4 * 60 + 0.3 * comps.evidence_type_credit["stated_commitment"] * 100 + 0.2 * 0 + 0.1 * decay * 100
+    assert state.confidence == pytest.approx(expected, abs=0.1)
+    assert 35 <= state.confidence <= 45  # the published website-only profile lands near 41
+    assert state.confidence_components["cross_source_validation"] == 0
+    # stated commitment, documented control, test result and independent verification earn strictly more
+    ladder = ["stated_commitment", "specified_control", "documented_execution", "independently_verified"]
+    confs = []
+    for rung in ladder:
+        kwargs: dict[str, Any] = {}
+        if rung == "independently_verified":
+            kwargs = {
+                "publisher_type": "regulator_record",
+                "independence": "regulator",
+                "tier": "T1",
+                "publisher": "sec.gov",
+            }
+        c = ctx(manifest, links=[link("SAF-01", rung, published=date(2026, 10, 1), **kwargs)])
+        s_ = CriterionState()
+        rules.gate_coverage(c, s_, {})
+        rules.conf_evidence(c, s_, {})
+        confs.append(s_.confidence)
+    assert confs == sorted(confs) and len(set(confs)) == len(confs)
+    # three distinct sources earn the full cross-source component; ten syndicated copies count once (IC-09)
+    three = ctx(
+        manifest,
+        links=[
+            link("SAF-01", "documented_execution"),
+            link(
+                "SAF-01",
+                "documented_execution",
+                publisher="press.example",
+                publisher_type="press",
+                independence="independent",
+            ),
+            link(
+                "SAF-01",
+                "documented_execution",
+                publisher="research.example",
+                publisher_type="academic_research",
+                independence="independent",
+                tier="T2",
+            ),
+        ],
+    )
+    s3 = CriterionState()
+    rules.gate_coverage(three, s3, {})
+    rules.conf_evidence(three, s3, {})
+    assert s3.confidence_components["cross_source_validation"] == 100
+    copies = ctx(
+        manifest,
+        links=[link("SAF-01", "documented_execution", publisher=f"copy{i}.example", cluster="c1") for i in range(10)],
+    )
+    sc = CriterionState()
+    rules.gate_coverage(copies, sc, {})
+    rules.conf_evidence(copies, sc, {})
+    assert sc.confidence_components["cross_source_validation"] == 0
+    # no admissible support: zero, with every component recorded
+    empty = CriterionState()
+    rules.gate_coverage(ctx(manifest), empty, {})
+    rules.conf_evidence(ctx(manifest), empty, {})
+    assert empty.confidence == 0 and set(comps.weights) <= set(empty.confidence_components)
+
+
+def test_pillar_status_follows_the_rung_reached_by_half_the_criteria(manifest: Manifest) -> None:
+    from hai_engine.scoring import maturity_status_for
+
+    rank = dict(rules._RUNGS)
+    assert maturity_status_for([]) is None
+    assert maturity_status_for([rank["none"], rank["none"], rank["none"]]) == "needs_attention"
+    # three criteria: policy, policy, control -> at least half reach stated_commitment -> developing
+    assert (
+        maturity_status_for([rank["stated_commitment"], rank["stated_commitment"], rank["specified_control"]])
+        == "developing"
+    )
+    # one verified criterion does not make a pillar strong
+    assert maturity_status_for([rank["independently_verified"], rank["none"], rank["none"]]) == "needs_attention"
+    # two of four with execution -> progressing; three of four verified -> strong
+    assert (
+        maturity_status_for(
+            [rank["documented_execution"], rank["documented_execution"], rank["none"], rank["stated_commitment"]]
+        )
+        == "progressing"
+    )
+    assert maturity_status_for([rank["independently_verified"]] * 3 + [rank["none"]]) == "strong"
+    # through aggregate: statuses ride on the pillar results and the report wording comes from the vocabulary
+    states = _states(manifest, 3)
+    ranks = [rank["documented_execution"] if c.pillar == "SAF" else rank["stated_commitment"] for c, _ in states]
+    result = aggregate(manifest.methodology, manifest.pillars, states, effectiveness_ranks=ranks)
+    by_code = {p.code: p.status for p in result.pillars}
+    assert by_code["SAF"] == "progressing" and by_code["TRU"] == "developing"
+
+
+def test_incident_response_without_verified_correction_routes_to_review(manifest: Manifest) -> None:
+    substantiated = incident("SAF-01", "substantiated", "high")
+    uncorrected = ctx(manifest, incidents=[substantiated])
+    state = CriterionState()
+    note = rules.gate_incident_response(uncorrected, state, {})
+    assert f"uncorrected_incident:{substantiated.incident_id}" in state.review_flags and "not corrected" in note
+    corrected = FrozenIncident(**{**substantiated.__dict__, "corrected_at": date(2026, 5, 1)})
+    state = CriterionState()
+    rules.gate_incident_response(ctx(manifest, incidents=[corrected]), state, {})
+    assert f"unverified_correction:{substantiated.incident_id}" in state.review_flags
+    verified = FrozenIncident(
+        **{**corrected.__dict__, "correction_verified_at": date(2026, 6, 1), "correction_verified_by": str(uuid4())}
+    )
+    state = CriterionState()
+    note = rules.gate_incident_response(ctx(manifest, incidents=[verified]), state, {})
+    assert not state.review_flags and "no substantiated incident awaits" in note
+    # alleged incidents are IC-11's business, not this gate's
+    state = CriterionState()
+    rules.gate_incident_response(ctx(manifest, incidents=[incident("SAF-01", "alleged", "high")]), state, {})
+    assert not state.review_flags
+    # the trigger names the incident
+    engine = RuleEngine(manifest)
+    outcome = engine.run_criterion(uncorrected)
+    result = engine.run_assessment(
+        [outcome],
+        stage_band="growth",
+        size_band="mid",
+        certification_requested=False,
+        signed_certification=False,
+        connector_runs=runs(WEBSITE="succeeded"),
+        incidents=(substantiated,),
+        as_of=AS_OF,
+    )
+    assert f"incident_response:{substantiated.incident_id}" in result.state.review_triggers
+
+
+def test_self_reported_monitoring_routes_to_review(manifest: Manifest) -> None:
+    system_id = str(uuid4())
+    from hai_engine.rules.context import FrozenSystem
+
+    def system(mode: str | None) -> TargetStates:
+        return TargetStates(systems={system_id: FrozenSystem(system_id, "Agent", "bounded_autonomous", mode, None)})
+
+    base = ctx(manifest, "SAF-02", links=[link("SAF-02", "documented_execution")])
+    supporting = FrozenLink(**{**base.links[0].__dict__, "target_type": "ai_system", "target_id": system_id})
+    for mode, flagged in (
+        ("self_explanation", True),
+        ("operator_logs", False),
+        ("independent_recording", False),
+        (None, False),
+    ):
+        c = CriterionContext(**{**base.__dict__, "links": (supporting,), "targets": system(mode)})
+        state = CriterionState()
+        rules.gate_coverage(c, state, {})
+        rules.gate_self_reported_monitoring(c, state, {})
+        assert ("self_reported_monitoring" in state.review_flags) is flagged, mode
+
+
+def test_certification_needs_evidence_in_every_pillar(manifest: Manifest, engine: RuleEngine) -> None:
+    assert manifest.methodology.certification.require_evidence_in_every_pillar
+    outcomes = []
+    cr = runs(WEBSITE="succeeded", NEWS="succeeded", EDGAR="succeeded")
+    for crit in manifest.criteria:
+        links = (
+            []
+            if crit.pillar == "IMP"
+            else [
+                link(
+                    crit.code,
+                    "independently_verified",
+                    publisher="sec.gov",
+                    publisher_type="regulator_record",
+                    independence="regulator",
+                    tier="T1",
+                )
+            ]
+        )
+        outcomes.append(engine.run_criterion(ctx(manifest, crit.code, links=links, connector_runs=cr)))
+    result = engine.run_assessment(
+        outcomes,
+        stage_band="growth",
+        size_band="mid",
+        certification_requested=False,
+        signed_certification=False,
+        connector_runs=cr,
+        incidents=(),
+        as_of=AS_OF,
+    )
+    assert any(r == "no admissible evidence in pillar IMP" for r in result.state.gate_reasons)
+    assert not result.state.certification_eligible
+
+
+def test_stage_profile_weights_are_switchable(manifest: Manifest) -> None:
+    from hai_engine.scoring import pillar_weights
+
+    md = manifest.methodology
+    fixed = pillar_weights(md, manifest.pillars, "mature")
+    assert fixed == {p.code: p.weight for p in manifest.pillars}  # mode fixed: the profile is recorded, not applied
+    profiled = md.model_copy(
+        update={
+            "scoring": md.scoring.model_copy(
+                update={
+                    "pillar_weight_profiles": md.scoring.pillar_weight_profiles.model_copy(
+                        update={"mode": "stage_profile"}
+                    )
+                }
+            )
+        }
+    )
+    mature = pillar_weights(profiled, manifest.pillars, "mature")
+    assert mature == {"TRU": 0.18, "ACC": 0.20, "PUR": 0.12, "SAF": 0.18, "TRN": 0.17, "IMP": 0.15}  # HAI Report
+    assert pillar_weights(profiled, manifest.pillars, "early") == fixed  # no profile: pillars.yaml
+    states = _states(manifest, 1)
+    states = [
+        (c, CriterionState(level=5, coverage_state="observed", confidence=80) if c.pillar == "ACC" else st)
+        for c, st in states
+    ]
+    assert aggregate(profiled, manifest.pillars, states, stage_band="mature").hai_score == 20.0
+    assert aggregate(md, manifest.pillars, states, stage_band="mature").hai_score == 15.0

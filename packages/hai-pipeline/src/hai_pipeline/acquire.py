@@ -25,6 +25,7 @@ from hai_core.generated.enums import (
     ConnectorRunOutcome,
     EvidenceClass,
     ExecutionLevel,
+    FocusArea,
     IncidentSeverity,
     IncidentStatus,
     MaturityRung,
@@ -298,6 +299,9 @@ class AcquisitionService:
                     methodology=self.manifest.methodology,
                     matcher=self.matcher,
                 )
+                focus = (
+                    self.matcher.focus_area_for(c.quote, criterion) if p.polarity == Polarity.SUPPORTS.value else None
+                )
                 store.insert(
                     EvidenceLink(
                         span_id=spans[p.span_index].id,
@@ -312,6 +316,7 @@ class AcquisitionService:
                         evidence_class=EvidenceClass(evidence_class_for(sd.publisher_type.value, p.signals, c.quote)),
                         independence=independence,
                         source_tier=tier,
+                        focus_area=FocusArea(focus) if focus else None,
                         proposer=p.proposer,
                         relevance=p.relevance,
                         valid_from=published,

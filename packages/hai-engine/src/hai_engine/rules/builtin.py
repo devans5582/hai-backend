@@ -1,4 +1,4 @@
-"""Ruleset 1.0.0 implementations. Pure functions: no database, no model, no clock.
+"""Ruleset 1.1.0 implementations. Pure functions: no database, no model, no clock.
 
 Each function mutates the state it is given and returns a one-line note. The
 engine records the state before and after every rule (IC-14).
@@ -9,7 +9,15 @@ from __future__ import annotations
 from typing import Any
 
 from hai_core.freshness import decay_multiplier
-from hai_core.generated.enums import RANKS, CoverageState, ExecutionLevel, OutcomeStatus
+from hai_core.generated.enums import (
+    RANKS,
+    CoverageState,
+    ExecutionLevel,
+    IncidentStatus,
+    Observability,
+    OutcomeStatus,
+    TargetType,
+)
 from hai_engine.rules.context import AssessmentContext, AssessmentState, CriterionContext, CriterionState
 from hai_engine.rules.registry import assessment_rule, criterion_rule
 from hai_engine.scoring import aggregate
@@ -148,6 +156,38 @@ def cap_failed_execution(ctx: CriterionContext, state: CriterionState, params: d
     return f"failed execution evidence; level {state.level} already at or below {cap}"
 
 
+@criterion_rule("CAP-UNEXERCISED-CAPABILITY")
+def cap_unexercised_capability(ctx: CriterionContext, state: CriterionState, params: dict[str, Any]) -> str:
+    """A claimed pause, shutdown, rollback or isolate capability is documented, not verified, until a
+    passing test outcome exercised it (IC-19, focus area control_verification)."""
+    if state.excluded or state.level is None:
+        return "excluded; no cap"
+    watched = frozenset(str(c) for c in params.get("capabilities", []))
+    cap = int(params.get("cap_level", 3))
+    unexercised: list[str] = []
+    for link in ctx.admissible_support:
+        if link.target_type != TargetType.CONTROL.value or link.target_id is None:
+            continue
+        control = ctx.targets.controls.get(link.target_id)
+        if control is None:
+            continue
+        claimed = control.claimed_capabilities & watched
+        if claimed and not ctx.targets.exercised(control.control_id, claimed) and control.control_id not in unexercised:
+            unexercised.append(control.control_id)
+    if not unexercised:
+        return "no control claims an unexercised pause, shutdown, rollback or isolate capability"
+    for control_id in unexercised:
+        state.review_flags.append(f"unexercised_capability:{control_id}")
+    if state.level > cap:
+        before = state.level
+        state.level = cap
+        state.caps_applied.append("CAP-UNEXERCISED-CAPABILITY")
+        return f"{len(unexercised)} control(s) claim an unexercised capability; level {before} capped at {cap}"
+    return (
+        f"{len(unexercised)} control(s) claim an unexercised capability; level {state.level} already at or below {cap}"
+    )
+
+
 @criterion_rule("GATE-UNVERIFIED-INCIDENTS")
 def gate_unverified_incidents(ctx: CriterionContext, state: CriterionState, params: dict[str, Any]) -> str:
     del params
@@ -157,6 +197,47 @@ def gate_unverified_incidents(ctx: CriterionContext, state: CriterionState, para
     for inc in unverified:
         state.review_flags.append(f"unverified_incident:{inc.incident_id}")
     return f"{len(unverified)} alleged or under-investigation incident(s) routed to review; no automatic effect (IC-11)"
+
+
+@criterion_rule("GATE-INCIDENT-RESPONSE")
+def gate_incident_response(ctx: CriterionContext, state: CriterionState, params: dict[str, Any]) -> str:
+    """Substantiated incidents whose correction is missing or unverified route to review (focus area
+    incident_response). No automatic effect: ADJ-INCIDENTS already applies the severity."""
+    del params
+    flagged: list[str] = []
+    for inc in ctx.incidents:
+        if not inc.can_adjust_score or inc.status == IncidentStatus.DISMISSED.value:
+            continue
+        if inc.corrected_at is None:
+            state.review_flags.append(f"uncorrected_incident:{inc.incident_id}")
+            flagged.append(f"{inc.incident_id[:8]} not corrected")
+        elif inc.correction_verified_at is None or inc.correction_verified_by is None:
+            state.review_flags.append(f"unverified_correction:{inc.incident_id}")
+            flagged.append(f"{inc.incident_id[:8]} corrected, not independently verified")
+    if not flagged:
+        return "no substantiated incident awaits a corrected and verified response"
+    return "routed to review: " + "; ".join(flagged)
+
+
+@criterion_rule("GATE-SELF-REPORTED-MONITORING")
+def gate_self_reported_monitoring(ctx: CriterionContext, state: CriterionState, params: dict[str, Any]) -> str:
+    """When every supporting link targets a system or control observable only through the AI system's own
+    explanations, the criterion is flagged for review (focus area independent_auditability)."""
+    del params
+    if state.excluded:
+        return "excluded"
+    modes = [
+        ctx.targets.monitoring_mode_of(link.target_type, link.target_id)
+        for link in ctx.admissible_support
+        if link.target_type in (TargetType.CONTROL.value, TargetType.AI_SYSTEM.value)
+    ]
+    known = [m for m in modes if m is not None]
+    if not known:
+        return "no supporting link targets a system or control with a recorded observability"
+    if all(m == Observability.SELF_EXPLANATION.value for m in known):
+        state.review_flags.append("self_reported_monitoring")
+        return f"{len(known)} link(s) rest on the system's own explanations only; routed to review"
+    return "monitoring evidence includes operator logs or independent recording"
 
 
 @criterion_rule("ADJ-INCIDENTS")
@@ -192,6 +273,8 @@ def conf_evidence(ctx: CriterionContext, state: CriterionState, params: dict[str
         return "excluded; confidence 0"
     md = ctx.methodology
     conf = md.confidence
+    if conf.model == "components":
+        return _conf_components(ctx, state)
     materiality = ctx.criterion.materiality_weight
     best_per_source: dict[str, tuple[float, str]] = {}
     for link in ctx.admissible_support:
@@ -233,6 +316,64 @@ def conf_evidence(ctx: CriterionContext, state: CriterionState, params: dict[str
     return (
         f"{len(best_per_source)} source(s) counted once: {total:.1f}; corroboration +{bonus:.0f}; "
         f"execution {execution:+.0f}; omissions -{omission:.0f}; second opinion -{second:.0f} -> {state.confidence:.1f}"
+    )
+
+
+def _conf_components(ctx: CriterionContext, state: CriterionState) -> str:
+    """The published decomposition: source credibility, evidence type, cross-source validation, recency."""
+    md = ctx.methodology
+    conf = md.confidence
+    comps = conf.components
+    support = ctx.admissible_support
+    omission = min(conf.omission_penalty.max, conf.omission_penalty.per_omitted_span * ctx.omitted_evidence)
+    second = 0.0
+    if ctx.finding is not None and ctx.finding.second_opinion_level is not None:
+        gap = abs(ctx.finding.proposed_level - ctx.finding.second_opinion_level)
+        if gap >= conf.second_opinion.disagreement_levels_for_penalty:
+            second = conf.second_opinion.penalty
+        if gap >= conf.second_opinion.disagreement_levels_for_review:
+            state.review_flags.append(f"second_opinion_disagreement:{gap}")
+    if not support:
+        state.confidence = 0.0
+        state.confidence_components = dict.fromkeys(comps.weights, 0.0) | {
+            "omission_penalty": omission,
+            "second_opinion_penalty": second,
+        }
+        return "no admissible support; confidence 0"
+    # Sources count once (IC-09): the freshest document per cluster or publisher.
+    decay_per_source: dict[str, float] = {}
+    for link in support:
+        decay = decay_multiplier(
+            md, link.publisher_type, link.published_at, ctx.as_of, certificate_valid_until=link.certificate_valid_until
+        )
+        key = link.source_key
+        decay_per_source[key] = max(decay_per_source.get(key, 0.0), decay)
+    credibility = max(link.tier_weight for link in support) * 100
+    evidence_type = max(comps.evidence_type_credit.get(link.maturity_rung, 0.0) for link in support) * 100
+    sources = len(decay_per_source)
+    span = max(1, comps.cross_source_full_at - 1)
+    cross = min(1.0, (sources - 1) / span) * 100
+    recency = sum(decay_per_source.values()) / sources * 100
+    components = {
+        "source_credibility": round(credibility, 1),
+        "evidence_type": round(evidence_type, 1),
+        "cross_source_validation": round(cross, 1),
+        "recency": round(recency, 1),
+    }
+    weighted = sum(comps.weights[k] * components[k] for k in comps.weights)
+    value = weighted - omission - second
+    state.confidence = max(conf.clamp.min, min(conf.clamp.max, round(value, 1)))
+    state.confidence_components = components | {
+        "weighted_total": round(weighted, 1),
+        "omission_penalty": omission,
+        "second_opinion_penalty": second,
+    }
+    return (
+        f"credibility {credibility:.0f} x {comps.source_credibility:.2f}, evidence type {evidence_type:.0f} x "
+        f"{comps.evidence_type:.2f}, cross-source {cross:.0f} x {comps.cross_source_validation:.2f} "
+        f"({sources} source(s)), "
+        f"recency {recency:.0f} x {comps.recency:.2f}; omissions -{omission:.0f}; second opinion -{second:.0f} "
+        f"-> {state.confidence:.1f}"
     )
 
 
@@ -319,6 +460,12 @@ def gate_review_triggers(ctx: AssessmentContext, state: AssessmentState, params:
                 triggers.append(f"finding:{outcome.criterion.code}")
             elif flag.startswith("applicability:"):
                 triggers.append(f"applicability:{outcome.criterion.code}")
+            elif flag.startswith("unexercised_capability:") and rt.unexercised_capability:
+                triggers.append(f"verification:{outcome.criterion.code}")
+            elif flag.startswith(("uncorrected_incident:", "unverified_correction:")) and rt.incident_response:
+                triggers.append(f"incident_response:{flag.split(':', 1)[1]}")
+            elif flag == "self_reported_monitoring" and rt.self_reported_monitoring:
+                triggers.append(f"monitoring:{outcome.criterion.code}")
     if (
         state.confidence_pct is not None
         and rt.borderline_confidence_band.low <= state.confidence_pct <= rt.borderline_confidence_band.high
@@ -350,6 +497,14 @@ def gate_certification(ctx: AssessmentContext, state: AssessmentState, params: d
         reasons.append(f"score {state.hai_score:.1f} below threshold {threshold:.0f}")
     if state.confidence_pct is None or state.confidence_pct < cert.min_confidence:
         reasons.append(f"confidence {state.confidence_pct or 0:.1f} below minimum {cert.min_confidence:.0f}")
+    if cert.require_evidence_in_every_pillar:
+        for pillar in ctx.pillars:
+            evidenced = any(
+                o.criterion.pillar == pillar.code and o.state.counts_in_score and o.context.admissible_support
+                for o in ctx.criteria
+            )
+            if not evidenced:
+                reasons.append(f"no admissible evidence in pillar {pillar.code}")
     blocking = [t for t in state.review_triggers if not t.startswith("certification:")]
     if blocking:
         reasons.append("open review triggers: " + ", ".join(blocking))
@@ -399,12 +554,13 @@ def compute_scores(ctx: AssessmentContext, state: AssessmentState) -> str:
         list(ctx.pillars),
         [(o.criterion, o.state) for o in ctx.criteria],
         effectiveness_ranks=[o.state.best_rung_rank for o in ctx.criteria],
+        stage_band=ctx.stage_band,
     )
     state.hai_score = result.hai_score
     state.score_before_caps = result.hai_score
     state.confidence_pct = result.confidence_pct
     state.effectiveness = result.effectiveness
-    state.pillar_scores = {p.code: (p.score, p.confidence, p.counted, p.excluded) for p in result.pillars}
+    state.pillar_scores = {p.code: (p.score, p.confidence, p.counted, p.excluded, p.status) for p in result.pillars}
     state.counted_criteria = result.counted
     state.excluded_criteria = result.excluded
     state.unavailable_criteria = sum(

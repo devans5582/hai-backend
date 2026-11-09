@@ -1,5 +1,5 @@
 // Typed API client. Shapes mirror services/api/src/hai_api/schemas.py and the report builder.
-import type { CoverageState, CriterionCode, LifecycleState, OutcomeStatus, PillarCode, ReviewAction, ReviewSubjectType } from "../generated/ontology";
+import type { CoverageState, CriterionCode, FocusArea, LifecycleState, MaturityRung, MaturityStatus, OutcomeStatus, PillarCode, ReviewAction, ReviewSubjectType } from "../generated/ontology";
 import { authHeaders, dropSession, readCredentials } from "./auth";
 
 export interface ApiError {
@@ -96,6 +96,8 @@ export interface Decision {
 
 export interface EvidenceItem {
   link_id: string;
+  focus_area?: FocusArea | null;
+  target_type?: string;
   quote: string;
   polarity: string;
   admissibility: string;
@@ -176,7 +178,36 @@ export interface ReportCriterion {
   review_required: boolean;
   applied_rule_codes: string[];
   evidence: EvidenceItem[];
+  evidence_basis: Record<string, number>;
+  best_rung: MaturityRung | null;
+  focus_areas: FocusArea[];
+  confidence_components: Record<string, number>;
   decision_id: string | null;
+}
+
+export interface ReportPillar {
+  code: PillarCode;
+  name: string;
+  weight: number;
+  score: number | null;
+  confidence: number | null;
+  criteria_counted: number;
+  criteria_excluded: number;
+  status: MaturityStatus | null;
+  status_label: string | null;
+  status_wording: string | null;
+}
+
+export interface FocusAreaCoverage {
+  code: FocusArea;
+  label: string;
+  question: string;
+  cross_cutting: boolean;
+  criteria: CriterionCode[];
+  links: number;
+  by_rung: Record<string, number>;
+  best_rung: MaturityRung | null;
+  best_rung_label: string | null;
 }
 
 export interface Report {
@@ -193,8 +224,21 @@ export interface Report {
     review_triggers: string[];
     caps_applied: string[];
   } | null;
-  pillars: { code: PillarCode; name: string; weight: number; score: number | null; confidence: number | null; criteria_counted: number; criteria_excluded: number }[];
+  pillars: ReportPillar[];
   criteria: ReportCriterion[];
+  evidence_basis: { by_rung: Record<string, number>; labels: Record<string, string>; criteria_counted: number };
+  evidence_strength: Record<string, { label: string; criteria_with_evidence: number; share: number; strength: string }>;
+  focus_areas: FocusAreaCoverage[];
+  verification: {
+    controls: { control_id: string; name: string | null; claimed_capabilities: string[]; exercised_capabilities: string[]; unexercised_capabilities: string[]; monitoring_mode: string | null; operational_status: string | null; tests: number }[];
+    tests_by_method: Record<string, number>;
+    threats_exercised: Record<string, number>;
+    ai_systems: { system_id: string; name?: string; autonomy_level?: string | null; monitoring_mode?: string | null; criticality?: string | null }[];
+    controls_with_unexercised_capabilities: number;
+  };
+  incident_response: { incident_id: string; title: string | null; status: string; severity: string; days_to_disclose: number | null; days_to_contain: number | null; days_to_correct: number | null; correction_verified: boolean }[];
+  impact_measures: { items: { id: string; kind: string; kind_label: string; outcome: string; demonstrates_benefit: boolean; verified_independently: boolean }[]; by_kind: Record<string, number>; demonstrated_benefit: number; total: number };
+  confidence_methodology: { model: string; source: string; weights: Record<string, number>; evidence_type_credit: Record<string, number> };
   coverage_summary: Record<string, number>;
   connector_runs: ConnectorRun[];
   sources: { id: string; canonical_url: string; title: string | null; published_at: string | null; publisher: string; publisher_type: string; connector: string }[];

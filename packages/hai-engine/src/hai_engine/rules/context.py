@@ -37,6 +37,10 @@ class FrozenLink:
     quote: str
     canonical_url: str | None
     document_title: str | None
+    # Ontology 1.1.0: what the span is about and the focus area it speaks to (reporting only).
+    target_type: str = "organization"
+    target_id: str | None = None
+    focus_area: str | None = None
 
     @property
     def admissible(self) -> bool:
@@ -80,6 +84,19 @@ class FrozenIncident:
     most_material_criterion: str | None
     occurred_at: date | None
     title: str | None
+    # Response timeline (focus area incident_response); all optional.
+    detected_at: date | None = None
+    disclosed_at: date | None = None
+    contained_at: date | None = None
+    corrected_at: date | None = None
+    correction_verified_at: date | None = None
+    correction_verified_by: str | None = None
+    containment_threat: str | None = None
+
+    def days_between(self, start: date | None, end: date | None) -> int | None:
+        if start is None or end is None:
+            return None
+        return (end - start).days
 
     @property
     def can_adjust_score(self) -> bool:
@@ -92,6 +109,106 @@ class FrozenIncident:
     @property
     def confidence_ceiling(self) -> float:
         return float(ATTRIBUTES["incident_severity"][self.severity]["confidence_ceiling"])
+
+
+@dataclass(frozen=True)
+class FrozenControl:
+    control_id: str
+    name: str
+    capabilities: tuple[str, ...]
+    monitoring_mode: str | None
+    operational_status: str
+    can_pause_or_rollback: bool | None
+    ai_system_id: str | None
+
+    @property
+    def claimed_capabilities(self) -> frozenset[str]:
+        """Explicit capabilities, or pause and rollback when only the summary flag was recorded."""
+        if self.capabilities:
+            return frozenset(self.capabilities)
+        if self.can_pause_or_rollback:
+            return frozenset({"pause", "rollback"})  # hai-codes: ok - control_capability values
+        return frozenset()
+
+
+@dataclass(frozen=True)
+class FrozenTestOutcome:
+    test_id: str
+    control_id: str
+    result: str
+    method: str | None
+    capabilities_exercised: tuple[str, ...]
+    threats_exercised: tuple[str, ...]
+    performed_at: date | None
+    verifier_org_id: str | None
+
+    @property
+    def exercised_control(self) -> bool:
+        """A method that operated the control, or capabilities recorded without a method."""
+        if not self.capabilities_exercised:
+            return False
+        if self.method is None:
+            return True
+        return bool(ATTRIBUTES["verification_method"][self.method]["exercises_control"])
+
+    @property
+    def passed(self) -> bool:
+        return self.result == "pass"  # hai-codes: ok - test_result value
+
+
+@dataclass(frozen=True)
+class FrozenSystem:
+    system_id: str
+    name: str
+    autonomy_level: str | None
+    monitoring_mode: str | None
+    criticality: str | None
+
+
+@dataclass(frozen=True)
+class FrozenImpactMeasure:
+    measure_id: str
+    kind: str
+    outcome: str
+    verifier_org_id: str | None
+    measured_at: date | None
+    period_months: int | None
+    ai_system_id: str | None
+
+    @property
+    def demonstrates_benefit(self) -> bool:
+        return bool(ATTRIBUTES["impact_evidence_kind"][self.kind]["demonstrates_benefit"])
+
+
+@dataclass(frozen=True)
+class TargetStates:
+    """Frozen controls, tests, systems and impact measures of the organization (snapshot.target_states)."""
+
+    controls: dict[str, FrozenControl] = field(default_factory=dict)
+    tests: tuple[FrozenTestOutcome, ...] = ()
+    systems: dict[str, FrozenSystem] = field(default_factory=dict)
+    impact_measures: tuple[FrozenImpactMeasure, ...] = ()
+
+    def tests_for(self, control_id: str) -> list[FrozenTestOutcome]:
+        return [t for t in self.tests if t.control_id == control_id]
+
+    def exercised(self, control_id: str, capabilities: frozenset[str]) -> bool:
+        """A passing test that operated at least one of the capabilities."""
+        return any(
+            t.passed and t.exercised_control and set(t.capabilities_exercised) & capabilities
+            for t in self.tests_for(control_id)
+        )
+
+    def monitoring_mode_of(self, target_type: str, target_id: str | None) -> str | None:
+        if target_id is None:
+            return None
+        if target_type == "control":  # hai-codes: ok - target_type value
+            control = self.controls.get(target_id)
+            return control.monitoring_mode if control else None
+        if target_type == "ai_system":  # hai-codes: ok - target_type value
+            system = self.systems.get(target_id)
+            return system.monitoring_mode if system else None
+        return None
 
 
 @dataclass(frozen=True)
@@ -124,6 +241,7 @@ class CriterionContext:
     as_of: datetime
     inputs: dict[str, Any]  # applicability namespace: stage_band, size_band, direct_urls, ...
     omitted_evidence: int = 0
+    targets: TargetStates = field(default_factory=TargetStates)
 
     @property
     def admissible_support(self) -> list[FrozenLink]:
@@ -169,6 +287,7 @@ class CriterionState:
     caps_applied: list[str] = field(default_factory=list)
     adjustments: list[str] = field(default_factory=list)
     best_rung_rank: int = 0
+    confidence_components: dict[str, float] = field(default_factory=dict)
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -224,9 +343,9 @@ class AssessmentState:
     score_before_caps: float | None = None
     confidence_pct: float | None = None
     effectiveness: float | None = None
-    pillar_scores: dict[str, tuple[float, float, int, int]] = field(
+    pillar_scores: dict[str, tuple[float, float, int, int, str | None]] = field(
         default_factory=dict
-    )  # code -> (score, conf, counted, excluded)
+    )  # code -> (score, confidence, counted, excluded, maturity status)
     outcome_status: str | None = None
     gate_reasons: list[str] = field(default_factory=list)
     review_triggers: list[str] = field(default_factory=list)

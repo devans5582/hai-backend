@@ -20,9 +20,11 @@ decisions:
     status: open
     recommendation: Confidence only in v1, so Purpose and Impact are not made secondary.
     current: >-
-      Confidence only (spec recommendation). scoring.pillar_aggregation is equal_mean.
-      Set it to materiality_weighted to reproduce the Phase 6 materiality-weighted pillar
-      means (legacy evidence-weighting.js:209-225). Confidence always uses materiality.
+      Both, since methodology 2.0.0. scoring.pillar_aggregation is materiality_weighted: the
+      published HAI Report (Rubric v2) computes pillar scores as materiality-weighted means of the
+      criterion ratios (Impact 5.8/15 and Accountability 8.6/20 reproduce only with the weights),
+      so the platform now matches the report customers have seen. Set equal_mean to return to the
+      spec recommendation. Confidence always uses materiality in aggregation.
     configured_in: ontology/methodology/methodology.yaml scoring.pillar_aggregation
 
   - id: D3
@@ -113,3 +115,51 @@ decisions:
       Reports use "HAI Score" and, once in the header, "Human Alignment Index". Code uses
       hai. The hyphenated form from the Phase 6 report prompt is not used.
     configured_in: ontology/methodology/methodology.yaml product
+
+  - id: D11
+    title: Pillar weights by company stage profile
+    needed_by: Methodology 2.1
+    status: open
+    recommendation: Supply the profile per stage band or confirm fixed weights.
+    current: >-
+      The HAI Report says "Results weighted by company stage profile" and shows, for a mature
+      organization, Trust 18, Accountability 20, Purpose 12, Safety 18, Transparency 17 and
+      Impact 15 of 100 instead of the fixed 20, 15, 15, 15, 15, 20. The profiles lived in the
+      Phase 6 front-end bundle, which is not in this repository. scoring.pillar_weight_profiles
+      carries the observed mature profile and runs in mode fixed until the other profiles are
+      known; switching the mode is a methodology change.
+    configured_in: ontology/methodology/methodology.yaml scoring.pillar_weight_profiles
+
+  - id: D12
+    title: The seven focus areas and the structured evidence behind them
+    needed_by: Methodology 2.1
+    status: open
+    recommendation: Confirm the criterion mapping and the vocabularies; decide which areas become criteria.
+    current: >-
+      The seven areas of the 2026-11-09 change request are a vocabulary (focus_area). Criteria
+      list the areas they bear on (a draft cross-reference), supporting links are tagged with one
+      area by lexicon, and the report shows coverage per area. Structured evidence has entities
+      and fields: Control.capabilities, TestOutcome.method, capabilities_exercised and
+      threats_exercised, AISystem.autonomy_level and monitoring_mode, the incident response
+      timeline on Incident, and ImpactMeasure with impact_evidence_kind. Three rules act on them
+      (CAP-UNEXERCISED-CAPABILITY, GATE-INCIDENT-RESPONSE, GATE-SELF-REPORTED-MONITORING); the
+      first caps a level, the other two route to review. None of this changes pillar or
+      criterion weights. The public-evidence pipeline populates the tags; the structured rows
+      come from uploads, the API and reviewers.
+    configured_in: ontology/vocabularies/focus_area.yaml, criteria/*.yaml focus_areas, rules.yaml
+
+  - id: D13
+    title: Confidence model
+    needed_by: Methodology 2.0 sign-off
+    status: open
+    recommendation: Approve the published components model; retire the Phase 6 multiplicative model.
+    current: >-
+      confidence.model is components, the decomposition Humaital publishes in every report:
+      source credibility 40, evidence type 30, cross-source validation 20, recency 10. Each
+      component is read from the frozen links (best source tier, best rung credit, distinct
+      sources counted once, mean freshness decay); contradiction, omission and second-opinion
+      penalties still apply. The rung credits of the evidence type component rise strictly from
+      stated commitment to independent verification (draft values). legacy_contribution keeps
+      the Phase 6 model for comparison. A website-only organization with policy-level quotes
+      lands near 40, which is what the published report shows for that profile.
+    configured_in: ontology/methodology/methodology.yaml confidence.model, confidence.components

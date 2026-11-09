@@ -18,7 +18,7 @@ from uuid import UUID
 from sqlalchemy import Connection, text
 
 from hai_core.db.store import Store
-from hai_core.generated.enums import Admissibility, CoverageState, OutcomeStatus, PillarCode
+from hai_core.generated.enums import Admissibility, CoverageState, MaturityStatus, OutcomeStatus, PillarCode
 from hai_core.generated.models import (
     Assessment,
     AssessmentResult,
@@ -28,7 +28,18 @@ from hai_core.generated.models import (
     PillarScore,
 )
 from hai_engine.packs import build_all_packs
-from hai_engine.rules.context import ConnectorSummary, CriterionContext, FrozenFinding, FrozenIncident, FrozenLink
+from hai_engine.rules.context import (
+    ConnectorSummary,
+    CriterionContext,
+    FrozenControl,
+    FrozenFinding,
+    FrozenImpactMeasure,
+    FrozenIncident,
+    FrozenLink,
+    FrozenSystem,
+    FrozenTestOutcome,
+    TargetStates,
+)
 from hai_engine.rules.engine import EngineResult, RuleEngine
 from hai_ontology.meta import Manifest
 
@@ -108,6 +119,9 @@ def frozen_links(snapshot: EvidenceSnapshot, overlay: ReviewOverlay) -> list[Fro
                 quote=str(st["quote"]),
                 canonical_url=st.get("canonical_url"),
                 document_title=st.get("document_title"),
+                target_type=str(st.get("target_type") or "organization"),  # hai-codes: ok - target_type value
+                target_id=str(st["target_id"]) if st.get("target_id") else None,
+                focus_area=st.get("focus_area"),
             )
         )
     return out
@@ -122,9 +136,69 @@ def frozen_incidents(snapshot: EvidenceSnapshot, overlay: ReviewOverlay) -> list
             most_material_criterion=st.get("most_material_criterion"),
             occurred_at=_date(st.get("occurred_at")),
             title=st.get("title"),
+            detected_at=_date(st.get("detected_at")),
+            disclosed_at=_date(st.get("disclosed_at")),
+            contained_at=_date(st.get("contained_at")),
+            corrected_at=_date(st.get("corrected_at")),
+            correction_verified_at=_date(st.get("correction_verified_at")),
+            correction_verified_by=st.get("correction_verified_by"),
+            containment_threat=st.get("containment_threat"),
         )
         for incident_id, st in snapshot.incident_states.items()
     ]
+
+
+def frozen_targets(snapshot: EvidenceSnapshot) -> TargetStates:
+    """Controls, tests, systems and impact measures frozen with the snapshot (empty for older snapshots)."""
+    raw: dict[str, Any] = snapshot.target_states if isinstance(snapshot.target_states, dict) else {}
+    controls = {
+        str(cid): FrozenControl(
+            control_id=str(cid),
+            name=str(c.get("name") or ""),
+            capabilities=tuple(str(x) for x in c.get("capabilities") or []),
+            monitoring_mode=c.get("monitoring_mode"),
+            operational_status=str(c.get("operational_status") or "unknown"),
+            can_pause_or_rollback=c.get("can_pause_or_rollback"),
+            ai_system_id=c.get("ai_system_id"),
+        )
+        for cid, c in (raw.get("controls") or {}).items()
+    }
+    tests = tuple(
+        FrozenTestOutcome(
+            test_id=str(t.get("id")),
+            control_id=str(t.get("control_id")),
+            result=str(t.get("result")),
+            method=t.get("method"),
+            capabilities_exercised=tuple(str(x) for x in t.get("capabilities_exercised") or []),
+            threats_exercised=tuple(str(x) for x in t.get("threats_exercised") or []),
+            performed_at=_date(t.get("performed_at")),
+            verifier_org_id=t.get("verifier_org_id"),
+        )
+        for t in raw.get("test_outcomes") or []
+    )
+    systems = {
+        str(sid): FrozenSystem(
+            system_id=str(sid),
+            name=str(v.get("name") or ""),
+            autonomy_level=v.get("autonomy_level"),
+            monitoring_mode=v.get("monitoring_mode"),
+            criticality=v.get("criticality"),
+        )
+        for sid, v in (raw.get("ai_systems") or {}).items()
+    }
+    measures = tuple(
+        FrozenImpactMeasure(
+            measure_id=str(m.get("id")),
+            kind=str(m.get("kind")),
+            outcome=str(m.get("outcome") or ""),
+            verifier_org_id=m.get("verifier_org_id"),
+            measured_at=_date(m.get("measured_at")),
+            period_months=int(m["period_months"]) if m.get("period_months") is not None else None,
+            ai_system_id=m.get("ai_system_id"),
+        )
+        for m in raw.get("impact_measures") or []
+    )
+    return TargetStates(controls=controls, tests=tests, systems=systems, impact_measures=measures)
 
 
 def connector_summaries(snapshot: EvidenceSnapshot) -> tuple[ConnectorSummary, ...]:
@@ -148,6 +222,7 @@ def build_contexts(
     links = frozen_links(snapshot, overlay)
     incidents = frozen_incidents(snapshot, overlay)
     runs = connector_summaries(snapshot)
+    targets = frozen_targets(snapshot)
     inputs = {
         "stage_band": assessment.stage_band.value
         if hasattr(assessment.stage_band, "value")
@@ -182,6 +257,7 @@ def build_contexts(
                 as_of=snapshot.frozen_at,
                 inputs=inputs,
                 omitted_evidence=(omitted or {}).get(criterion.code, 0),
+                targets=targets,
             )
         )
     return out
@@ -357,6 +433,7 @@ class DecisionService:
                     "admissible_contradicting": [link.link_id for link in outcome.context.admissible_contradicting],
                     "incidents": [i.incident_id for i in outcome.context.incidents],
                     "omitted_evidence": outcome.context.omitted_evidence,
+                    "confidence_components": dict(outcome.state.confidence_components),
                 },
                 "caps_applied": list(outcome.state.caps_applied),
                 "adjustments": list(outcome.state.adjustments),
@@ -379,7 +456,7 @@ class DecisionService:
             for p in self._latest_pillars(store, assessment.id)
         }
         pillar_rows: list[PillarScore] = []
-        for code, (score, confidence, counted, excluded) in engine_result.state.pillar_scores.items():
+        for code, (score, confidence, counted, excluded, status) in engine_result.state.pillar_scores.items():
             row_p = PillarScore(
                 assessment_id=assessment.id,
                 pillar_code=PillarCode(code),
@@ -387,6 +464,7 @@ class DecisionService:
                 confidence=confidence,
                 criteria_counted=counted,
                 criteria_excluded=excluded,
+                status=MaturityStatus(status) if status else None,
             )
             prev_p = previous_pillars.get(code)
             pillar_rows.append(

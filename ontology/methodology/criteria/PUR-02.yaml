@@ -6,6 +6,8 @@
 # and indicator ids (openai.js:52-134).
 # TODO(humaital): replace definition, the five level descriptors and the indicator
 # labels with the canonical methodology text, then set content_status: approved.
+# focus_areas (change request 2026-11-09) is a draft cross-reference to the seven
+# areas; confirm it with the canonical text.
 criterion:
   code: PUR-02
   pillar: PUR
@@ -21,6 +23,8 @@ criterion:
     - organization
     - claim
   applicability: []
+  focus_areas:
+    - human_benefit
   levels:
     - level: 1
       required_maturity_rung: none

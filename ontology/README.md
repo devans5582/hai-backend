@@ -6,8 +6,8 @@ assessments is defined here in YAML and generated from here into SQL, Python,
 TypeScript, JSON Schema and documentation. Nothing in the generated files is
 edited by hand.
 
-Current versions: ontology `1.0.0`, methodology
-`1.0.0` (status `draft`), ruleset `1.0.0`.
+Current versions: ontology `1.1.0`, methodology
+`2.0.0` (status `draft`), ruleset `1.1.0`.
 
 ## Contents
 
@@ -31,12 +31,12 @@ Current versions: ontology `1.0.0`, methodology
 
 | Path | Contents |
 |---|---|
-| `ontology.yaml` | header, the four layers, database roles, 30 entities with fields, the relation catalogue (33 relations), integrity constraints IC-01 to IC-18, acceptance tests AT-01 to AT-15 |
-| `vocabularies/*.yaml` | 34 closed vocabularies, one per file, with labels, descriptions, optional attributes and state transitions |
+| `ontology.yaml` | header, the four layers, database roles, 31 entities with fields, the relation catalogue (36 relations), integrity constraints IC-01 to IC-19, acceptance tests AT-01 to AT-16 |
+| `vocabularies/*.yaml` | 42 closed vocabularies, one per file, with labels, descriptions, optional attributes and state transitions |
 | `methodology/methodology.yaml` | scoring, confidence, certification, outcome, freshness, review triggers, lexicons |
 | `methodology/pillars.yaml` | the six pillars and their weights |
 | `methodology/criteria/<CODE>.yaml` | one file per criterion: definition, materiality, freshness window, target types, applicability, five level descriptors |
-| `methodology/rules.yaml` | the ruleset: 16 rules with kind, scope, run order and parameters |
+| `methodology/rules.yaml` | the ruleset: 19 rules with kind, scope, run order and parameters |
 | `methodology/decisions.yaml` | open decisions D1 to D10 with the current behaviour |
 | `methodology/crosswalks.yaml` | draft mapping to the EU AI Act, NIST AI RMF and ISO/IEC 42001 (not part of scoring) |
 | `examples/valid/`, `examples/invalid/` | sample records checked by the validator and CI |
@@ -211,7 +211,7 @@ flowchart LR
 flowchart TB
     classDef red fill:#D41920,stroke:#A8141A,color:#ffffff
     classDef blue fill:#eef3fb,stroke:#1e5aa8,color:#1a1a1f
-    MV["MethodologyVersion 1.0.0<br/>status draft<br/>ruleset 1.0.0, 16 rules"]:::red
+    MV["MethodologyVersion 2.0.0<br/>status draft<br/>ruleset 1.1.0, 19 rules"]:::red
     TRU["Trust (TRU)<br/>weight 0.2<br/>TRU-01, TRU-02, TRU-03, TRU-04"]:::blue
     MV --> TRU
     ACC["Accountability (ACC)<br/>weight 0.15<br/>ACC-01, ACC-02, ACC-03"]:::blue

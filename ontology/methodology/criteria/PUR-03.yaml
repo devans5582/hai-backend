@@ -21,6 +21,7 @@ criterion:
     - organization
     - claim
   applicability: []
+  focus_areas: []
   levels:
     - level: 1
       required_maturity_rung: none

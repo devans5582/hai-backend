@@ -7,3 +7,4 @@ vocabulary:
     - { code: ai_system, label: AI system, description: A named system. }
     - { code: control, label: Control, description: A governance control. }
     - { code: incident, label: Incident, description: An incident. }
+    - { code: impact_measure, label: Impact measure, description: A claimed human outcome. }

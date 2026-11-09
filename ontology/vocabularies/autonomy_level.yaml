@@ -1,0 +1,10 @@
+vocabulary:
+  code: autonomy_level
+  title: Autonomy level
+  description: "How independently an AI system acts (focus area autonomous_monitoring). Higher autonomy raises the bar for monitoring and containment evidence; it does not change weights."
+  ordered: true
+  values:
+    - { code: assistive, label: Assistive, rank: 0, description: Recommends or drafts; a person takes every action. }
+    - { code: supervised, label: Supervised, rank: 1, description: "Acts, with a person approving or reviewing actions as they happen." }
+    - { code: bounded_autonomous, label: Bounded autonomous, rank: 2, description: Acts on its own within defined boundaries and budgets; people review after the fact. }
+    - { code: open_autonomous, label: Open autonomous, rank: 3, description: Acts on its own across open-ended tasks and tools. }

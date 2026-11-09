@@ -1,10 +1,10 @@
-# Ruleset 1.0.0. Rules are data; implementations are pure Python functions in
+# Ruleset 1.1.0. Rules are data; implementations are pure Python functions in
 # hai_engine.rules.builtin registered under the same code. The validator refuses
 # an expression_ref that does not resolve to a function registered under the code.
 # Criterion-scope rules run in run_order for every criterion; assessment-scope
 # rules run once afterwards. Every run is recorded in the decision trace (IC-14).
 ruleset:
-  version: 1.0.0
+  version: 1.1.0
   rules:
     # --------------------------------------------------------------- criterion
     - code: GATE-APPLICABILITY
@@ -50,12 +50,33 @@ ruleset:
       expression_ref: hai_engine.rules.builtin:cap_failed_execution
       description: A failed test outcome caps the level at the specified_control level.
       parameters: { cap_level: 3 }
+    - code: CAP-UNEXERCISED-CAPABILITY
+      kind: cap
+      scope: criterion
+      run_order: 65
+      expression_ref: hai_engine.rules.builtin:cap_unexercised_capability
+      description: "A control that claims it can pause, shut down, roll back or isolate a system, with no passing test outcome that exercised the capability, is a documented control, not a verified one: the level is capped at cap_level and the criterion is flagged for review (IC-19, focus area control_verification)."
+      parameters: { cap_level: 3, capabilities: [pause, shutdown, rollback, isolate] }
     - code: GATE-UNVERIFIED-INCIDENTS
       kind: gate
       scope: criterion
       run_order: 70
       expression_ref: hai_engine.rules.builtin:gate_unverified_incidents
       description: Alleged or under-investigation incidents targeting this criterion route it to review with no automatic effect (IC-11).
+      parameters: {}
+    - code: GATE-INCIDENT-RESPONSE
+      kind: gate
+      scope: criterion
+      run_order: 75
+      expression_ref: hai_engine.rules.builtin:gate_incident_response
+      description: "A substantiated incident on this criterion whose correction is not recorded, or recorded but not independently verified, routes the criterion to review. No automatic effect beyond ADJ-INCIDENTS (focus area incident_response)."
+      parameters: {}
+    - code: GATE-SELF-REPORTED-MONITORING
+      kind: gate
+      scope: criterion
+      run_order: 76
+      expression_ref: hai_engine.rules.builtin:gate_self_reported_monitoring
+      description: "When every admissible supporting link targets a system or control whose only observability is the AI system's own explanations, the criterion is flagged for review (focus area independent_auditability)."
       parameters: {}
     - code: ADJ-INCIDENTS
       kind: adjustment
@@ -69,7 +90,7 @@ ruleset:
       scope: criterion
       run_order: 90
       expression_ref: hai_engine.rules.builtin:conf_evidence
-      description: "Confidence from admissible supporting links: tier x class x rung credit x materiality x freshness decay x base, clusters counted once (IC-09), plus corroboration, execution and omission terms."
+      description: "Confidence from admissible supporting links. components model (methodology.confidence.model): source credibility, evidence type, cross-source validation and recency weighted as published, clusters counted once (IC-09), minus omission and second-opinion penalties. legacy_contribution: tier x class x rung credit x materiality x decay x base plus corroboration and execution terms."
       parameters: {}
     - code: CONF-CONTRADICTION
       kind: confidence
@@ -105,14 +126,14 @@ ruleset:
       scope: assessment
       run_order: 220
       expression_ref: hai_engine.rules.builtin:gate_review_triggers
-      description: "Collect review triggers: contradictory criteria, unverified incidents, borderline confidence, certification request, second-opinion disagreement."
+      description: "Collect review triggers: contradictory criteria, unverified incidents, borderline confidence, certification request, second-opinion disagreement, unexercised capabilities, unverified corrections, self-reported monitoring."
       parameters: {}
     - code: GATE-CERTIFICATION
       kind: gate
       scope: assessment
       run_order: 230
       expression_ref: hai_engine.rules.builtin:gate_certification
-      description: Compare the score and confidence with the threshold in force (decision D3) and record gate reasons.
+      description: "Compare the score and confidence with the threshold in force (decision D3), require admissible evidence in every pillar when configured, and record gate reasons."
       parameters: {}
     - code: GATE-OUTCOME-STATUS
       kind: gate

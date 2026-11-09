@@ -1,0 +1,14 @@
+{
+  "entity": "Incident",
+  "description": "IC-19: a correction dated as verified without a verifier is refused.",
+  "expect_error": "IC-19",
+  "record": {
+    "canonical_event_key": "acme.example:2026-03:data-breach",
+    "org_id": "22222222-2222-4222-8222-222222222222",
+    "title": "Reported data exposure in an AI support tool",
+    "severity": "high",
+    "status": "substantiated",
+    "corrected_at": "2026-04-10",
+    "correction_verified_at": "2026-05-01"
+  }
+}

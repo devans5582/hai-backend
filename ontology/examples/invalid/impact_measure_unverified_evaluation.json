@@ -1,0 +1,10 @@
+{
+  "entity": "ImpactMeasure",
+  "description": "CK-IMPACT-VERIFIER: an independently evaluated measure must name its verifier.",
+  "expect_error": "CK-IMPACT-VERIFIER",
+  "record": {
+    "org_id": "22222222-2222-4222-8222-222222222222",
+    "kind": "independently_evaluated",
+    "outcome": "Waiting time fell."
+  }
+}

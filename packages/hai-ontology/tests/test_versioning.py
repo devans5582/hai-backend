@@ -61,7 +61,7 @@ def test_label_change_is_patch(manifest: Manifest, copy: Path) -> None:
     assert required_bump(changes, "ontology") is ChangeLevel.PATCH
     results = {r.scope: r for r in check_bump(manifest, load_manifest(copy))}
     assert results["ontology"].ok is False  # version did not move
-    _edit(copy / "ontology.yaml", "version: 1.0.0", "version: 1.0.1")
+    _edit(copy / "ontology.yaml", f"version: {manifest.ontology_version}", "version: 9.9.9")
     results = {r.scope: r for r in check_bump(manifest, load_manifest(copy))}
     assert results["ontology"].ok is True
 
@@ -164,6 +164,6 @@ def test_new_criterion_is_minor(manifest: Manifest, copy: Path) -> None:
 
 
 def test_version_going_backwards_fails(manifest: Manifest, copy: Path) -> None:
-    _edit(copy / "ontology.yaml", "version: 1.0.0", "version: 0.9.0")
+    _edit(copy / "ontology.yaml", f"version: {manifest.ontology_version}", "version: 0.9.0")
     results = {r.scope: r for r in check_bump(manifest, load_manifest(copy))}
     assert results["ontology"].ok is False

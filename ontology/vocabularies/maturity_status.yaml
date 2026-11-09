@@ -1,0 +1,11 @@
+vocabulary:
+  code: maturity_status
+  title: Maturity status
+  description: "The pillar status shown in reports, derived by the engine from the maturity rungs of the pillar's counted criteria: the rung reached by at least half of them. Wording is from the Humaital HAI Report (Rubric v2) status definitions. min_maturity_rung is the lowest rung that earns the status."
+  ordered: true
+  attributes: { min_maturity_rung: string, report_wording: string }
+  values:
+    - { code: needs_attention, label: Needs Attention, rank: 0, description: No verifiable evidence found across policy or execution layers., attributes: { min_maturity_rung: none, report_wording: "No verifiable evidence found across policy or execution layers." } }
+    - { code: developing, label: Developing, rank: 1, description: Evidence exists at policy level but lacks execution proof., attributes: { min_maturity_rung: stated_commitment, report_wording: "Evidence exists at policy level but lacks execution proof." } }
+    - { code: progressing, label: Progressing, rank: 2, description: Policy and execution evidence present; independent validation is missing., attributes: { min_maturity_rung: documented_execution, report_wording: "Policy and partial execution evidence present; gaps remain." } }
+    - { code: strong, label: Strong, rank: 3, description: "Policy, execution and independent validation evidence all identified.", attributes: { min_maturity_rung: independently_verified, report_wording: "Policy, execution, and validation evidence all identified." } }

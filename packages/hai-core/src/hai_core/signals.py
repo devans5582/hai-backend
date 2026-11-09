@@ -88,6 +88,20 @@ class SignalMatcher:
     def injection_terms(self, text: str) -> list[str]:
         return find_terms(text, self.lex.injection.terms)
 
+    # ------------------------------------------------------------ focus areas
+    def focus_areas(self, text: str) -> tuple[str, ...]:
+        """Every focus area whose lexicon matches the text, in manifest order."""
+        return tuple(area for area, terms in self.lex.focus_areas.items() if find_terms(text, terms.terms))
+
+    def focus_area_for(self, text: str, criterion: CriterionDef) -> str | None:
+        """The first matching focus area the criterion lists, or None. Reporting only."""
+        if not criterion.focus_areas:
+            return None
+        for area in self.focus_areas(text):
+            if area in criterion.focus_areas:
+                return area
+        return None
+
     def hint_matches(self, text: str, criterion: CriterionDef) -> list[str]:
         return find_terms(text, criterion.retrieval_hints)
 

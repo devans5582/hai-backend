@@ -53,8 +53,8 @@ ontology-diff: ## Classify every change against BASE
 migrate-plan: ## Additive SQL for the changes against BASE
 	$(UV) run hai-ontology migrate-plan $(BASE) ontology
 
-baseline: ## Rewrite db/migrations/0001_ontology_baseline.sql from the manifest
-	$(UV) run hai-ontology baseline -o db/migrations/0001_ontology_baseline.sql
+baseline: ## Print the full schema for the current manifest (0001 is frozen; ship deltas from migrate-plan)
+	$(UV) run hai-ontology baseline -o db/generated/ontology_schema.sql
 
 # ------------------------------------------------------------------ database
 db: ## Start a throwaway Postgres 16 in Docker on DB_PORT (default 55432)

@@ -1,0 +1,12 @@
+vocabulary:
+  code: control_capability
+  title: Control capability
+  description: "What a control can do to a running AI system (focus area control_verification). A claimed capability counts as documented execution only once a test outcome shows it was exercised."
+  attributes: { halts_system: boolean }
+  values:
+    - { code: pause, label: Pause, description: Suspend the system's operation while keeping its state., attributes: { halts_system: true } }
+    - { code: shutdown, label: Shut down, description: Stop the system entirely., attributes: { halts_system: true } }
+    - { code: rollback, label: Roll back, description: Return the system to an earlier version or state., attributes: { halts_system: true } }
+    - { code: override, label: Human override, description: A person can overrule or replace the system's decision., attributes: { halts_system: false } }
+    - { code: isolate, label: Isolate, description: "Cut the system off from resources, networks or other systems.", attributes: { halts_system: true } }
+    - { code: rate_limit, label: Rate limit, description: Bound how much or how fast the system may act., attributes: { halts_system: false } }

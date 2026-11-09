@@ -17,3 +17,4 @@ One file per decision. Status is accepted unless noted.
 * [0013](./0013-what-if-simulator-replay.md) Extension Point: What-If Simulator Through Replay
 * [0014](./0014-reviewer-copilot-and-due-diligence-packs.md) Extension Point: Reviewer Copilot And Due Diligence Packs
 * [0015](./0015-console-accounts-roles-and-visibility.md) Console Accounts, Roles And Organization Visibility
+* [0016](./0016-focus-areas-and-scoring-review.md) The Seven Focus Areas And The Scoring Review

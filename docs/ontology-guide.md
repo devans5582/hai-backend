@@ -17,7 +17,7 @@ ontology/
     pillars.yaml             six pillars and weights
     criteria/<CODE>.yaml     one file per criterion
     rules.yaml               ruleset: codes, kinds, order, parameters, expression refs
-    decisions.yaml           D1 to D10 with current behaviour
+    decisions.yaml           D1 to D13 with current behaviour
   examples/valid/*.json      records that must validate
   examples/invalid/*.json    records that must fail with the named error code
   CHANGELOG.md
@@ -114,6 +114,37 @@ criterion:
 Source tier never sets maturity. The rules engine reads the rung from the
 frozen link; the classifier set it from the quote and the publisher only.
 
+## Focus Areas (Change Request 2026-11-09)
+
+The seven areas Humaital asked the methodology to look at more closely are a
+vocabulary, `focus_area`: control_verification, autonomous_monitoring,
+containment_security, evidence_basis (cross-cutting, applied through the
+ladder), incident_response, independent_auditability and human_benefit.
+Criteria list `focus_areas` (a draft cross-reference); supporting links are
+tagged with one area from `lexicons.focus_areas`; the report shows coverage
+per area. Areas never change a weight.
+
+Structured evidence behind the areas: `Control.capabilities` and
+`TestOutcome.method`, `capabilities_exercised`, `threats_exercised`
+(verification and containment), `AISystem.autonomy_level` and
+`monitoring_mode` with the `observability` vocabulary (autonomous monitoring,
+auditability), the incident response timeline on `Incident`, and the
+`ImpactMeasure` entity with `impact_evidence_kind` (human benefit). The
+snapshot freezes them as `target_states`, so the rules
+`CAP-UNEXERCISED-CAPABILITY`, `GATE-INCIDENT-RESPONSE` and
+`GATE-SELF-REPORTED-MONITORING` read only the snapshot (IC-19, AT-16).
+
+## Scoring And Confidence (Methodology 2.0.0)
+
+* `scoring.pillar_aggregation`: materiality_weighted (decision D2).
+* `scoring.pillar_weight_profiles`: weights per stage band; mode fixed (D11).
+* `confidence.model`: components, with `confidence.components` holding the
+  published weights and `evidence_type_credit` per rung (D13);
+  legacy_contribution keeps the Phase 6 model.
+* `certification.require_evidence_in_every_pillar`.
+* `report.evidence_strength_labels` and the `maturity_status` vocabulary
+  (pillar status with the report's wording).
+
 ## Coverage States
 
 | State | In score | Report wording |
@@ -128,7 +159,7 @@ frozen link; the classifier set it from the quote and the publisher only.
 
 ## Acceptance Tests
 
-`ontology.yaml` lists AT-01 to AT-15 with the test functions that prove each
+`ontology.yaml` lists AT-01 to AT-16 with the test functions that prove each
 one. The mapping is checked by `tests/test_acceptance_tests_are_mapped.py` and
 rendered in `docs/architecture.md`.
 
@@ -146,10 +177,13 @@ names a real criterion and framework.
 2. `make ontology-validate` then `make codegen`. Commit the generated files.
 3. `make check-bump BASE=git:origin/main` reports whether the version moved
    far enough: patch for labels and wording, minor for a new value, optional
-   field, entity or criterion, major for a removal, rename, type change, new
-   required field, weight change or ladder change.
+   field, entity, criterion or extended relation, major for a removal, rename,
+   type change, new required field, weight change or ladder change.
 4. `make migrate-plan` emits additive SQL for minor changes and refuses
-   breaking ones without `--allow-breaking`.
+   breaking ones without `--allow-breaking`. Save it as the next numbered
+   file under `db/migrations/`; `0001` is the frozen baseline and
+   `db/generated/ontology_schema.sql` is the full current schema for
+   reference.
 5. Record the change in `ontology/CHANGELOG.md`. A methodology content change
    needs a Humaital change record before `methodology.status` becomes
    approved. Rescoring under a new methodology is a new assessment; history is

@@ -47,7 +47,10 @@ class Outputs:
 
     @property
     def sql_baseline(self) -> Path:
-        return self.root / "db" / "migrations" / "0001_ontology_baseline.sql"
+        """The full schema for the current manifest. Reference only: db/migrations/0001 is the
+        baseline that was applied and is never rewritten; later versions ship numbered deltas
+        from ``hai-ontology migrate-plan``."""
+        return self.root / "db" / "generated" / "ontology_schema.sql"
 
     @property
     def python_dir(self) -> Path:

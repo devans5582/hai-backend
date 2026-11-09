@@ -1,0 +1,17 @@
+{
+  "entity": "ImpactMeasure",
+  "description": "An independently evaluated outcome measure with a named verifier (focus area human_benefit).",
+  "record": {
+    "org_id": "22222222-2222-4222-8222-222222222222",
+    "kind": "independently_evaluated",
+    "outcome": "Triage waiting time for patients fell after the assistant was deployed.",
+    "metric": "Median minutes from arrival to triage decision",
+    "unit": "minutes",
+    "baseline_value": 42,
+    "measured_value": 27,
+    "population": "Three emergency departments, 18,400 patients",
+    "measured_at": "2026-06-30",
+    "period_months": 6,
+    "verifier_org_id": "33333333-3333-4333-8333-333333333333"
+  }
+}

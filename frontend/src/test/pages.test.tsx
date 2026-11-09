@@ -34,11 +34,11 @@ const REPORT = {
   organization: { id: ASSESSMENT.org_id, name: "Acme Corp", legal_name: "Acme Corp", domain: "acme.example", industry_code: "Software" },
   result: { hai_score: 42.5, confidence_pct: 61.2, effectiveness: 25, outcome_status: "confidence_too_low", outcome_label: "Confidence too low", gate_reasons: ["confidence 61.2 below minimum 70"], review_triggers: [], caps_applied: [] },
   pillars: [
-    { code: "TRU", name: "Trust", weight: 0.2, score: 50, confidence: 60, criteria_counted: 4, criteria_excluded: 0 },
-    { code: "SAF", name: "Safety", weight: 0.15, score: 33.3, confidence: 70, criteria_counted: 2, criteria_excluded: 1 },
+    { code: "TRU", name: "Trust", weight: 0.2, score: 50, confidence: 60, criteria_counted: 4, criteria_excluded: 0, status: "developing", status_label: "Developing", status_wording: "Evidence exists at policy level but lacks execution proof." },
+    { code: "SAF", name: "Safety", weight: 0.15, score: 33.3, confidence: 70, criteria_counted: 2, criteria_excluded: 1, status: "progressing", status_label: "Progressing", status_wording: "Policy and partial execution evidence present; gaps remain." },
   ],
   criteria: [
-    { code: "SAF-01", name: "Risk Mitigation", pillar: "SAF", definition: "d", content_status: "draft", level: 3, level_descriptor: "x", coverage_state: "observed", coverage_wording: "Assessed from admissible evidence.", confidence: 70, review_required: false, applied_rule_codes: ["GATE-COVERAGE"], evidence: [], decision_id: "d1" },
+    { code: "SAF-01", name: "Risk Mitigation", pillar: "SAF", definition: "d", content_status: "draft", level: 3, level_descriptor: "x", coverage_state: "observed", coverage_wording: "Assessed from admissible evidence.", confidence: 70, review_required: false, applied_rule_codes: ["GATE-COVERAGE"], evidence: [], evidence_basis: {}, best_rung: null, focus_areas: [], confidence_components: {}, decision_id: "d1" },
     { code: "SAF-02", name: "User Protection Mechanisms", pillar: "SAF", definition: "d", content_status: "draft", level: null, level_descriptor: null, coverage_state: "unavailable", coverage_wording: "Sources could not be reached. This is an access limitation, not a governance gap.", confidence: 0, review_required: false, applied_rule_codes: ["GATE-COVERAGE"], evidence: [], decision_id: "d2" },
   ],
   coverage_summary: { observed: 1, unavailable: 1 },
@@ -46,6 +46,13 @@ const REPORT = {
   sources: [],
   execution_notes: [],
   snapshot: { id: "s", frozen_at: "2026-10-24T12:05:00Z", sha256: "abc123def456abc123", links: 6 },
+  evidence_basis: { by_rung: { none: 0, stated_commitment: 1, specified_control: 0, documented_execution: 1, independently_verified: 0 }, labels: { none: "None", stated_commitment: "Stated commitment", specified_control: "Specified control", documented_execution: "Documented execution", independently_verified: "Independently verified" }, criteria_counted: 2 },
+  evidence_strength: { core_governance: { label: "Core governance", criteria_with_evidence: 1, share: 0.5, strength: "Emerging" } },
+  focus_areas: [{ code: "control_verification", label: "Verification of AI controls", question: "Do the controls work?", cross_cutting: false, criteria: ["SAF-01"], links: 1, by_rung: {}, best_rung: "documented_execution", best_rung_label: "Documented execution" }],
+  verification: { controls: [], tests_by_method: {}, threats_exercised: {}, ai_systems: [], controls_with_unexercised_capabilities: 0 },
+  incident_response: [],
+  impact_measures: { items: [], by_kind: {}, demonstrated_benefit: 0, total: 0 },
+  confidence_methodology: { model: "components", source: "HAI Report", weights: { source_credibility: 0.4, evidence_type: 0.3, cross_source_validation: 0.2, recency: 0.1 }, evidence_type_credit: {} },
   drafts_notice: "Criterion definitions marked draft are placeholders.",
 };
 

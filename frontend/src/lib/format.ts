@@ -1,4 +1,4 @@
-import { ATTRIBUTES, LABELS, type LifecycleState, type OutcomeStatus } from "../generated/ontology";
+import { ATTRIBUTES, LABELS, type LifecycleState, type MaturityRung, type MaturityStatus, type OutcomeStatus } from "../generated/ontology";
 
 export function label(vocabulary: string, code: string | null | undefined): string {
   if (!code) return "";
@@ -77,6 +77,30 @@ export function lifecycleGroup(state: LifecycleState | string) {
 
 export function isTerminal(state: LifecycleState): boolean {
   return Boolean(ATTRIBUTES["lifecycle_state"]?.[state]?.["terminal"]);
+}
+
+const STATUS_TONE: Record<MaturityStatus, Tone> = {
+  needs_attention: "bad",
+  developing: "warn",
+  progressing: "info",
+  strong: "ok",
+};
+
+// How far up the ladder a piece of evidence climbs, as a badge tone. Keys are the generated union.
+const RUNG_TONE: Record<MaturityRung, Tone> = {
+  none: "bad",
+  stated_commitment: "warn",
+  specified_control: "warn",
+  documented_execution: "info",
+  independently_verified: "ok",
+};
+
+export function toneForRung(rung: MaturityRung | string | null | undefined): Tone {
+  return (rung && RUNG_TONE[rung as MaturityRung]) || "info";
+}
+
+export function toneForStatus(status: MaturityStatus | string | null | undefined): Tone {
+  return (status && STATUS_TONE[status as MaturityStatus]) || "info";
 }
 
 export function toneForOutcome(status: OutcomeStatus | string | null | undefined): Tone {

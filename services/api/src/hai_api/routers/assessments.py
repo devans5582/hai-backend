@@ -306,6 +306,8 @@ def _trace_for(
                         "char_start",
                         "char_end",
                         "connector_code",
+                        "target_type",
+                        "focus_area",
                     )
                 },
             }

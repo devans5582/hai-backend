@@ -89,7 +89,7 @@ hai-engine, then the services. The console talks only to the API.
 
 ## Data Layers
 
-The manifest defines 30 entities in four layers (see `ontology/ontology.yaml`).
+The manifest defines 31 entities in four layers (see `ontology/ontology.yaml`).
 
 * Subject: Organization, OrganizationRelation, AISystem, Claim, Control,
   TestOutcome, Incident, Remediation.
@@ -235,6 +235,7 @@ table below maps each AT to test functions.
 | IC-16 | No source may be reported as collected unless a connector_run with succeeded exists for it. | report_generator | packages/hai-engine/src/hai_engine/reporting.py; hai_engine.reporting.collected_sources | AT-11 |
 | IC-17 | Crawled text is stored as data only and never concatenated into system instructions. | evaluation_worker | packages/hai-engine/src/hai_engine/packs.py and llm/prompts.py; hai_engine.llm.prompts.build_messages | AT-15 |
 | IC-18 | Each assessment pins ontology, methodology, ruleset, prompt and model versions; none may be null. | db_not_null | db/migrations/0001_ontology_baseline.sql (NOT NULL columns); generated NOT NULL on assessments.ontology_version, methodology_version, ruleset_version, prompt_version, model_id | AT-07 |
+| IC-19 | A claimed control capability counts as exercised only through a passing test outcome that operated it; an incident correction counts as verified only with a named verifier; an impact measure is independently evaluated only with a named verifier. | rules_engine | db/migrations/0004_ontology_1_1.sql (CHECK IC-19 on incidents, CK-IMPACT-VERIFIER on impact_measures); hai_engine.rules.builtin.cap_unexercised_capability (CAP-UNEXERCISED-CAPABILITY) | AT-16 |
 
 ## Acceptance Tests To Test Functions
 
@@ -258,6 +259,7 @@ named in the manifest does not exist.
 | AT-13 | Complete append-only ledger | `test_append_only_tables_refuse_updates` (tests/integration/test_core_platform.py); `test_news_items_carry_real_dates_and_publishers` (packages/hai-pipeline/tests/test_connectors.py) |
 | AT-14 | Review workflow | `test_escalation_and_four_eyes` (tests/integration/test_core_platform.py); `test_review_requires_reason` (services/api/tests/test_api.py) |
 | AT-15 | Tamper evidence and prompt isolation | `test_audit_tampering_is_detected` (tests/integration/test_core_platform.py); `test_every_write_is_audited_and_the_chain_verifies` (tests/integration/test_core_platform.py); `test_injection_never_reaches_the_model` (packages/hai-engine/tests/test_evaluation.py) |
+| AT-16 | Verification over assertion | `test_claimed_capability_without_exercise_is_capped`, `test_confidence_components_follow_the_published_weights`, `test_pillar_status_follows_the_rung_reached_by_half_the_criteria`, `test_incident_response_without_verified_correction_routes_to_review` (packages/hai-engine/tests/test_rules.py) |
 
 ## Authority And Authorization
 
@@ -334,6 +336,36 @@ seed also creates the demo owner `demo@humaital.com` / `demo`, advertised by
 email; invitation and reset links are shown once to the inviter, who passes
 them on. The console (`/login`, `/signup`, `/team`, `/settings`) renders what
 `GET /v1/auth/me` returns and never derives permissions itself.
+
+## Scoring Model (Methodology 2.0.0)
+
+Reviewed on 2026-11-09 against the published HAI Report (Rubric v2); ADR 0016.
+
+* Criterion ratio `(level - 1) / 4`; pillar score is the materiality-weighted
+  mean of its counted criteria times 100; the HAI Score is the pillar-weight
+  mean of the live pillars, capped at 85 and at 75 when confidence is below
+  70. Pillar weights come from `pillars.yaml` (a stage profile exists for
+  mature organizations and is recorded, not applied: decision D11).
+* Confidence per criterion is the published decomposition: source credibility
+  40 percent (best admissible source tier), evidence type 30 percent (best
+  rung, credits rising from stated commitment to independent verification),
+  cross-source validation 20 percent (distinct sources counted once, full at
+  three), recency 10 percent (mean freshness decay). Contradiction, omission
+  and second-opinion penalties still apply. The Phase 6 multiplicative model
+  remains available as `legacy_contribution`.
+* Pillar status (Needs Attention, Developing, Progressing, Strong) is the
+  rung reached by at least half of the pillar's counted criteria, stored on
+  `PillarScore.status`; the console renders it, never derives it.
+* Certification needs the threshold, the minimum confidence, no open review
+  trigger and admissible evidence in every pillar.
+* The seven focus areas are reported, never weighted: criteria list the areas
+  they bear on, supporting links are tagged by lexicon, and three rules act
+  on structured evidence (a claimed stop capability without a passing
+  exercise is capped at the documented-control level; an unverified
+  correction and self-reported monitoring route to review).
+* The published Microsoft report shows a headline of 85 with pillar scores
+  that sum to 45.8; the platform reports the aggregate the pillars actually
+  produce and shows the cap separately in `caps_applied`.
 
 ## Versioning And Reproducibility
 

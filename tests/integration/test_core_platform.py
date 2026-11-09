@@ -111,7 +111,7 @@ def test_methodology_is_seeded_from_yaml(clean_db: Database, manifest: Manifest)
         n_levels = conn.execute(text("SELECT count(*) FROM hai.level_descriptors")).scalar_one()
         n_rules = conn.execute(text("SELECT count(*) FROM hai.rules")).scalar_one()
         n_conn = conn.execute(text("SELECT count(*) FROM hai.connectors WHERE status = 'active'")).scalar_one()
-    assert (n_crit, n_levels, n_rules, n_conn) == (20, 100, 16, 9)
+    assert (n_crit, n_levels, n_rules, n_conn) == (20, 100, 19, 9)
     with clean_db.transaction("pytest", "hai_admin") as conn:
         counts = seed_methodology(conn, manifest)  # idempotent
     assert counts["criteria"] == 20

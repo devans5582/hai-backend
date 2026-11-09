@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any
 
-from hai_ontology.meta import Manifest
+from hai_ontology.meta import FKDef, Manifest
 
 __all__ = [
     "Change",
@@ -121,8 +121,9 @@ def diff(old: Manifest | None, new: Manifest) -> list[Change]:
     if old is None:
         return [Change(ChangeLevel.NONE, "ontology", "", "first release: no previous manifest")]
     changes: list[Change] = []
-    changes.extend(_diff_entities(old, new))
+    # Types before the tables and columns that use them, so the migration plan applies in order.
     changes.extend(_diff_vocabularies(old, new))
+    changes.extend(_diff_entities(old, new))
     changes.extend(_diff_relations(old, new))
     changes.extend(_diff_ics(old, new))
     changes.extend(_diff_methodology(old, new))
@@ -421,6 +422,12 @@ def _diff_relations(old: Manifest, new: Manifest) -> list[Change]:
 
     out: list[Change] = []
     o, n = _keyed(old.ontology.relations, "name"), _keyed(new.ontology.relations, "name")
+    # A new entity's table block already carries its foreign keys; relation deltas add only the rest.
+    new_entities = {e.name for e in new.entities} - {e.name for e in old.entities}
+
+    def delta_fks(fks: list[FKDef]) -> list[FKDef]:
+        return [fk for fk in fks if fk.entity not in new_entities]
+
     for name in sorted(set(o) - set(n)):
         out.append(Change(ChangeLevel.MAJOR, "ontology", f"relations.{name}", "relation removed"))
     for name in sorted(set(n) - set(o)):
@@ -430,14 +437,41 @@ def _diff_relations(old: Manifest, new: Manifest) -> list[Change]:
                 "ontology",
                 f"relations.{name}",
                 "relation added",
-                migration=sqlgen.fk_block_for_relation(new, n[name]),
+                migration=sqlgen.fk_statements(new, delta_fks(list(n[name].fks))),
             )
         )
     for name in sorted(set(o) & set(n)):
-        if o[name].fks != n[name].fks or o[name].to != n[name].to:
-            out.append(Change(ChangeLevel.MAJOR, "ontology", f"relations.{name}", "relation shape changed"))
-        elif o[name].description != n[name].description:
-            out.append(Change(ChangeLevel.PATCH, "ontology", f"relations.{name}", "description changed"))
+        a, b = o[name], n[name]
+        p = f"relations.{name}"
+        removed_fks = [fk for fk in a.fks if fk not in b.fks]
+        removed_to = [t for t in a.to if t not in b.to]
+        shape_changed = (a.cardinality, a.via, a.polymorphic, a.array_field) != (
+            b.cardinality,
+            b.via,
+            b.polymorphic,
+            b.array_field,
+        )
+        if removed_fks or removed_to or shape_changed:
+            out.append(Change(ChangeLevel.MAJOR, "ontology", p, "relation shape changed"))
+            continue
+        added_fks = [fk for fk in b.fks if fk not in a.fks]
+        added_to = [t for t in b.to if t not in a.to]
+        if added_fks or added_to:
+            # Additive: new targets or new foreign keys. Only the new keys need DDL.
+            out.append(
+                Change(
+                    ChangeLevel.MINOR,
+                    "ontology",
+                    p,
+                    "relation extended with "
+                    + ", ".join(
+                        [*(f"fk {fk.entity}.{fk.field}" for fk in added_fks), *(f"target {t}" for t in added_to)]
+                    ),
+                    migration=sqlgen.fk_statements(new, delta_fks(added_fks)),
+                )
+            )
+        elif a.description != b.description:
+            out.append(Change(ChangeLevel.PATCH, "ontology", p, "description changed"))
     return out
 
 
@@ -641,7 +675,8 @@ def migrate_plan(old: Manifest | None, new: Manifest, allow_breaking: bool = Fal
             out.append(c.migration.rstrip())
     out.append(
         f"UPDATE {new.schema_name}.schema_versions SET ontology_version = '{new.ontology_version}', "
-        f"manifest_hash = '{new.hash}', applied_at = now() WHERE singleton;"
+        f"methodology_version = '{new.methodology_version}', manifest_hash = '{new.hash}', applied_at = now() "
+        "WHERE singleton;"
     )
     out.append("COMMIT;")
     return "\n".join(out) + "\n"

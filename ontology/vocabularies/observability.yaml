@@ -1,0 +1,10 @@
+vocabulary:
+  code: observability
+  title: Observability
+  description: "How an AI system's behavior can be seen (focus area independent_auditability). Only independent recording is evidence that does not depend on the system's own account of itself."
+  ordered: true
+  attributes: { independent: boolean }
+  values:
+    - { code: self_explanation, label: Self-explanation only, rank: 0, description: "The system's own explanations, summaries or self-reports are the only record of what it did.", attributes: { independent: false } }
+    - { code: operator_logs, label: Operator logs, rank: 1, description: "The operating organization keeps logs of inputs, decisions and actions outside the model.", attributes: { independent: false } }
+    - { code: independent_recording, label: Independent recording, rank: 2, description: Behavior is recorded by a party or mechanism the organization and the system cannot alter after the fact., attributes: { independent: true } }

@@ -10,3 +10,4 @@ vocabulary:
     - { code: control, label: Control, description: A governance control., attributes: { entity: Control } }
     - { code: test_outcome, label: Test outcome, description: A test of a control., attributes: { entity: TestOutcome } }
     - { code: incident, label: Incident, description: An incident., attributes: { entity: Incident } }
+    - { code: impact_measure, label: Impact measure, description: A measured human outcome of the organization's AI., attributes: { entity: ImpactMeasure } }

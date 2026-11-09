@@ -80,7 +80,8 @@ packages/hai-engine    classification, packs, LLM providers, validator, rules, s
 services/api           FastAPI (hai-api)
 services/worker        background worker (hai-worker)
 frontend/              React console
-db/migrations/         0001 generated baseline, later hand-written numbered SQL
+db/migrations/         0001 baseline (frozen once applied), later numbered SQL; deltas from make migrate-plan
+db/generated/          full schema for the current manifest (generated, reference only)
 config/connectors.yaml evidence sources and limits
 tests/                 cross-package integration and end-to-end tests, fake internet fixture
 docs/                  architecture, ontology guide, porting notes, ADRs, generated glossary and JSON-LD

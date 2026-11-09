@@ -13,9 +13,9 @@
       "@type": "owl:Ontology",
       "rdfs:label": "HAI Ontology",
       "rdfs:comment": "Domain model for the Human Alignment Index (HAI Score) from source document to certification decision.",
-      "owl:versionInfo": "1.0.0",
-      "hai:methodologyVersion": "1.0.0",
-      "hai:manifestHash": "eaf14d2ceab0f74df7e4b6a1025ee2d259884dadf2c22ad2997198aeb01dd2e5"
+      "owl:versionInfo": "1.1.0",
+      "hai:methodologyVersion": "2.0.0",
+      "hai:manifestHash": "ab982d5dd2d23adf8718b7a9d296b6afc9d84444127cb35afbcb3f4d9cc01fa6"
     },
     {
       "@id": "https://humaital.com/ontology/hai#layer/subject",
@@ -375,6 +375,30 @@
       }
     },
     {
+      "@id": "https://humaital.com/ontology/hai#AISystem/autonomy_level",
+      "@type": "rdf:Property",
+      "rdfs:label": "autonomy_level",
+      "rdfs:comment": "How independently the system acts (focus area autonomous_monitoring).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#AISystem"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#AISystem/monitoring_mode",
+      "@type": "rdf:Property",
+      "rdfs:label": "monitoring_mode",
+      "rdfs:comment": "How the system's behavior can be seen: its own explanations, operator logs or independent recording (focus area independent_auditability).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#AISystem"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/observability"
+      }
+    },
+    {
       "@id": "https://humaital.com/ontology/hai#AISystem/valid_from",
       "@type": "rdf:Property",
       "rdfs:label": "valid_from",
@@ -592,12 +616,48 @@
       "@id": "https://humaital.com/ontology/hai#Control/can_pause_or_rollback",
       "@type": "rdf:Property",
       "rdfs:label": "can_pause_or_rollback",
-      "rdfs:comment": "Whether the control can halt or roll back the system.",
+      "rdfs:comment": "Whether the control can halt or roll back the system. Summarises capabilities.",
       "rdfs:domain": {
         "@id": "https://humaital.com/ontology/hai#Control"
       },
       "rdfs:range": {
         "@id": "xsd:boolean"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Control/capabilities",
+      "@type": "rdf:Property",
+      "rdfs:label": "capabilities",
+      "rdfs:comment": "What the control can do to the running system: pause, shut down, roll back, override, isolate, rate limit (focus area control_verification).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Control"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/control_capability"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Control/monitoring_mode",
+      "@type": "rdf:Property",
+      "rdfs:label": "monitoring_mode",
+      "rdfs:comment": "How the control's operation is observed (focus area independent_auditability).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Control"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/observability"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Control/last_exercised_at",
+      "@type": "rdf:Property",
+      "rdfs:label": "last_exercised_at",
+      "rdfs:comment": "Most recent test outcome that exercised the control, if any.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Control"
+      },
+      "rdfs:range": {
+        "@id": "xsd:date"
       }
     },
     {
@@ -669,6 +729,42 @@
       },
       "rdfs:range": {
         "@id": "xsd:string"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#TestOutcome/method",
+      "@type": "rdf:Property",
+      "rdfs:label": "method",
+      "rdfs:comment": "How the control was tested, from document review to independent audit. Only methods that exercise the control count as exercising a capability.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#TestOutcome"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/verification_method"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#TestOutcome/capabilities_exercised",
+      "@type": "rdf:Property",
+      "rdfs:label": "capabilities_exercised",
+      "rdfs:comment": "Which control capabilities the test actually operated (focus area control_verification).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#TestOutcome"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/control_capability"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#TestOutcome/threats_exercised",
+      "@type": "rdf:Property",
+      "rdfs:label": "threats_exercised",
+      "rdfs:comment": "Which containment threats the test attempted (focus area containment_security).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#TestOutcome"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/containment_threat"
       }
     },
     {
@@ -863,6 +959,90 @@
       }
     },
     {
+      "@id": "https://humaital.com/ontology/hai#Incident/containment_threat",
+      "@type": "rdf:Property",
+      "rdfs:label": "containment_threat",
+      "rdfs:comment": "The containment threat that materialised, when the event was one (focus area containment_security).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Incident"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/containment_threat"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Incident/detected_at",
+      "@type": "rdf:Property",
+      "rdfs:label": "detected_at",
+      "rdfs:comment": "When the organization identified the failure (focus area incident_response).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Incident"
+      },
+      "rdfs:range": {
+        "@id": "xsd:date"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Incident/disclosed_at",
+      "@type": "rdf:Property",
+      "rdfs:label": "disclosed_at",
+      "rdfs:comment": "When the organization disclosed it publicly or to those affected.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Incident"
+      },
+      "rdfs:range": {
+        "@id": "xsd:date"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Incident/contained_at",
+      "@type": "rdf:Property",
+      "rdfs:label": "contained_at",
+      "rdfs:comment": "When the failure stopped causing harm.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Incident"
+      },
+      "rdfs:range": {
+        "@id": "xsd:date"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Incident/corrected_at",
+      "@type": "rdf:Property",
+      "rdfs:label": "corrected_at",
+      "rdfs:comment": "When the corrective action was completed.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Incident"
+      },
+      "rdfs:range": {
+        "@id": "xsd:date"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Incident/correction_verified_at",
+      "@type": "rdf:Property",
+      "rdfs:label": "correction_verified_at",
+      "rdfs:comment": "When an independent party confirmed the correction works (IC-19).",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Incident"
+      },
+      "rdfs:range": {
+        "@id": "xsd:date"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#Incident/correction_verified_by_org_id",
+      "@type": "rdf:Property",
+      "rdfs:label": "correction_verified_by_org_id",
+      "rdfs:comment": "The independent verifier of the correction.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Incident"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#Organization"
+      }
+    },
+    {
       "@id": "https://humaital.com/ontology/hai#Remediation",
       "@type": "rdfs:Class",
       "rdfs:label": "Remediation",
@@ -931,6 +1111,185 @@
       },
       "rdfs:range": {
         "@id": "https://humaital.com/ontology/hai#Organization"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure",
+      "@type": "rdfs:Class",
+      "rdfs:label": "ImpactMeasure",
+      "rdfs:comment": "A measured effect of the organization's AI on people (focus area human_benefit). Separates what is intended from what is counted, what is measured in people's lives and what an independent party evaluated. Evidence links may target it.",
+      "rdfs:subClassOf": {
+        "@id": "https://humaital.com/ontology/hai#layer/subject"
+      },
+      "hai:table": "impact_measures",
+      "hai:mutability": "append_only"
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/org_id",
+      "@type": "rdf:Property",
+      "rdfs:label": "org_id",
+      "rdfs:comment": "The organization whose AI produced the effect.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#Organization"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/ai_system_id",
+      "@type": "rdf:Property",
+      "rdfs:label": "ai_system_id",
+      "rdfs:comment": "The system, when identifiable.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#AISystem"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/kind",
+      "@type": "rdf:Property",
+      "rdfs:label": "kind",
+      "rdfs:comment": "Stated intention, output metric, outcome metric or independently evaluated.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/outcome",
+      "@type": "rdf:Property",
+      "rdfs:label": "outcome",
+      "rdfs:comment": "The human outcome claimed or measured, in plain words.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/metric",
+      "@type": "rdf:Property",
+      "rdfs:label": "metric",
+      "rdfs:comment": "What was measured and how.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/unit",
+      "@type": "rdf:Property",
+      "rdfs:label": "unit",
+      "rdfs:comment": "Unit of the values.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/baseline_value",
+      "@type": "rdf:Property",
+      "rdfs:label": "baseline_value",
+      "rdfs:comment": "Value before the AI application, when known.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "xsd:decimal"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/measured_value",
+      "@type": "rdf:Property",
+      "rdfs:label": "measured_value",
+      "rdfs:comment": "Value measured.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "xsd:decimal"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/population",
+      "@type": "rdf:Property",
+      "rdfs:label": "population",
+      "rdfs:comment": "Who was affected and how many.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/measured_at",
+      "@type": "rdf:Property",
+      "rdfs:label": "measured_at",
+      "rdfs:comment": "When the measurement was taken.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "xsd:date"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/period_months",
+      "@type": "rdf:Property",
+      "rdfs:label": "period_months",
+      "rdfs:comment": "Length of the measurement period; durability needs more than one period.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "xsd:integer"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/measured_by_org_id",
+      "@type": "rdf:Property",
+      "rdfs:label": "measured_by_org_id",
+      "rdfs:comment": "Who took the measurement.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#Organization"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/verifier_org_id",
+      "@type": "rdf:Property",
+      "rdfs:label": "verifier_org_id",
+      "rdfs:comment": "Independent verifier, if any. Required for independently_evaluated.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#Organization"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ImpactMeasure/source_document_id",
+      "@type": "rdf:Property",
+      "rdfs:label": "source_document_id",
+      "rdfs:comment": "The document reporting the measure.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#SourceDocument"
       }
     },
     {
@@ -1578,7 +1937,7 @@
       "@id": "https://humaital.com/ontology/hai#EvidenceLink/target_id",
       "@type": "rdf:Property",
       "rdfs:label": "target_id",
-      "rdfs:comment": "Id of the organization, system, claim, control, test outcome or incident.",
+      "rdfs:comment": "Id of the organization, system, claim, control, test outcome, incident or impact measure.",
       "rdfs:domain": {
         "@id": "https://humaital.com/ontology/hai#EvidenceLink"
       },
@@ -1692,6 +2051,18 @@
       },
       "rdfs:range": {
         "@id": "https://humaital.com/ontology/hai#vocab/source_tier"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#EvidenceLink/focus_area",
+      "@type": "rdf:Property",
+      "rdfs:label": "focus_area",
+      "rdfs:comment": "The one focus area the quote speaks to, when it does. Reporting only; never changes a weight.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#EvidenceLink"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/focus_area"
       }
     },
     {
@@ -2590,7 +2961,19 @@
       "@id": "https://humaital.com/ontology/hai#EvidenceSnapshot/incident_states",
       "@type": "rdf:Property",
       "rdfs:label": "incident_states",
-      "rdfs:comment": "Frozen status and severity per targeted incident.",
+      "rdfs:comment": "Frozen status, severity and response timeline per targeted incident.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#EvidenceSnapshot"
+      },
+      "rdfs:range": {
+        "@id": "xsd:string"
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#EvidenceSnapshot/target_states",
+      "@type": "rdf:Property",
+      "rdfs:label": "target_states",
+      "rdfs:comment": "Frozen controls, test outcomes, AI systems and impact measures of the organization, so verification rules read only the snapshot.",
       "rdfs:domain": {
         "@id": "https://humaital.com/ontology/hai#EvidenceSnapshot"
       },
@@ -2966,6 +3349,18 @@
       },
       "hai:table": "pillar_scores",
       "hai:mutability": "append_only"
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#PillarScore/status",
+      "@type": "rdf:Property",
+      "rdfs:label": "status",
+      "rdfs:comment": "Needs Attention, Developing, Progressing or Strong, from the rung reached by at least half of the pillar's counted criteria.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#PillarScore"
+      },
+      "rdfs:range": {
+        "@id": "https://humaital.com/ontology/hai#vocab/maturity_status"
+      }
     },
     {
       "@id": "https://humaital.com/ontology/hai#PillarScore/assessment_id",
@@ -3686,6 +4081,9 @@
         },
         {
           "@id": "https://humaital.com/ontology/hai#Organization"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
         }
       ],
       "hai:cardinality": "many_to_one",
@@ -3737,6 +4135,57 @@
       "rdfs:range": [
         {
           "@id": "https://humaital.com/ontology/hai#Organization"
+        }
+      ],
+      "hai:cardinality": "many_to_one",
+      "hai:timeBound": false
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#rel/measures",
+      "@type": "rdf:Property",
+      "rdfs:label": "measures",
+      "rdfs:comment": "Measured human outcomes of the organization's AI, optionally per system.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#Organization"
+      },
+      "rdfs:range": [
+        {
+          "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#AISystem"
+        }
+      ],
+      "hai:cardinality": "one_to_many",
+      "hai:timeBound": true
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#rel/measured_by",
+      "@type": "rdf:Property",
+      "rdfs:label": "measured_by",
+      "rdfs:comment": "Who took the measurement.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": [
+        {
+          "@id": "https://humaital.com/ontology/hai#Organization"
+        }
+      ],
+      "hai:cardinality": "many_to_one",
+      "hai:timeBound": false
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#rel/reported_in",
+      "@type": "rdf:Property",
+      "rdfs:label": "reported_in",
+      "rdfs:comment": "The document that reports the measure.",
+      "rdfs:domain": {
+        "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
+      },
+      "rdfs:range": [
+        {
+          "@id": "https://humaital.com/ontology/hai#SourceDocument"
         }
       ],
       "hai:cardinality": "many_to_one",
@@ -3944,6 +4393,9 @@
         },
         {
           "@id": "https://humaital.com/ontology/hai#Incident"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#ImpactMeasure"
         }
       ],
       "hai:cardinality": "many_to_many",
@@ -4319,6 +4771,71 @@
       "skos:definition": "The criterion is routed to a reviewer."
     },
     {
+      "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "Autonomy level",
+      "skos:definition": "How independently an AI system acts (focus area autonomous_monitoring). Higher autonomy raises the bar for monitoring and containment evidence; it does not change weights.",
+      "hai:derived": false,
+      "skos:hasTopConcept": [
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level/assistive"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level/supervised"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level/bounded_autonomous"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level/open_autonomous"
+        }
+      ]
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level/assistive",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level"
+      },
+      "skos:notation": "assistive",
+      "skos:prefLabel": "Assistive",
+      "skos:definition": "Recommends or drafts; a person takes every action.",
+      "hai:rank": 0
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level/supervised",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level"
+      },
+      "skos:notation": "supervised",
+      "skos:prefLabel": "Supervised",
+      "skos:definition": "Acts, with a person approving or reviewing actions as they happen.",
+      "hai:rank": 1
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level/bounded_autonomous",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level"
+      },
+      "skos:notation": "bounded_autonomous",
+      "skos:prefLabel": "Bounded autonomous",
+      "skos:definition": "Acts on its own within defined boundaries and budgets; people review after the fact.",
+      "hai:rank": 2
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level/open_autonomous",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/autonomy_level"
+      },
+      "skos:notation": "open_autonomous",
+      "skos:prefLabel": "Open autonomous",
+      "skos:definition": "Acts on its own across open-ended tasks and tools.",
+      "hai:rank": 3
+    },
+    {
       "@id": "https://humaital.com/ontology/hai#vocab/certification_outcome",
       "@type": "skos:ConceptScheme",
       "skos:prefLabel": "Certification outcome",
@@ -4384,6 +4901,9 @@
         },
         {
           "@id": "https://humaital.com/ontology/hai#vocab/claim_scope_type/incident"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/claim_scope_type/impact_measure"
         }
       ]
     },
@@ -4426,6 +4946,16 @@
       "skos:notation": "incident",
       "skos:prefLabel": "Incident",
       "skos:definition": "An incident."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/claim_scope_type/impact_measure",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/claim_scope_type"
+      },
+      "skos:notation": "impact_measure",
+      "skos:prefLabel": "Impact measure",
+      "skos:definition": "A claimed human outcome."
     },
     {
       "@id": "https://humaital.com/ontology/hai#vocab/cluster_method",
@@ -4618,6 +5148,93 @@
       "skos:definition": "No longer runs."
     },
     {
+      "@id": "https://humaital.com/ontology/hai#vocab/containment_threat",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "Containment threat",
+      "skos:definition": "Ways an AI system could act outside its intended boundaries (focus area containment_security). Recorded on test outcomes that exercised the threat and on incidents where it materialised.",
+      "hai:derived": false,
+      "skos:hasTopConcept": [
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/restriction_bypass"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/unauthorized_access"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/privilege_escalation"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/safeguard_disablement"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/data_exfiltration"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/boundary_violation"
+        }
+      ]
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/restriction_bypass",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/containment_threat"
+      },
+      "skos:notation": "restriction_bypass",
+      "skos:prefLabel": "Restriction bypass",
+      "skos:definition": "The system circumvented a usage restriction or guardrail."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/unauthorized_access",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/containment_threat"
+      },
+      "skos:notation": "unauthorized_access",
+      "skos:prefLabel": "Unauthorized access",
+      "skos:definition": "The system reached data, tools or resources it was not granted."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/privilege_escalation",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/containment_threat"
+      },
+      "skos:notation": "privilege_escalation",
+      "skos:prefLabel": "Privilege escalation",
+      "skos:definition": "The system obtained permissions beyond those assigned."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/safeguard_disablement",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/containment_threat"
+      },
+      "skos:notation": "safeguard_disablement",
+      "skos:prefLabel": "Safeguard disablement",
+      "skos:definition": "The system switched off, degraded or evaded a safeguard or monitor."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/data_exfiltration",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/containment_threat"
+      },
+      "skos:notation": "data_exfiltration",
+      "skos:prefLabel": "Data exfiltration",
+      "skos:definition": "The system moved data outside its permitted boundary."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/containment_threat/boundary_violation",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/containment_threat"
+      },
+      "skos:notation": "boundary_violation",
+      "skos:prefLabel": "Boundary violation",
+      "skos:definition": "The system took an action outside its intended scope of operation."
+    },
+    {
       "@id": "https://humaital.com/ontology/hai#vocab/content_status",
       "@type": "skos:ConceptScheme",
       "skos:prefLabel": "Content status",
@@ -4651,6 +5268,111 @@
       "skos:notation": "approved",
       "skos:prefLabel": "Approved",
       "skos:definition": "Canonical text supplied and signed off."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/control_capability",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "Control capability",
+      "skos:definition": "What a control can do to a running AI system (focus area control_verification). A claimed capability counts as documented execution only once a test outcome shows it was exercised.",
+      "hai:derived": false,
+      "skos:hasTopConcept": [
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/control_capability/pause"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/control_capability/shutdown"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/control_capability/rollback"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/control_capability/override"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/control_capability/isolate"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/control_capability/rate_limit"
+        }
+      ]
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/control_capability/pause",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/control_capability"
+      },
+      "skos:notation": "pause",
+      "skos:prefLabel": "Pause",
+      "skos:definition": "Suspend the system's operation while keeping its state.",
+      "hai:attributes": {
+        "halts_system": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/control_capability/shutdown",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/control_capability"
+      },
+      "skos:notation": "shutdown",
+      "skos:prefLabel": "Shut down",
+      "skos:definition": "Stop the system entirely.",
+      "hai:attributes": {
+        "halts_system": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/control_capability/rollback",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/control_capability"
+      },
+      "skos:notation": "rollback",
+      "skos:prefLabel": "Roll back",
+      "skos:definition": "Return the system to an earlier version or state.",
+      "hai:attributes": {
+        "halts_system": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/control_capability/override",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/control_capability"
+      },
+      "skos:notation": "override",
+      "skos:prefLabel": "Human override",
+      "skos:definition": "A person can overrule or replace the system's decision.",
+      "hai:attributes": {
+        "halts_system": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/control_capability/isolate",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/control_capability"
+      },
+      "skos:notation": "isolate",
+      "skos:prefLabel": "Isolate",
+      "skos:definition": "Cut the system off from resources, networks or other systems.",
+      "hai:attributes": {
+        "halts_system": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/control_capability/rate_limit",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/control_capability"
+      },
+      "skos:notation": "rate_limit",
+      "skos:prefLabel": "Rate limit",
+      "skos:definition": "Bound how much or how fast the system may act.",
+      "hai:attributes": {
+        "halts_system": false
+      }
     },
     {
       "@id": "https://humaital.com/ontology/hai#vocab/control_operational_status",
@@ -5638,6 +6360,211 @@
       "skos:definition": "Failed a check; stored for audit and never used."
     },
     {
+      "@id": "https://humaital.com/ontology/hai#vocab/focus_area",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "Focus area",
+      "skos:definition": "The seven areas Humaital asked the methodology to look at more closely (change request 2026-11-09). A criterion lists the areas it bears on; a link may be tagged with the one area its quote speaks to. evidence_basis is cross-cutting: it is applied by the scoring to every criterion rather than mapped to criteria. Coverage per area is reported; the areas do not change weights.",
+      "hai:derived": false,
+      "skos:hasTopConcept": [
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/focus_area/control_verification"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/focus_area/autonomous_monitoring"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/focus_area/containment_security"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/focus_area/evidence_basis"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/focus_area/incident_response"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/focus_area/independent_auditability"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/focus_area/human_benefit"
+        }
+      ]
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/focus_area/control_verification",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/focus_area"
+      },
+      "skos:notation": "control_verification",
+      "skos:prefLabel": "Verification of AI controls",
+      "skos:definition": "Beyond documented policies: independent verification that safety controls work, including the ability to pause, shut down or roll back an AI system.",
+      "hai:attributes": {
+        "question": "Do the controls demonstrably work, and can the organization stop or reverse its AI systems?",
+        "cross_cutting": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/focus_area/autonomous_monitoring",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/focus_area"
+      },
+      "skos:notation": "autonomous_monitoring",
+      "skos:prefLabel": "Autonomous AI monitoring",
+      "skos:definition": "How the organization monitors AI agents acting independently: their decisions, actions and ability to operate outside intended boundaries.",
+      "hai:attributes": {
+        "question": "Are autonomous decisions and actions observed, and are boundary violations detected?",
+        "cross_cutting": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/focus_area/containment_security",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/focus_area"
+      },
+      "skos:notation": "containment_security",
+      "skos:prefLabel": "Containment and security testing",
+      "skos:definition": "Whether AI systems can bypass restrictions, access unauthorized resources, escalate privileges or disable safeguards, and whether that is tested.",
+      "hai:attributes": {
+        "question": "Has anyone tried to break out, and what happened?",
+        "cross_cutting": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/focus_area/evidence_basis",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/focus_area"
+      },
+      "skos:notation": "evidence_basis",
+      "skos:prefLabel": "Evidence-based scoring",
+      "skos:definition": "Scoring that distinguishes stated commitments, documented controls, actual testing and independent verification. Applied to every criterion through the maturity ladder.",
+      "hai:attributes": {
+        "question": "Is this a statement, a documented control, a test result or an independent verification?",
+        "cross_cutting": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/focus_area/incident_response",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/focus_area"
+      },
+      "skos:notation": "incident_response",
+      "skos:prefLabel": "Incident response and recovery",
+      "skos:definition": "How quickly the organization identifies, discloses, contains and corrects AI failures, and whether corrective actions are verified to work.",
+      "hai:attributes": {
+        "question": "How fast was the failure found, disclosed, contained and fixed, and did the fix work?",
+        "cross_cutting": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/focus_area/independent_auditability",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/focus_area"
+      },
+      "skos:notation": "independent_auditability",
+      "skos:prefLabel": "Independent monitoring and auditability",
+      "skos:definition": "AI behavior that can be independently observed and recorded, rather than relying on the system's own explanations of its actions.",
+      "hai:attributes": {
+        "question": "Could someone other than the AI system itself see what it did?",
+        "cross_cutting": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/focus_area/human_benefit",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/focus_area"
+      },
+      "skos:notation": "human_benefit",
+      "skos:prefLabel": "Human benefit and measurable impact",
+      "skos:definition": "The distinction between a stated intention to benefit humanity and measurable evidence that AI applications improve people's lives.",
+      "hai:attributes": {
+        "question": "Is the benefit stated, counted, measured in people's lives, or independently evaluated?",
+        "cross_cutting": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "Impact evidence kind",
+      "skos:definition": "What an impact measure actually shows (focus area human_benefit). Stated intention and output counts are not evidence of benefit; outcome metrics and independent evaluation are.",
+      "hai:derived": false,
+      "skos:hasTopConcept": [
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind/stated_intention"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind/output_metric"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind/outcome_metric"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind/independently_evaluated"
+        }
+      ]
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind/stated_intention",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind"
+      },
+      "skos:notation": "stated_intention",
+      "skos:prefLabel": "Stated intention",
+      "skos:definition": "The organization says its AI is meant to benefit people.",
+      "hai:rank": 0,
+      "hai:attributes": {
+        "demonstrates_benefit": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind/output_metric",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind"
+      },
+      "skos:notation": "output_metric",
+      "skos:prefLabel": "Output metric",
+      "skos:definition": "Counts of activity: users served, queries answered, hours saved by the organization's own account.",
+      "hai:rank": 1,
+      "hai:attributes": {
+        "demonstrates_benefit": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind/outcome_metric",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind"
+      },
+      "skos:notation": "outcome_metric",
+      "skos:prefLabel": "Outcome metric",
+      "skos:definition": "A measured change in people's lives: health, income, access, safety or time, with a baseline and a population.",
+      "hai:rank": 2,
+      "hai:attributes": {
+        "demonstrates_benefit": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind/independently_evaluated",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/impact_evidence_kind"
+      },
+      "skos:notation": "independently_evaluated",
+      "skos:prefLabel": "Independently evaluated",
+      "skos:definition": "An independent party measured or audited the outcome.",
+      "hai:rank": 3,
+      "hai:attributes": {
+        "demonstrates_benefit": true
+      }
+    },
+    {
       "@id": "https://humaital.com/ontology/hai#vocab/incident_severity",
       "@type": "skos:ConceptScheme",
       "skos:prefLabel": "Incident severity",
@@ -6181,6 +7108,87 @@
       }
     },
     {
+      "@id": "https://humaital.com/ontology/hai#vocab/maturity_status",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "Maturity status",
+      "skos:definition": "The pillar status shown in reports, derived by the engine from the maturity rungs of the pillar's counted criteria: the rung reached by at least half of them. Wording is from the Humaital HAI Report (Rubric v2) status definitions. min_maturity_rung is the lowest rung that earns the status.",
+      "hai:derived": false,
+      "skos:hasTopConcept": [
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/maturity_status/needs_attention"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/maturity_status/developing"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/maturity_status/progressing"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/maturity_status/strong"
+        }
+      ]
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/maturity_status/needs_attention",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/maturity_status"
+      },
+      "skos:notation": "needs_attention",
+      "skos:prefLabel": "Needs Attention",
+      "skos:definition": "No verifiable evidence found across policy or execution layers.",
+      "hai:rank": 0,
+      "hai:attributes": {
+        "min_maturity_rung": "none",
+        "report_wording": "No verifiable evidence found across policy or execution layers."
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/maturity_status/developing",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/maturity_status"
+      },
+      "skos:notation": "developing",
+      "skos:prefLabel": "Developing",
+      "skos:definition": "Evidence exists at policy level but lacks execution proof.",
+      "hai:rank": 1,
+      "hai:attributes": {
+        "min_maturity_rung": "stated_commitment",
+        "report_wording": "Evidence exists at policy level but lacks execution proof."
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/maturity_status/progressing",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/maturity_status"
+      },
+      "skos:notation": "progressing",
+      "skos:prefLabel": "Progressing",
+      "skos:definition": "Policy and execution evidence present; independent validation is missing.",
+      "hai:rank": 2,
+      "hai:attributes": {
+        "min_maturity_rung": "documented_execution",
+        "report_wording": "Policy and partial execution evidence present; gaps remain."
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/maturity_status/strong",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/maturity_status"
+      },
+      "skos:notation": "strong",
+      "skos:prefLabel": "Strong",
+      "skos:definition": "Policy, execution and independent validation evidence all identified.",
+      "hai:rank": 3,
+      "hai:attributes": {
+        "min_maturity_rung": "independently_verified",
+        "report_wording": "Policy, execution, and validation evidence all identified."
+      }
+    },
+    {
       "@id": "https://humaital.com/ontology/hai#vocab/methodology_status",
       "@type": "skos:ConceptScheme",
       "skos:prefLabel": "Methodology status",
@@ -6227,6 +7235,66 @@
       "skos:notation": "retired",
       "skos:prefLabel": "Retired",
       "skos:definition": "Superseded; kept for replay."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/observability",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "Observability",
+      "skos:definition": "How an AI system's behavior can be seen (focus area independent_auditability). Only independent recording is evidence that does not depend on the system's own account of itself.",
+      "hai:derived": false,
+      "skos:hasTopConcept": [
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/observability/self_explanation"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/observability/operator_logs"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/observability/independent_recording"
+        }
+      ]
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/observability/self_explanation",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/observability"
+      },
+      "skos:notation": "self_explanation",
+      "skos:prefLabel": "Self-explanation only",
+      "skos:definition": "The system's own explanations, summaries or self-reports are the only record of what it did.",
+      "hai:rank": 0,
+      "hai:attributes": {
+        "independent": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/observability/operator_logs",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/observability"
+      },
+      "skos:notation": "operator_logs",
+      "skos:prefLabel": "Operator logs",
+      "skos:definition": "The operating organization keeps logs of inputs, decisions and actions outside the model.",
+      "hai:rank": 1,
+      "hai:attributes": {
+        "independent": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/observability/independent_recording",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/observability"
+      },
+      "skos:notation": "independent_recording",
+      "skos:prefLabel": "Independent recording",
+      "skos:definition": "Behavior is recorded by a party or mechanism the organization and the system cannot alter after the fact.",
+      "hai:rank": 2,
+      "hai:attributes": {
+        "independent": true
+      }
     },
     {
       "@id": "https://humaital.com/ontology/hai#vocab/org_relation_type",
@@ -7351,6 +8419,9 @@
         },
         {
           "@id": "https://humaital.com/ontology/hai#vocab/target_type/incident"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/target_type/impact_measure"
         }
       ]
     },
@@ -7433,6 +8504,19 @@
       }
     },
     {
+      "@id": "https://humaital.com/ontology/hai#vocab/target_type/impact_measure",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/target_type"
+      },
+      "skos:notation": "impact_measure",
+      "skos:prefLabel": "Impact measure",
+      "skos:definition": "A measured human outcome of the organization's AI.",
+      "hai:attributes": {
+        "entity": "ImpactMeasure"
+      }
+    },
+    {
       "@id": "https://humaital.com/ontology/hai#vocab/test_result",
       "@type": "skos:ConceptScheme",
       "skos:prefLabel": "Test result",
@@ -7479,6 +8563,117 @@
       "skos:notation": "inconclusive",
       "skos:prefLabel": "Inconclusive",
       "skos:definition": "The test did not produce a usable result."
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/verification_method",
+      "@type": "skos:ConceptScheme",
+      "skos:prefLabel": "Verification method",
+      "skos:definition": "How a control was tested or verified, from reading documents to an independent audit (focus areas control_verification and containment_security). exercises_control says whether the method actually operated the control rather than reviewing its description.",
+      "hai:derived": false,
+      "skos:hasTopConcept": [
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/verification_method/document_review"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/verification_method/tabletop_exercise"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/verification_method/simulated_test"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/verification_method/live_drill"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/verification_method/red_team"
+        },
+        {
+          "@id": "https://humaital.com/ontology/hai#vocab/verification_method/independent_audit"
+        }
+      ]
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/verification_method/document_review",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/verification_method"
+      },
+      "skos:notation": "document_review",
+      "skos:prefLabel": "Document review",
+      "skos:definition": "The control's documentation was reviewed; the control itself was not operated.",
+      "hai:rank": 0,
+      "hai:attributes": {
+        "exercises_control": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/verification_method/tabletop_exercise",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/verification_method"
+      },
+      "skos:notation": "tabletop_exercise",
+      "skos:prefLabel": "Tabletop exercise",
+      "skos:definition": "The response was walked through without operating the system.",
+      "hai:rank": 1,
+      "hai:attributes": {
+        "exercises_control": false
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/verification_method/simulated_test",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/verification_method"
+      },
+      "skos:notation": "simulated_test",
+      "skos:prefLabel": "Simulated test",
+      "skos:definition": "The control was operated in a test or staging environment.",
+      "hai:rank": 2,
+      "hai:attributes": {
+        "exercises_control": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/verification_method/live_drill",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/verification_method"
+      },
+      "skos:notation": "live_drill",
+      "skos:prefLabel": "Live drill",
+      "skos:definition": "The control was operated on the production system.",
+      "hai:rank": 3,
+      "hai:attributes": {
+        "exercises_control": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/verification_method/red_team",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/verification_method"
+      },
+      "skos:notation": "red_team",
+      "skos:prefLabel": "Red team or penetration test",
+      "skos:definition": "An adversarial team tried to defeat the control or the system's boundaries.",
+      "hai:rank": 4,
+      "hai:attributes": {
+        "exercises_control": true
+      }
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#vocab/verification_method/independent_audit",
+      "@type": "skos:Concept",
+      "skos:inScheme": {
+        "@id": "https://humaital.com/ontology/hai#vocab/verification_method"
+      },
+      "skos:notation": "independent_audit",
+      "skos:prefLabel": "Independent audit",
+      "skos:definition": "An independent party verified the control's operation.",
+      "hai:rank": 5,
+      "hai:attributes": {
+        "exercises_control": true
+      }
     },
     {
       "@id": "https://humaital.com/ontology/hai#ic/IC-01",
@@ -7623,6 +8818,14 @@
       "rdfs:comment": "Each assessment pins ontology, methodology, ruleset, prompt and model versions; none may be null.",
       "hai:enforcedIn": "db_not_null",
       "hai:acceptanceTest": "AT-07"
+    },
+    {
+      "@id": "https://humaital.com/ontology/hai#ic/IC-19",
+      "@type": "hai:IntegrityConstraint",
+      "rdfs:label": "IC-19",
+      "rdfs:comment": "A claimed control capability counts as exercised only through a passing test outcome that operated it; an incident correction counts as verified only with a named verifier; an impact measure is independently evaluated only with a named verifier.",
+      "hai:enforcedIn": "rules_engine",
+      "hai:acceptanceTest": "AT-16"
     }
   ]
 }

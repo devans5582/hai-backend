@@ -215,7 +215,7 @@ def test_webhooks_uploads_monitoring_and_benchmarks(client: TestClient, api_key:
 def test_ontology_endpoints(client: TestClient, manifest: Manifest) -> None:
     summary = client.get("/v1/ontology").json()
     assert (
-        summary["manifest_hash"] == manifest.hash and len(summary["entities"]) == 30 and len(summary["criteria"]) == 20
+        summary["manifest_hash"] == manifest.hash and len(summary["entities"]) == 31 and len(summary["criteria"]) == 20
     )
     assert client.get("/v1/ontology/entities/EvidenceLink").json()["table"] == "evidence_links"
     assert client.get("/v1/ontology/entities/Nope").status_code == 404
@@ -235,11 +235,11 @@ def test_ontology_endpoints(client: TestClient, manifest: Manifest) -> None:
     )
     assert client.get("/v1/methodology/pillars").json()["total"] == 6
     rules = client.get("/v1/methodology/rules").json()
-    assert rules["total"] == 16 and all(r["implementation"] for r in rules["items"])
-    assert client.get("/v1/methodology/decisions").json()["total"] == 10
+    assert rules["total"] == 19 and all(r["implementation"] for r in rules["items"])
+    assert client.get("/v1/methodology/decisions").json()["total"] == 13
     assert client.get("/v1/methodology/scoring").json()["scoring"]["score_cap"] == 85
     ics = client.get("/v1/ontology/integrity-constraints").json()
-    assert ics["total"] == 18
+    assert ics["total"] == 19
 
 
 def test_cors_denies_unknown_origins(client: TestClient) -> None:

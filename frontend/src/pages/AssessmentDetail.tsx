@@ -7,7 +7,7 @@ import { Badge, CoverageStrip, PillarBars, QueryState, ScoreDial, Tabs } from ".
 import { api, ApiRequestError, type Assessment } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { connectorLabel } from "../lib/connectors";
-import { fmtDate, fmtDateTime, fmtNum, label, LIFECYCLE_UI, lifecycleGroup, toneForLifecycle, toneForOutcome } from "../lib/format";
+import { fmtDate, fmtDateTime, fmtNum, label, LIFECYCLE_UI, lifecycleGroup, toneForLifecycle, toneForOutcome, toneForRung, toneForStatus } from "../lib/format";
 
 type Tab = "overview" | "criteria" | "sources" | "reviews";
 
@@ -130,6 +130,44 @@ export function AssessmentDetail() {
                   <p className="muted small">Performance across the governance pillars.</p>
                   <PillarBars pillars={r.pillars} />
                   {r.pillars.length === 0 && <p className="muted small">Pillar scores will appear when evaluation is complete.</p>}
+                  {r.pillars.some((p) => p.status) && (
+                    <ul className="status-list" aria-label="Pillar status">
+                      {r.pillars.filter((p) => p.status).map((p) => (
+                        <li key={p.code}><span>{p.name}</span><Badge tone={toneForStatus(p.status)}>{p.status_label}</Badge><small className="muted">{p.status_wording}</small></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="card">
+                  <h2>Evidence basis</h2>
+                  <p className="muted small">What the admissible supporting evidence is: statements, documented controls, test results or independent verification. Counts of stored links; the score reads the ladder.</p>
+                  <EvidenceBasis basis={r.evidence_basis?.by_rung ?? {}} labels={r.evidence_basis?.labels ?? {}} />
+                  <dl className="strength-list">
+                    {Object.entries(r.evidence_strength ?? {}).map(([code, st]) => (
+                      <div key={code}><dt>{st.label}</dt><dd><Badge tone={st.strength === "None" ? "bad" : st.strength === "Limited" ? "warn" : st.strength === "Emerging" ? "info" : "ok"}>{st.strength}</Badge> <span className="small muted">{st.criteria_with_evidence} of {r.evidence_basis?.criteria_counted ?? 0} criteria</span></dd></div>
+                    ))}
+                  </dl>
+                  {r.confidence_methodology && <p className="small muted">Confidence follows the published model: {Object.entries(r.confidence_methodology.weights).map(([k, w]) => `${k.replaceAll("_", " ")} ${Math.round(w * 100)}%`).join(", ")}.</p>}
+                </div>
+                <div className="card" style={{ gridColumn: "1 / -1" }}>
+                  <h2>Focus areas</h2>
+                  <p className="muted small">The seven areas the methodology looks at beyond documented policy. Each shows the criteria it bears on and how far the tagged evidence climbs the ladder. Coverage is reported; it never changes a weight.</p>
+                  <div className="focus-grid">
+                    {(r.focus_areas ?? []).map((fa) => (
+                      <div className="focus-card" key={fa.code}>
+                        <div className="focus-head"><strong>{fa.label}</strong>{fa.cross_cutting ? <Badge>Every criterion</Badge> : fa.best_rung_label ? <Badge tone={toneForRung(fa.best_rung)}>{fa.best_rung_label}</Badge> : <Badge tone="bad">No tagged evidence</Badge>}</div>
+                        <p className="small muted">{fa.question}</p>
+                        <p className="small">{fa.cross_cutting ? "Applied through the maturity ladder on every criterion." : `${fa.links} tagged link${fa.links === 1 ? "" : "s"} · ${fa.criteria.join(", ") || "no criteria mapped"}`}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {r.verification && r.incident_response && r.impact_measures && (r.verification.controls.length > 0 || r.incident_response.length > 0 || r.impact_measures.total > 0) && (
+                    <div className="row small muted" style={{ marginTop: "0.75rem" }}>
+                      {r.verification.controls.length > 0 && <span>{r.verification.controls.length} control{r.verification.controls.length === 1 ? "" : "s"} on record, {r.verification.controls_with_unexercised_capabilities} with an unexercised stop capability</span>}
+                      {r.incident_response.length > 0 && <span>{r.incident_response.filter((i) => i.correction_verified).length} of {r.incident_response.length} incident corrections independently verified</span>}
+                      {r.impact_measures.total > 0 && <span>{r.impact_measures.demonstrated_benefit} of {r.impact_measures.total} impact measures demonstrate benefit</span>}
+                    </div>
+                  )}
                 </div>
                 <div className="card" style={{ gridColumn: "1 / -1" }}>
                   <h2>Coverage</h2>
@@ -351,5 +389,26 @@ function SignCertification({ assessmentId, gateReasons, onDone }: { assessmentId
         {sign.isPending ? "Signing…" : "Sign"}
       </button>
     </form>
+  );
+}
+
+function EvidenceBasis({ basis, labels }: { basis: Record<string, number>; labels: Record<string, string> }) {
+  const total = Object.values(basis).reduce((a, b) => a + b, 0);
+  const order = Object.keys(labels);
+  return (
+    <div className="basis-bars" role="list" aria-label="Evidence by maturity rung">
+      {order.map((rung) => {
+        const n = basis[rung] ?? 0;
+        const pct = total ? Math.round((n / total) * 100) : 0;
+        return (
+          <div className="basis-row" role="listitem" key={rung}>
+            <span>{labels[rung]}</span>
+            <div className="track" aria-hidden="true"><div className={`fill rung-${rung}`} style={{ width: `${pct}%` }} /></div>
+            <span className="num" aria-label={`${labels[rung]}: ${n} links`}>{n}</span>
+          </div>
+        );
+      })}
+      {total === 0 && <p className="small muted">No admissible supporting evidence yet.</p>}
+    </div>
   );
 }
