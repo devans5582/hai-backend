@@ -69,7 +69,7 @@ export function TaskCard({ task, canAct }: { task: ReviewTask; canAct: boolean }
           {label("review_subject_type", task.subject_type)}
         </h2>
         <Badge tone={task.status === "closed" ? "ok" : task.status === "escalated" ? "warn" : "red"}>{task.status}</Badge>
-        {task.excluded_reviewers.length > 0 && <span className="small muted">escalated away from {task.excluded_reviewers.join(", ")}</span>}
+        {task.excluded_reviewers.length > 0 && <span className="small muted">Escalated away from {task.excluded_reviewers.join(", ")}</span>}
       </div>
       <p>{task.reason}</p>
       <p className="small muted">

@@ -17,9 +17,9 @@ export function Ontology() {
       <div className="page-head">
         <h1>Ontology browser</h1>
         <div className="row small muted mono">
-          <span>ontology {ONTOLOGY_VERSION}</span>
-          <span>methodology {METHODOLOGY_VERSION}</span>
-          <span>manifest {MANIFEST_HASH.slice(0, 12)}</span>
+          <span>Ontology {ONTOLOGY_VERSION}</span>
+          <span>Methodology {METHODOLOGY_VERSION}</span>
+          <span>Manifest {MANIFEST_HASH.slice(0, 12)}</span>
         </div>
       </div>
       {drift && (
@@ -43,7 +43,7 @@ export function Ontology() {
           {PILLARS.map((p) => (
             <section key={p.code} className="card" aria-labelledby={`pillar-${p.code}`}>
               <h2 id={`pillar-${p.code}`}>
-                {p.name} <span className="muted small">weight {p.weight}</span>
+                {p.name} <span className="muted small">Weight {p.weight}</span>
               </h2>
               <div className="table-wrap">
                 <table>

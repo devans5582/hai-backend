@@ -114,7 +114,7 @@ export function TraceDrawer({ assessmentId, criterionCode, onClose }: { assessme
                       <Badge tone={e.admissibility === "admissible" ? "ok" : "warn"}>{label("admissibility", e.admissibility)}</Badge>
                       <Badge>{label("maturity_rung", e.maturity_rung)}</Badge>
                       <Badge>{label("independence", e.independence)}</Badge>
-                      {e.cited_by_finding && <Badge tone="red">cited</Badge>}
+                      {e.cited_by_finding && <Badge tone="red">Cited</Badge>}
                     </div>
                     <blockquote className="quote">{e.quote}</blockquote>
                     <div className="small muted">

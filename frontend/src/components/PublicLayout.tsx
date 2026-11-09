@@ -18,7 +18,7 @@ export function PublicLayout() {
       <aside className="auth-brand" aria-label="About HAI Score">
         <Link to="/login" className="wordmark" aria-label="HAI Score console">
           <BrandLogo height={26} plate />
-          <span className="brand-product">HAI Score<span className="brand-caption">console</span></span>
+          <span className="brand-product">HAI Score<span className="brand-caption">Console</span></span>
         </Link>
         <div className="auth-brand-copy">
           <span className="eyebrow"><span className="auth-kicker-line" />Human Alignment Index</span>

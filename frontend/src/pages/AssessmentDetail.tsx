@@ -202,7 +202,7 @@ export function AssessmentDetail() {
                           {k} {v}
                         </span>
                       ))}
-                      {r.snapshot && <span>snapshot {r.snapshot.sha256.slice(0, 12)}</span>}
+                      {r.snapshot && <span>Snapshot {r.snapshot.sha256.slice(0, 12)}</span>}
                     </div>
                     {r.execution_notes.length > 0 && (
                       <>
@@ -240,7 +240,7 @@ export function AssessmentDetail() {
                       <tr key={c.code}>
                         <td className="mono">{c.code}</td>
                         <td>
-                          {c.name} {c.review_required && <Badge tone="warn">review</Badge>}
+                          {c.name} {c.review_required && <Badge tone="warn">Review</Badge>}
                           <div className="small muted">{c.coverage_wording}</div>
                         </td>
                         <td>{c.level ?? "n/a"}</td>

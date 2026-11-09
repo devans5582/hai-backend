@@ -222,7 +222,7 @@ function Members({ query, catalog, selfId, isOwner, platformAdmin }: { query: Re
                   const roleOptions = (catalog?.roles ?? []).filter((r) => r.account_kind === u.account.kind && (r.code !== "owner" || isOwner));
                   return (
                     <tr key={u.id} className={u.status === "disabled" ? "row-disabled" : ""}>
-                      <td><div className="assessment-name"><span className="domain-avatar">{(u.name[0] ?? "?").toUpperCase()}</span><span>{u.name}{self && <Badge tone="info">you</Badge>}<small>{u.email}</small></span></div></td>
+                      <td><div className="assessment-name"><span className="domain-avatar">{(u.name[0] ?? "?").toUpperCase()}</span><span>{u.name}{self && <Badge tone="info">You</Badge>}<small>{u.email}</small></span></div></td>
                       <td>
                         {self || protectedOwner ? <Badge tone="red">{u.role_label}</Badge> : (
                           <><label className="sr-only" htmlFor={`role-${u.id}`}>Role for {u.name}</label><select id={`role-${u.id}`} value={u.role} onChange={(e) => update.mutate({ id: u.id, body: { role: e.target.value } })} style={{ width: "auto", minHeight: 36 }}>{roleOptions.map((r) => <option key={r.code} value={r.code}>{r.label}</option>)}</select></>
