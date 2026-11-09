@@ -328,7 +328,9 @@ follow their assessment. API keys created by a console user belong to the
 user's account and inherit the organization restriction.
 
 First run: `POST /v1/auth/bootstrap` (or `hai-db create-owner`) creates the
-platform account and its owner while no user exists. The platform sends no
+platform account and its owner while no user exists. Outside production the
+seed also creates the demo owner `demo@humaital.com` / `demo`, advertised by
+`GET /v1/auth/status`; production neither seeds nor accepts it. The platform sends no
 email; invitation and reset links are shown once to the inviter, who passes
 them on. The console (`/login`, `/signup`, `/team`, `/settings`) renders what
 `GET /v1/auth/me` returns and never derives permissions itself.

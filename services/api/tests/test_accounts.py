@@ -373,3 +373,50 @@ def test_legacy_credentials_still_work_alongside_accounts(
     # a legacy key without an account is unrestricted
     with clean_db.engine.connect() as conn:
         assert conn.execute(text("SELECT account_id FROM hai_ops.api_keys WHERE name = 'partner'")).scalar_one() is None
+
+
+def test_seeded_demo_owner_signs_in_outside_production_only(
+    client: TestClient, clean_db: Database, settings: Settings, manifest: Manifest
+) -> None:
+    from hai_core.accounts import DEMO_USER_EMAIL, DEMO_USER_PASSWORD, seed_demo_user
+
+    # not seeded yet: the sign-in page has nothing to offer
+    assert client.get("/v1/auth/status").json()["demo_account"] is None
+    with clean_db.transaction("pytest", "hai_admin") as conn:
+        assert seed_demo_user(conn, is_production=False) == 1
+        assert seed_demo_user(conn, is_production=False) == 1  # idempotent: password restored, no duplicate
+    status = client.get("/v1/auth/status").json()
+    assert status["bootstrapped"] is True
+    assert status["demo_account"] == {"email": DEMO_USER_EMAIL, "password": DEMO_USER_PASSWORD}
+    session = login(client, DEMO_USER_EMAIL, DEMO_USER_PASSWORD)
+    assert session["me"]["user"]["role"] == "owner" and session["me"]["account"]["name"] == "Humaital"
+    assert client.get("/v1/team/users", headers=bearer(session["token"])).json()["total"] == 1
+    # a disabled demo user is not revived by seeding
+    with clean_db.transaction("pytest", "hai_admin") as conn:
+        conn.execute(
+            text("UPDATE hai_ops.users SET status = 'disabled' WHERE lower(email) = :e"), {"e": DEMO_USER_EMAIL}
+        )
+        assert seed_demo_user(conn, is_production=False) == 0
+    assert client.get("/v1/auth/status").json()["demo_account"] is None
+    with clean_db.transaction("pytest", "hai_admin") as conn:
+        conn.execute(text("UPDATE hai_ops.users SET status = 'active' WHERE lower(email) = :e"), {"e": DEMO_USER_EMAIL})
+    # production: never seeded, never advertised, never signed in, even with the row present
+    production = Settings(
+        **(
+            settings.model_dump()
+            | {
+                "env": "production",
+                "api_key_pepper": "p" * 40,
+                "jwt_secret": settings.jwt_secret.get_secret_value().replace("dev-", "prd-"),
+                "cert_signing_key": "c" * 40,
+                "webhook_signing_key": "w" * 40,
+            }
+        )
+    )
+    with clean_db.transaction("pytest", "hai_admin") as conn:
+        assert seed_demo_user(conn, is_production=True) == 0
+    app = create_app(settings=production, manifest=manifest, state=AppState.build(production, manifest))
+    with TestClient(app) as prod:
+        assert prod.get("/v1/auth/status").json()["demo_account"] is None
+        refused = prod.post("/v1/auth/login", json={"email": DEMO_USER_EMAIL, "password": DEMO_USER_PASSWORD})
+        assert refused.status_code == 401

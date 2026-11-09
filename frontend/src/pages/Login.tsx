@@ -21,17 +21,12 @@ export function Login() {
   const [reviewerToken, setReviewerToken] = useState("");
 
   const destination = from && from !== "/login" && from !== "/signup" ? from : "/";
+  const demo = status.data?.demo_account ?? null;
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (!email.trim() || !password) {
-      setError("Enter your email and password.");
-      return;
-    }
+  const signIn = async (credentials: { email: string; password: string }) => {
     setBusy(true);
     try {
-      const result = await api.login({ email: email.trim(), password, remember_me: remember });
+      const result = await api.login({ email: credentials.email.trim(), password: credentials.password, remember_me: remember });
       saveCredentials({ session: result.token, apiKey: null, reviewerToken: null });
       queryClient.clear();
       navigate(destination, { replace: true });
@@ -43,6 +38,24 @@ export function Login() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!email.trim() || !password) {
+      setError("Enter your email and password.");
+      return;
+    }
+    await signIn({ email, password });
+  };
+
+  const useDemo = async () => {
+    if (!demo) return;
+    setError(null);
+    setEmail(demo.email);
+    setPassword(demo.password);
+    await signIn(demo);
   };
 
   const useCredentials = (e: FormEvent) => {
@@ -80,6 +93,13 @@ export function Login() {
         <label className="checkbox-card remember"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /><span><strong>Keep me signed in</strong><span className="help">Stay signed in on this device for 30 days instead of 12 hours.</span></span></label>
         <button type="submit" className="primary auth-submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}<Icon name="arrow-right" /></button>
         <p className="small muted auth-help">Forgot your password? Ask your administrator for a reset link.</p>
+        {demo && (
+          <div className="demo-signin" role="note">
+            <Icon name="sparkles" />
+            <div><strong>Development demo account</strong><span className="small muted">{demo.email} with password <code>{demo.password}</code>. Seeded outside production only.</span></div>
+            <button type="button" onClick={() => void useDemo()} disabled={busy}>Use demo account</button>
+          </div>
+        )}
         <div className="auth-links">
           <span>Have an invitation? <Link to="/signup">Create your account</Link></span>
           <span>New here? <Link to="/signup">Request access</Link></span>

@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 from sqlalchemy import Connection, text
 
+from hai_core.accounts import seed_demo_user
 from hai_core.auth import DEMO_API_KEY, Scope, hmac_secret
 from hai_core.db.store import Store
 from hai_core.generated.enums import (
@@ -169,5 +170,6 @@ def seed_all(
     counts["connectors"] = seed_connectors(conn, manifest, load_connector_config(connectors_config), actor=actor)
     if settings is not None:
         counts["demo_api_keys"] = seed_demo_api_key(conn, settings)
+        counts["demo_users"] = seed_demo_user(conn, is_production=settings.is_production)
     counts["seeded_at"] = int(datetime.now(UTC).timestamp())
     return counts

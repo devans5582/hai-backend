@@ -25,7 +25,7 @@ from hai_api.schemas import (
 from hai_core import accounts
 from hai_core.auth import Principal, Scope, create_api_key, list_api_keys, revoke_api_key
 from hai_core.db.store import Store
-from hai_core.errors import ForbiddenError, NotFoundError, ValidationFailedError
+from hai_core.errors import ForbiddenError, NotFoundError, UnauthorizedError, ValidationFailedError
 
 router = APIRouter(prefix="/v1", tags=["accounts"])
 
@@ -100,7 +100,14 @@ def _current_user(st: State, principal: Principal) -> tuple[accounts.User, accou
 def auth_status(st: State) -> dict[str, Any]:
     with st.db.connect() as conn:
         bootstrapped = accounts.is_bootstrapped(conn)
-    return {"bootstrapped": bootstrapped, "signup": "invitation", "platform_name": "Humaital"}
+        demo = accounts.demo_user_available(conn, is_production=st.settings.is_production)
+    return {
+        "bootstrapped": bootstrapped,
+        "signup": "invitation",
+        "platform_name": "Humaital",
+        # Development only: the seeded demo owner, so the sign-in page can offer it in one click.
+        "demo_account": {"email": accounts.DEMO_USER_EMAIL, "password": accounts.DEMO_USER_PASSWORD} if demo else None,
+    }
 
 
 @router.post("/auth/bootstrap", status_code=status.HTTP_201_CREATED, summary="Create the first platform owner")
@@ -131,6 +138,9 @@ def bootstrap(body: BootstrapRequest, st: State, request: Request) -> dict[str, 
 
 @router.post("/auth/login", summary="Sign in with email and password")
 def login(body: LoginRequest, st: State, request: Request) -> dict[str, Any]:
+    # The demo owner is a development credential; production refuses it even if the row was carried over.
+    if st.settings.is_production and accounts.is_demo_user_email(body.email):
+        raise UnauthorizedError("invalid email or password")
     with st.db.transaction("login", "hai_api") as conn:
         outcome = accounts.login(
             conn,

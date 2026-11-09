@@ -571,6 +571,10 @@ tr.clickable { cursor: pointer; }
 .remember .help { margin-top: 2px; }
 .auth-submit { width: 100%; min-height: 46px; font-size: .9rem; justify-content: center; }
 .auth-help { text-align: center; margin: 16px 0 0; }
+.demo-signin { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 12px 14px; border: 1px dashed color-mix(in srgb, var(--hai-red) 35%, var(--border)); border-radius: 10px; background: var(--hai-red-soft); }
+.demo-signin > .icon { color: var(--hai-red); flex-shrink: 0; }
+.demo-signin > div { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; font-size: .78rem; }
+.demo-signin button { flex-shrink: 0; min-height: 36px; padding: 6px 12px; font-size: .74rem; }
 .auth-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 18px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); font-size: .8rem; color: var(--fg-3); }
 .auth-links .btn { flex: 1; }
 .auth-alt { padding: 0; border-radius: var(--radius); }

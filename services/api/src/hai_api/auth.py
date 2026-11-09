@@ -42,7 +42,7 @@ def current_principal(request: Request) -> Principal:
         claims = decode_token(secret, token, issuer=settings.jwt_issuer)
         if "sid" in claims:
             with state.db.transaction("auth", "hai_api") as conn:
-                return verify_session(conn, claims)
+                return verify_session(conn, claims, is_production=settings.is_production)
         return verify_jwt(secret, token, issuer=settings.jwt_issuer)
     if settings.auth_disabled and not settings.is_production:
         return Principal("admin", "dev-admin", "Development admin", frozenset({Scope.ADMIN}))

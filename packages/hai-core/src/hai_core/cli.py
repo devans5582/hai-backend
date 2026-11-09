@@ -9,7 +9,7 @@ import secrets
 import sys
 from pathlib import Path
 
-from hai_core.accounts import bootstrap_owner, is_bootstrapped
+from hai_core.accounts import DEMO_USER_EMAIL, DEMO_USER_PASSWORD, bootstrap_owner, is_bootstrapped
 from hai_core.audit import verify_chain
 from hai_core.auth import DEMO_API_KEY, Scope, create_api_key, list_api_keys, revoke_api_key
 from hai_core.db.engine import Database
@@ -88,7 +88,9 @@ def cmd_seed(_args: argparse.Namespace) -> int:
         counts = seed_all(conn, manifest, cfg, settings=s)
     print(", ".join(f"{k}={v}" for k, v in counts.items() if k != "seeded_at"))
     if counts.get("demo_api_keys"):
-        print(f"development API key: {DEMO_API_KEY} (Console Settings > API key)")
+        print(f"development API key: {DEMO_API_KEY} (sign-in page > Use an API key or reviewer token instead)")
+    if "demo_users" in counts and not s.is_production:
+        print(f"development console sign-in: {DEMO_USER_EMAIL} / {DEMO_USER_PASSWORD} (platform owner)")
     return 0
 
 

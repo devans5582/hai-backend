@@ -178,7 +178,10 @@ make smoke       # /health, /ready and /v1/ontology through the console proxy
 | API docs | http://localhost:8000/docs |
 | Health and readiness | http://localhost:8000/health and http://localhost:8000/ready |
 
-If ports 8000 or 8080 are taken, set `API_PORT` and `FRONTEND_PORT` in `.env`.
+If ports 5432, 8000 or 8080 are taken on the host, set `POSTGRES_PORT`, `API_PORT` and
+`FRONTEND_PORT` in `.env`; `make up` and `make smoke` read the same values. A Postgres
+that cannot bind its host port may start without a network, and migrate then fails with
+"database not reachable".
 `make down` stops the stack; `make reset` also deletes its volumes.
 
 ## Quick Start Without Docker
@@ -196,9 +199,13 @@ make dev                                             # api :8000, worker, consol
 
 ## Your First Assessment
 
-Open the console and sign in. On a fresh database the sign-in page offers
-**Set up the platform**: create the first owner account (email, name and a
-password of at least 10 characters). The owner then invites everyone else from
+Open the console and sign in. In development the seed creates a demo owner,
+**demo@humaital.com** with password **demo**, and the sign-in page offers it
+as a one-click **Use demo account** button (`make up` seeds the Docker
+database; the non-Docker setup seeds with `make seed`). Production never seeds
+it and refuses it. On a database without the demo seed the sign-in page offers
+**Set up the platform** instead: create the first owner account (email, name
+and a password of at least 10 characters). The owner invites everyone else from
 **Team and access**: administrators, reviewers, analysts and viewers for
 Humaital, and organization admins or members for a participating organization,
 which signs in with its work email and sees only its own reports. Invitation

@@ -31,6 +31,9 @@ UserStatus = Literal["active", "disabled"]
 InvitationKind = Literal["invite", "password_reset"]
 
 INVITE_TOKEN_PREFIX = "hai_inv_"  # noqa: S105 - a prefix, not a secret
+# Intentional development sign-in, like the ``demo`` API key: seeded outside production, refused in production.
+DEMO_USER_EMAIL = "demo@humaital.com"
+DEMO_USER_PASSWORD = "demo"  # noqa: S105 - development credential, documented in the README
 SCRYPT_N_LOG2 = 14
 SCRYPT_R = 8
 SCRYPT_P = 1
@@ -613,6 +616,64 @@ def bootstrap_owner(
     )
 
 
+def seed_demo_user(conn: Connection, *, is_production: bool) -> int:
+    """Ensure the development demo owner exists with its known password.
+
+    Creates the platform account when missing. Restores the password and clears any lockout
+    on every seed, but never revives a demo user that an administrator disabled. Returns the
+    number of rows written. Does nothing in production.
+    """
+    if is_production:
+        return 0
+    account = platform_account(conn)
+    if account is None:
+        row = conn.execute(
+            text(
+                "INSERT INTO hai_ops.accounts (kind, name, email_domain, created_by) "
+                f"VALUES ('platform', 'Humaital', :domain, 'hai-db:demo') RETURNING {_ACCOUNT_COLS}"
+            ),
+            {"domain": email_domain(DEMO_USER_EMAIL)},
+        ).first()
+        assert row is not None
+        account = _account(row)
+    existing = find_user_by_email(conn, DEMO_USER_EMAIL)
+    if existing is None:
+        _insert_user(
+            conn,
+            account_id=account.id,
+            email=DEMO_USER_EMAIL,
+            name="Demo Owner",
+            role="owner",
+            scopes=ROLES["owner"].scopes,
+            industries=[],
+            password_hash=hash_password(DEMO_USER_PASSWORD),
+            invited_by="hai-db:demo",
+        )
+        return 1
+    if existing.status != "active":
+        return 0
+    result = conn.execute(
+        text(
+            "UPDATE hai_ops.users SET password_hash = :p, failed_logins = 0, locked_until = NULL, updated_at = now() "
+            "WHERE id = :id"
+        ),
+        {"p": hash_password(DEMO_USER_PASSWORD), "id": existing.id},
+    )
+    return int(result.rowcount)
+
+
+def is_demo_user_email(email: str) -> bool:
+    return email.strip().lower() == DEMO_USER_EMAIL
+
+
+def demo_user_available(conn: Connection, *, is_production: bool) -> bool:
+    """Whether the sign-in page may offer the demo account: development only, row present and active."""
+    if is_production:
+        return False
+    user = find_user_by_email(conn, DEMO_USER_EMAIL)
+    return user is not None and user.status == "active"
+
+
 def create_user_directly(
     conn: Connection,
     *,
@@ -858,7 +919,7 @@ def principal_for(user: User, account: Account, session_id: UUID | None = None) 
     )
 
 
-def verify_session(conn: Connection, claims: dict[str, Any]) -> Principal:
+def verify_session(conn: Connection, claims: dict[str, Any], *, is_production: bool = False) -> Principal:
     """Resolve a session JWT's claims against the live session, user and account rows."""
     sid = claims.get("sid")
     try:
@@ -884,6 +945,8 @@ def verify_session(conn: Connection, claims: dict[str, Any]) -> Principal:
         raise UnauthorizedError("session expired or signed out; sign in again")
     if user.status != "active":
         raise UnauthorizedError("this account is disabled; contact your administrator")
+    if is_production and is_demo_user_email(user.email):
+        raise UnauthorizedError("the demo account is not available in production")
     if str(user.id) != str(claims.get("sub")):
         raise UnauthorizedError("session does not match the token")
     conn.execute(

@@ -459,7 +459,7 @@ export const api = {
   integrityConstraints: () => request<Page<{ id: string; rule: string; enforced_in: string; implementation: string; acceptance_test: string }>>("GET", "/v1/ontology/integrity-constraints"),
   criteria: () => request<Page<Record<string, unknown>>>("GET", "/v1/methodology/criteria"),
   // accounts
-  authStatus: () => request<{ bootstrapped: boolean; signup: string; platform_name: string }>("GET", "/v1/auth/status"),
+  authStatus: () => request<{ bootstrapped: boolean; signup: string; platform_name: string; demo_account: { email: string; password: string } | null }>("GET", "/v1/auth/status"),
   login: (body: { email: string; password: string; remember_me: boolean }) => request<LoginResponse>("POST", "/v1/auth/login", body),
   bootstrap: (body: { email: string; name: string; password: string; platform_name: string }) => request<LoginResponse>("POST", "/v1/auth/bootstrap", body),
   logout: (everywhere = false) => request<void>("POST", `/v1/auth/logout${everywhere ? "?everywhere=true" : ""}`),

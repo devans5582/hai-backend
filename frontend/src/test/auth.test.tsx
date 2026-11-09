@@ -66,7 +66,7 @@ function renderApp(route: string) {
 
 function workspaceRoutes(me: Me) {
   return (url: string, init?: RequestInit) => {
-    if (url === "/v1/auth/status") return { body: { bootstrapped: true, signup: "invitation", platform_name: "Humaital" } };
+    if (url === "/v1/auth/status") return { body: { bootstrapped: true, signup: "invitation", platform_name: "Humaital", demo_account: null } };
     if (url === "/v1/auth/me") return { body: me };
     if (url === "/health") return { body: { status: "ok", ontology_version: "1.0.0", methodology_version: "1.0.0" } };
     if (url.startsWith("/v1/assessments?") || url.startsWith("/v1/reviews/tasks?")) return { body: EMPTY_PAGE };
@@ -122,6 +122,21 @@ describe("Login", () => {
     // the session is sent as a bearer token afterwards
     const meCall = calls.find((c) => c.url === "/v1/auth/me");
     expect((meCall?.init?.headers as Record<string, string>)["Authorization"]).toBe(`Bearer ${SESSION_TOKEN}`);
+  });
+
+  it("offers the seeded demo account in development and signs in with one click", async () => {
+    const user = userEvent.setup();
+    const me = meFor("owner", "platform");
+    const { calls } = mockFetch((url, init) => {
+      if (url === "/v1/auth/status") return { body: { bootstrapped: true, signup: "invitation", platform_name: "Humaital", demo_account: { email: "demo@humaital.com", password: "demo" } } };
+      if (url === "/v1/auth/login" && init?.method === "POST") return { body: { token: SESSION_TOKEN, token_type: "bearer", expires_at: "2027-01-01T00:00:00Z", me } };
+      return workspaceRoutes(me)(url, init);
+    });
+    renderApp("/login");
+    await user.click(await screen.findByRole("button", { name: "Use demo account" }));
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    const login = calls.find((c) => c.url === "/v1/auth/login");
+    expect(JSON.parse(String(login?.init?.body))).toEqual({ email: "demo@humaital.com", password: "demo", remember_me: false });
   });
 
   it("still lets a partner continue with an API key", async () => {
@@ -194,7 +209,7 @@ describe("Signup", () => {
   it("offers first-run setup when the platform has no owner, and access requests afterwards", async () => {
     const user = userEvent.setup();
     const { calls } = mockFetch((url, init) => {
-      if (url === "/v1/auth/status") return { body: { bootstrapped: false, signup: "invitation", platform_name: "Humaital" } };
+      if (url === "/v1/auth/status") return { body: { bootstrapped: false, signup: "invitation", platform_name: "Humaital", demo_account: null } };
       if (url === "/v1/auth/access-requests" && init?.method === "POST") return { status: 201, body: { id: "r1", status: "pending", created_at: "2026-11-01T00:00:00Z" } };
       return undefined;
     });
@@ -203,7 +218,7 @@ describe("Signup", () => {
     expect(screen.getByLabelText("Platform name")).toHaveValue("Humaital");
 
     mockFetch((url, init) => {
-      if (url === "/v1/auth/status") return { body: { bootstrapped: true, signup: "invitation", platform_name: "Humaital" } };
+      if (url === "/v1/auth/status") return { body: { bootstrapped: true, signup: "invitation", platform_name: "Humaital", demo_account: null } };
       if (url === "/v1/auth/access-requests" && init?.method === "POST") { calls.push({ url, init }); return { status: 201, body: { id: "r1", status: "pending", created_at: "2026-11-01T00:00:00Z" } }; }
       return undefined;
     });
