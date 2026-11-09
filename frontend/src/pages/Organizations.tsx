@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Icon } from "../components/Icon";
+import { TableDate } from "../components/TableDate";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
-import { fmtDate, fmtDateTime, fmtNum, label, toneForLifecycle, toneForOutcome } from "../lib/format";
+import { fmtDate, fmtNum, label, toneForLifecycle, toneForOutcome } from "../lib/format";
 
 export function Organizations() {
   const [q, setQ] = useState("");
@@ -26,7 +27,7 @@ export function Organizations() {
           <input id="q" type="search" placeholder="Search by name or domain" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       </div>
-      <div className="card table-wrap">
+      <div className="card data-table-card">
         <QueryState isLoading={orgs.isLoading} error={orgs.error}>
           {(orgs.data?.items.length ?? 0) === 0 ? (
             <div className="empty-state">
@@ -35,39 +36,45 @@ export function Organizations() {
               <p>{q ? "Try another name or domain to find the organization you need." : "Start an assessment to add an organization and build its evidence history."}</p>
               {q ? <button type="button" onClick={() => setQ("")}>Clear search</button> : <Link className="btn primary" to="/assessments/new"><Icon name="plus" /> New assessment</Link>}
             </div>
-          ) : <table>
+          ) : <div className="table-wrap" role="region" aria-label="Organization directory" tabIndex={0}><table className="data-table directory-table" aria-label="Organization directory">
+            <colgroup>
+              <col style={{ width: "28%" }} />
+              <col style={{ width: "23%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "29%" }} />
+            </colgroup>
             <thead>
               <tr>
-                <th>Organization</th>
-                <th>Domain</th>
-                <th>Industry</th>
-                <th>Identifiers</th>
+                <th scope="col">Organization</th>
+                <th scope="col">Domain</th>
+                <th scope="col">Industry</th>
+                <th scope="col">Identifiers</th>
               </tr>
             </thead>
             <tbody>
               {(orgs.data?.items ?? []).map((o) => (
                 <tr key={o.id}>
                   <td>
-                    <Link to={`/organizations/${o.id}`}>{o.display_name}</Link>
+                    <Link className="assessment-name" to={`/organizations/${o.id}`}><span className="domain-avatar" aria-hidden="true">{o.display_name[0]?.toUpperCase() ?? "O"}</span><span>{o.display_name}</span></Link>
                   </td>
                   <td className="mono">{o.primary_domain}</td>
                   <td>{label("industry", o.industry_code)}</td>
-                  <td className="small">
-                    {o.identifiers_verified ? <Badge tone="ok">verified</Badge> : <Badge>unverified</Badge>}{" "}
-                    {Object.entries(o.identifiers)
+                  <td className="identifier-cell">
+                    {o.identifiers_verified ? <Badge tone="ok">Verified</Badge> : <Badge>Unverified</Badge>}
+                    <span className="table-secondary">{Object.entries(o.identifiers)
                       .filter(([, v]) => v)
                       .map(([k, v]) => `${k} ${v}`)
-                      .join(", ")}
+                      .join(", ")}</span>
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>}
+          </table></div>}
         </QueryState>
       </div>
-      <section className="card table-wrap" aria-labelledby="bench">
-        <h2 id="bench">Peer benchmarks</h2>
-        <p className="muted small">Latest result per organization, grouped by industry, stage and size. Access-limited runs are excluded.</p>
+      <section className="card data-table-card" aria-labelledby="bench">
+        <div className="data-table-heading"><div><h2 id="bench">Peer benchmarks</h2>
+        <p className="muted small">Latest result per organization, grouped by industry, stage and size. Access-limited runs are excluded.</p></div></div>
         <QueryState isLoading={bench.isLoading} error={bench.error}>
           {(bench.data?.items.length ?? 0) === 0 ? (
             <div className="empty-state">
@@ -77,15 +84,23 @@ export function Organizations() {
               <Link className="text-link" to="/assessments/new">Start an assessment <Icon name="arrow-right" /></Link>
             </div>
           ) : (
-            <table>
+            <div className="table-wrap" role="region" aria-labelledby="bench" tabIndex={0}><table className="data-table benchmark-table" aria-labelledby="bench">
+              <colgroup>
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "17%" }} />
+                <col style={{ width: "18%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "16%" }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th>Industry</th>
-                  <th>Stage</th>
-                  <th>Size</th>
-                  <th>Organizations</th>
-                  <th>Average score</th>
-                  <th>Average confidence</th>
+                  <th scope="col">Industry</th>
+                  <th scope="col">Stage</th>
+                  <th scope="col">Size</th>
+                  <th scope="col" className="numeric-cell">Organizations</th>
+                  <th scope="col" className="numeric-cell">Average score</th>
+                  <th scope="col" className="numeric-cell">Average confidence</th>
                 </tr>
               </thead>
               <tbody>
@@ -94,13 +109,13 @@ export function Organizations() {
                     <td>{b.industry ? label("industry", b.industry) : "unspecified"}</td>
                     <td>{label("stage_band", b.stage_band)}</td>
                     <td>{label("size_band", b.size_band)}</td>
-                    <td>{b.organizations}</td>
-                    <td>{fmtNum(b.average_score)}</td>
-                    <td>{fmtNum(b.average_confidence)}</td>
+                    <td className="numeric-cell">{b.organizations}</td>
+                    <td className="numeric-cell">{fmtNum(b.average_score)}</td>
+                    <td className="numeric-cell">{fmtNum(b.average_confidence)}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </QueryState>
       </section>
@@ -127,13 +142,13 @@ export function OrganizationDetail() {
                 <span className="mono">{org.data.primary_domain}</span>
                 <span>{org.data.legal_name}</span>
                 {org.data.industry_code && <span>{label("industry", org.data.industry_code)}</span>}
-                {org.data.identifiers_verified ? <Badge tone="ok">identifiers verified</Badge> : <Badge>identifiers unverified</Badge>}
-                {org.data.entity_confidence !== null && <span>entity confidence {fmtNum(org.data.entity_confidence, 2)}</span>}
+                {org.data.identifiers_verified ? <Badge tone="ok">Identifiers verified</Badge> : <Badge>Identifiers unverified</Badge>}
+                {org.data.entity_confidence !== null && <span>Entity confidence {fmtNum(org.data.entity_confidence, 2)}</span>}
               </div>
             </div>
           </div>
-          <section className="card table-wrap" aria-labelledby="org-assessments">
-            <div className="card-heading"><div><h2 id="org-assessments">Assessment history</h2><p className="muted small">One organization, every assessment as a numbered version. The latest version is what the dashboard shows; earlier versions stay readable and are never edited.</p></div>{history.data && <span className="count-tag">{history.data.total} version{history.data.total === 1 ? "" : "s"}</span>}</div>
+          <section className="card data-table-card" aria-labelledby="org-assessments">
+            <div className="data-table-heading"><div><h2 id="org-assessments">Assessment history</h2><p className="muted small">One organization, every assessment as a numbered version. The latest version is what the dashboard shows; earlier versions stay readable and are never edited.</p></div>{history.data && <span className="count-tag">{history.data.total} version{history.data.total === 1 ? "" : "s"}</span>}</div>
             <QueryState isLoading={history.isLoading} error={history.error}>
               {(history.data?.items.length ?? 0) === 0 ? (
                 <div className="empty-state">
@@ -142,16 +157,25 @@ export function OrganizationDetail() {
                   <p>Start an assessment to understand this organization's AI governance.</p>
                   <Link className="btn primary" to="/assessments/new"><Icon name="plus" /> New assessment</Link>
                 </div>
-              ) : <table>
+              ) : <div className="table-wrap" role="region" aria-labelledby="org-assessments" tabIndex={0}><table className="data-table history-table" aria-labelledby="org-assessments">
+                <colgroup>
+                  <col style={{ width: "15%" }} />
+                  <col style={{ width: "19%" }} />
+                  <col style={{ width: "10%" }} />
+                  <col style={{ width: "22%" }} />
+                  <col style={{ width: "12%" }} />
+                  <col style={{ width: "15%" }} />
+                  <col style={{ width: "7%" }} />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>Version</th>
-                    <th>State</th>
-                    <th>HAI Score</th>
-                    <th>Outcome</th>
-                    <th>Methodology</th>
-                    <th>Assessed</th>
-                    <th><span className="sr-only">Open</span></th>
+                    <th scope="col">Version</th>
+                    <th scope="col">State</th>
+                    <th scope="col" className="numeric-cell">HAI Score</th>
+                    <th scope="col">Outcome</th>
+                    <th scope="col">Methodology</th>
+                    <th scope="col">Assessed</th>
+                    <th scope="col" className="action-cell"><span className="sr-only">Open</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -159,15 +183,15 @@ export function OrganizationDetail() {
                     <tr key={v.assessment.id} className={v.is_latest ? "row-latest" : ""}>
                       <td><Link to={`/assessments/${v.assessment.id}`} className="version-link">v{v.version}{v.is_latest && <Badge tone="red">Latest</Badge>}</Link><div className="small muted mono">{v.assessment.id.slice(0, 8)}</div></td>
                       <td><Badge tone={toneForLifecycle(v.assessment.lifecycle_state)}>{v.assessment.lifecycle_label}</Badge></td>
-                      <td className="num">{v.result ? fmtNum(v.result.hai_score) : <span className="muted">n/a</span>}</td>
-                      <td>{v.result ? <Badge tone={toneForOutcome(v.result.outcome_status)}>{v.result.outcome_label}</Badge> : <span className="muted small">No result yet</span>}</td>
+                      <td className="numeric-cell">{v.result ? fmtNum(v.result.hai_score) : <span className="muted">n/a</span>}</td>
+                      <td className="outcome-cell">{v.result ? <Badge tone={toneForOutcome(v.result.outcome_status)}>{v.result.outcome_label}</Badge> : <span className="muted small">No result yet</span>}</td>
                       <td className="small muted">{v.assessment.methodology_version} / {v.assessment.ruleset_version}</td>
-                      <td className="small muted">{fmtDateTime(v.assessment.created_at)}</td>
-                      <td><Link className="icon-button" to={`/assessments/${v.assessment.id}`} aria-label={`Open version ${v.version}`}><Icon name="arrow-right" /></Link></td>
+                      <td><TableDate value={v.assessment.created_at} /></td>
+                      <td className="action-cell"><Link className="icon-button table-row-action" to={`/assessments/${v.assessment.id}`} aria-label={`Open version ${v.version}`}><Icon name="arrow-right" /></Link></td>
                     </tr>
                   ))}
                 </tbody>
-              </table>}
+              </table></div>}
             </QueryState>
           </section>
           <section className="card" aria-labelledby="ledger">

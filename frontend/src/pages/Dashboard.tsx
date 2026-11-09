@@ -3,10 +3,11 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Icon, type IconName } from "../components/Icon";
 import { FrameworkVisual } from "../components/FrameworkVisual";
+import { TableDate } from "../components/TableDate";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { fmtDateTime, fmtNum, label, lifecycleGroup, toneForLifecycle, toneForOutcome } from "../lib/format";
+import { fmtNum, label, lifecycleGroup, toneForLifecycle, toneForOutcome } from "../lib/format";
 import { useMe } from "../lib/me";
 
 type Filter = "all" | "active" | "completed" | "attention";
@@ -72,26 +73,116 @@ export function Dashboard() {
         <section className="card assessments-card" aria-labelledby="recent">
           <div className="card-heading"><div><h2 id="recent">{grouped ? "Organizations" : "Assessment runs"}<span className="count-tag">{available ? total : "—"}</span></h2><p className="muted small">{grouped ? "Latest results at a glance. Open an organization to explore its assessment history." : "All assessment versions, with the most recent first."}</p></div>{available && <span className="live-label"><span className="status-dot" />Auto-updating</span>}</div>
           <div className="assessment-toolbar">
-            <div className="filter-group" role="group" aria-label="Filter assessments">{FILTERS.map((f) => <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}</div>
-            <div className="filter-group view-switch" role="group" aria-label="View"><button type="button" aria-pressed={grouped} onClick={() => { setView("organizations"); setOffset(0); }}><Icon name="building" />By organization</button><button type="button" aria-pressed={!grouped} onClick={() => { setView("runs"); setOffset(0); }}><Icon name="layers" />All runs</button></div>
-            <div className="search-input"><Icon name="search" /><label className="sr-only" htmlFor="assessment-search">Search assessments</label><input id="assessment-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={grouped ? "Search organization or domain…" : "Search domain or ID…"} /></div>
+            <div className="assessment-controls">
+              <div className="search-input">
+                <Icon name="search" />
+                <label className="sr-only" htmlFor="assessment-search">Search assessments</label>
+                <input id="assessment-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={grouped ? "Search organization or domain…" : "Search domain or ID…"} />
+              </div>
+              <div className="filter-group view-switch" role="group" aria-label="View">
+                <button type="button" aria-pressed={grouped} onClick={() => { setView("organizations"); setOffset(0); }}><Icon name="building" />By organization</button>
+                <button type="button" aria-pressed={!grouped} onClick={() => { setView("runs"); setOffset(0); }}><Icon name="layers" />All runs</button>
+              </div>
+            </div>
+            <div className="filter-group assessment-filters" role="group" aria-label="Filter assessments">
+              {FILTERS.map((f) => <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</button>)}
+            </div>
           </div>
           {!connected ? <div className="empty-state"><span className="empty-icon"><Icon name="key" /></span><h3>Your workspace starts here</h3><p>Connect an API key or reviewer token to see your assessments and start exploring results.</p><Link className="btn primary" to="/login">Connect your workspace<Icon name="arrow-right" /></Link><span className="empty-footnote"><Icon name="lock" />Credentials stay in your browser</span></div> : <QueryState isLoading={active.isLoading} error={active.error}>
             {shown === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name={pageSize ? "search" : "file"} /></span><h3>{emptyTitle}</h3><p>{emptyBody}</p>{pageSize ? <button type="button" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</button> : canStart ? <Link className="btn primary" to="/assessments/new"><Icon name="plus" />New assessment</Link> : null}</div> : grouped ? (
-              <div className="table-wrap"><table><thead><tr><th>Organization</th><th>Latest version</th><th>Status</th><th>HAI Score</th><th>Outcome</th><th>Assessed</th><th><span className="sr-only">Open</span></th></tr></thead><tbody>{filteredRows.map((row) => (
-                <tr key={row.organization.id}>
-                  <td><Link className="assessment-name" to={`/organizations/${row.organization.id}`}><span className="domain-avatar">{row.organization.display_name[0]?.toUpperCase() ?? "O"}</span><span>{row.organization.display_name}<small className="mono">{row.organization.primary_domain}{row.organization.industry_label ? ` · ${row.organization.industry_label}` : ""}</small></span></Link></td>
-                  <td>{row.latest ? <span className="version-pill" title={`${row.versions} assessment${row.versions === 1 ? "" : "s"} of this organization`}>v{row.latest.version}<small>of {row.versions}</small></span> : <span className="muted small">Not assessed</span>}</td>
-                  <td>{row.latest ? <Badge tone={toneForLifecycle(row.latest.lifecycle_state)}>{row.latest.lifecycle_label}</Badge> : null}</td>
-                  <td className="num">{row.result ? <>{fmtNum(row.result.hai_score)}{row.score_delta !== null && <small className={`delta ${row.score_delta >= 0 ? "up" : "down"}`} aria-label={`change from previous version ${row.score_delta >= 0 ? "+" : ""}${row.score_delta}`}>{row.score_delta >= 0 ? "+" : ""}{row.score_delta}</small>}</> : <span className="muted">n/a</span>}</td>
-                  <td>{row.result ? <Badge tone={toneForOutcome(row.result.outcome_status)}>{row.result.outcome_label}</Badge> : <span className="muted small">{row.latest ? "No result yet" : ""}</span>}</td>
-                  <td className="small muted">{fmtDateTime(row.latest?.created_at ?? null)}</td>
-                  <td>{row.latest && <Link className="icon-button" to={`/assessments/${row.latest.id}`} aria-label={`View latest assessment for ${row.organization.display_name}`}><Icon name="arrow-right" /></Link>}</td>
-                </tr>
-              ))}</tbody></table></div>
+              <div className="table-wrap assessment-table-wrap" role="region" aria-label="Organization assessments" tabIndex={0}>
+                <table className="data-table overview-table">
+                  <caption className="sr-only">Latest assessment by organization</caption>
+                  <colgroup>
+                    <col className="organization-column" />
+                    <col className="version-column" />
+                    <col className="status-column" />
+                    <col className="score-column" />
+                    <col className="outcome-column" />
+                    <col className="date-column" />
+                    <col className="action-column" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">Organization</th>
+                      <th scope="col">Version</th>
+                      <th scope="col">Status</th>
+                      <th scope="col" className="numeric-cell">HAI Score</th>
+                      <th scope="col">Outcome</th>
+                      <th scope="col">Assessed</th>
+                      <th scope="col" className="action-cell"><span className="sr-only">Open</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRows.map((row) => (
+                      <tr key={row.organization.id}>
+                        <td>
+                          <Link className="assessment-name" to={`/organizations/${row.organization.id}`}>
+                            <span className="domain-avatar" aria-hidden="true">{row.organization.display_name[0]?.toUpperCase() ?? "O"}</span>
+                            <span className="table-identity">
+                              <strong>{row.organization.display_name}</strong>
+                              <small>{row.organization.primary_domain}{row.organization.industry_label ? ` · ${row.organization.industry_label}` : ""}</small>
+                            </span>
+                          </Link>
+                        </td>
+                        <td>{row.latest ? <span className="version-pill" title={`${row.versions} assessment${row.versions === 1 ? "" : "s"} of this organization`}>v{row.latest.version}<small>of {row.versions}</small></span> : <span className="table-placeholder">Not assessed</span>}</td>
+                        <td className="status-cell">{row.latest ? <Badge tone={toneForLifecycle(row.latest.lifecycle_state)}>{row.latest.lifecycle_label}</Badge> : <span className="table-placeholder">—</span>}</td>
+                        <td className="numeric-cell">
+                          {row.result ? (
+                            <div className="table-score">
+                              <strong>{fmtNum(row.result.hai_score)}</strong>
+                              {row.score_delta !== null && <small className={`delta ${row.score_delta >= 0 ? "up" : "down"}`} aria-label={`change from previous version ${row.score_delta >= 0 ? "+" : ""}${row.score_delta}`}>{row.score_delta >= 0 ? "+" : ""}{row.score_delta}</small>}
+                            </div>
+                          ) : <span className="table-placeholder">n/a</span>}
+                        </td>
+                        <td className="outcome-cell">{row.result ? <Badge tone={toneForOutcome(row.result.outcome_status)}>{row.result.outcome_label}</Badge> : <span className="table-placeholder">{row.latest ? "No result yet" : "—"}</span>}</td>
+                        <td><TableDate value={row.latest?.created_at} /></td>
+                        <td className="action-cell">{row.latest && <Link className="icon-button table-row-action" to={`/assessments/${row.latest.id}`} aria-label={`View latest assessment for ${row.organization.display_name}`}><Icon name="arrow-right" /></Link>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
-              <div className="table-wrap"><table><thead><tr><th>Organization / domain</th><th>Status</th><th>Context</th><th>Created</th><th><span className="sr-only">View assessment</span></th></tr></thead><tbody>{filteredRuns.map((a) => <tr key={a.id}><td><Link className="assessment-name" to={`/assessments/${a.id}`}><span className="domain-avatar">{a.submitted_domain[0]?.toUpperCase() ?? "O"}</span><span>{a.submitted_domain}<small className="mono">{a.id.slice(0, 8)}</small></span></Link></td><td><Badge tone={toneForLifecycle(a.lifecycle_state)}>{a.lifecycle_label}</Badge></td><td><span>{label("stage_band", a.stage_band)}</span><div className="small muted">{label("size_band", a.size_band)}</div></td><td className="small muted">{fmtDateTime(a.created_at)}</td><td><Link className="icon-button" to={`/assessments/${a.id}`} aria-label={`View assessment for ${a.submitted_domain}`}><Icon name="arrow-right" /></Link></td></tr>)}</tbody></table></div>
+              <div className="table-wrap assessment-table-wrap" role="region" aria-label="Assessment runs" tabIndex={0}>
+                <table className="data-table runs-table">
+                  <caption className="sr-only">All assessment runs, newest first</caption>
+                  <colgroup>
+                    <col className="organization-column" />
+                    <col className="status-column" />
+                    <col className="context-column" />
+                    <col className="date-column" />
+                    <col className="action-column" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th scope="col">Organization / domain</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Context</th>
+                      <th scope="col">Created</th>
+                      <th scope="col" className="action-cell"><span className="sr-only">View assessment</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRuns.map((a) => (
+                      <tr key={a.id}>
+                        <td>
+                          <Link className="assessment-name" to={`/assessments/${a.id}`}>
+                            <span className="domain-avatar" aria-hidden="true">{a.submitted_domain[0]?.toUpperCase() ?? "O"}</span>
+                            <span className="table-identity"><strong>{a.submitted_domain}</strong><small className="assessment-id"><span>ID</span><span className="mono">{a.id.slice(0, 8)}</span></small></span>
+                          </Link>
+                        </td>
+                        <td className="status-cell"><Badge tone={toneForLifecycle(a.lifecycle_state)}>{a.lifecycle_label}</Badge></td>
+                        <td><div className="table-context"><span>{label("stage_band", a.stage_band)}</span><small>{label("size_band", a.size_band)}</small></div></td>
+                        <td><TableDate value={a.created_at} /></td>
+                        <td className="action-cell"><Link className="icon-button table-row-action" to={`/assessments/${a.id}`} aria-label={`View assessment for ${a.submitted_domain}`}><Icon name="arrow-right" /></Link></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
+            {available && shown > 0 && <p className={`table-scroll-hint ${grouped ? "overview-scroll-hint" : "runs-scroll-hint"}`}><Icon name="arrow-right" />Scroll horizontally to see all columns</p>}
             {available && <div className="table-footer"><span>{search || filter !== "all" ? `${shown} matching in this page` : `Showing ${pageSize ? offset + 1 : 0}–${offset + pageSize} of ${total}`}</span>{(total > 50 || offset > 0) && <div className="actions"><button type="button" onClick={() => setOffset(Math.max(0, offset - 50))} disabled={offset === 0}>Previous</button><button type="button" onClick={() => setOffset(offset + 50)} disabled={offset + 50 >= total}>Next</button></div>}<span>Updates automatically</span></div>}
           </QueryState>}
         </section>
