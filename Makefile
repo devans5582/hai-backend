@@ -5,6 +5,10 @@ SHELL := /bin/bash
 UV ?= uv
 NPM ?= npm
 COMPOSE ?= docker compose
+# docker-compose.yml reads host port overrides from .env; make up and make smoke follow the same values.
+API_PORT ?= $(shell sed -n 's/^API_PORT=//p' .env 2>/dev/null | tail -n 1)
+FRONTEND_PORT ?= $(shell sed -n 's/^FRONTEND_PORT=//p' .env 2>/dev/null | tail -n 1)
+export API_PORT FRONTEND_PORT
 BASE ?= git:origin/main
 DB_CONTAINER ?= hai-dev-pg
 DB_PORT ?= 55432
