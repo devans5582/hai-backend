@@ -172,6 +172,10 @@ async def test_full_assessment_lifecycle(
     assert report["coverage_summary"]["observed"] >= 3 and all(
         s["run_outcome"] == "succeeded" for s in report["sources"]
     )
+    # the PDF renders the same stored report, with the real evidence appendix
+    pdf = client.get(f"/v1/assessments/{aid}/report.pdf", headers=partner)
+    assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF-") and len(pdf.content) > 30_000
+    assert report["version"] == {"number": 1, "total": 1} and report["certification"] is None
     trace = client.get(f"/v1/assessments/{aid}/trace/SAF-01", headers=partner).json()
     assert trace["criteria"][0]["rules"] and any(e["quote"] for e in trace["criteria"][0]["evidence"])
     assert (

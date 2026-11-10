@@ -8,6 +8,7 @@ dependencies = [
     "hai-core",
     "httpx>=0.27",
     "jsonschema>=4.23",
+    "fpdf2>=2.8",
 ]
 [tool.uv.sources]
 hai-ontology = { workspace = true }

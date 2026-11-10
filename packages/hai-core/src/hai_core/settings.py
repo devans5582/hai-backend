@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     login_lockout_minutes: int = 15
     console_base_url: str = "http://localhost:5173"  # where invitation links point
 
+    # Reports (PDF export footer; the methodology owns the report name)
+    report_website: str = "humanalignmentindex.com"
+    report_tagline: str = "Where Humanity Leads Technology"
+
     # Storage
     blob_store_url: str = "file://./var/blobs"
 

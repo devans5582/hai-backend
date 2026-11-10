@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { ExportReportButton } from "../components/ExportReportButton";
 import { Icon } from "../components/Icon";
 import { TraceDrawer } from "../components/TraceDrawer";
 import { Badge, CoverageStrip, PillarBars, QueryState, ScoreDial, Tabs } from "../components/widgets";
@@ -56,6 +57,7 @@ export function AssessmentDetail() {
               </div>
             </div>
             <div className="actions">
+              <ExportReportButton assessmentId={id} subject={version ? `${r?.organization.name ?? a.submitted_domain}, version ${version.version}` : r?.organization.name ?? a.submitted_domain} />
               {LIFECYCLE_UI[a.lifecycle_state]?.cancel && (
                 <button type="button" onClick={() => cancel.mutate()} disabled={cancel.isPending}>
                   {cancel.isPending ? "Cancelling…" : "Cancel"}

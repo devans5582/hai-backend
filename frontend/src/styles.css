@@ -321,6 +321,12 @@ tr.clickable { cursor: pointer; }
 .data-table .table-row-action .icon { width: 16px; height: 16px; transition: transform .15s; }
 .data-table .table-row-action:hover { background: var(--hai-red-soft); color: var(--hai-red); border-color: color-mix(in srgb, var(--hai-red) 30%, var(--border)); }
 .data-table .table-row-action:hover .icon { transform: translateX(2px); }
+.data-table .row-actions { display: inline-flex; gap: 6px; align-items: center; }
+.data-table .export-compact:hover .icon { transform: translateY(1px); }
+.data-table .export-compact.is-pending .icon { animation: export-pulse 1s ease-in-out infinite; }
+.export-report { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.export-error { color: var(--bad); }
+@keyframes export-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 .assessment-table-wrap { max-height: 640px; scrollbar-width: thin; scrollbar-color: var(--border) var(--bg-2); }
 .table-wrap:focus-visible { outline-offset: -3px; }
 .assessment-table-wrap .data-table th { position: sticky; top: 0; z-index: 2; box-shadow: 0 1px 0 var(--border); }

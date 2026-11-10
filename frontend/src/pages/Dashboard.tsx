@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { ExportReportButton } from "../components/ExportReportButton";
 import { Icon, type IconName } from "../components/Icon";
 import { FrameworkVisual } from "../components/FrameworkVisual";
 import { TableDate } from "../components/TableDate";
@@ -110,7 +111,7 @@ export function Dashboard() {
                       <th scope="col" className="numeric-cell">HAI Score</th>
                       <th scope="col">Outcome</th>
                       <th scope="col">Assessed</th>
-                      <th scope="col" className="action-cell"><span className="sr-only">Open</span></th>
+                      <th scope="col" className="action-cell"><span className="sr-only">Export and open</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -137,7 +138,7 @@ export function Dashboard() {
                         </td>
                         <td className="outcome-cell">{row.result ? <Badge tone={toneForOutcome(row.result.outcome_status)}>{row.result.outcome_label}</Badge> : <span className="table-placeholder">{row.latest ? "No result yet" : "—"}</span>}</td>
                         <td><TableDate value={row.latest?.created_at} /></td>
-                        <td className="action-cell">{row.latest && <Link className="icon-button table-row-action" to={`/assessments/${row.latest.id}`} aria-label={`View latest assessment for ${row.organization.display_name}`}><Icon name="arrow-right" /></Link>}</td>
+                        <td className="action-cell">{row.latest && <span className="row-actions"><ExportReportButton assessmentId={row.latest.id} subject={row.organization.display_name} compact /><Link className="icon-button table-row-action" to={`/assessments/${row.latest.id}`} aria-label={`View latest assessment for ${row.organization.display_name}`}><Icon name="arrow-right" /></Link></span>}</td>
                       </tr>
                     ))}
                   </tbody>

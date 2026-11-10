@@ -5,15 +5,15 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from sqlalchemy import text
 
 from hai_api.auth import require
 from hai_api.deps import State
-from hai_api.routers.assessments import assessment_out
+from hai_api.routers.assessments import assessment_out, report_pdf_response
 from hai_api.schemas import MonitoringCreate, OrganizationOut, Page
 from hai_core.auth import Principal, Scope
-from hai_core.errors import ValidationFailedError
+from hai_core.errors import NotFoundError, ValidationFailedError
 from hai_core.generated.enums import LABELS
 from hai_core.generated.models import Assessment, Organization
 from hai_core.monitoring import list_subscriptions, register_upload, subscribe
@@ -278,6 +278,21 @@ def organization_history(org_id: UUID, st: State, principal: Reader) -> dict[str
         "limit": len(items) or 1,
         "offset": 0,
     }
+
+
+@router.get(
+    "/organizations/{org_id}/report.pdf",
+    summary="The PDF report of the organization's latest assessment version",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+def organization_report_pdf(org_id: UUID, st: State, principal: Reader) -> Response:
+    with st.read(principal) as (conn, store):
+        require_visible_organization(store, principal, org_id)
+        latest = store.find(Assessment, where={"org_id": org_id}, order_by="created_at", descending=True, limit=1)
+        if not latest:
+            raise NotFoundError(f"organization {org_id} has no assessment yet")
+        return report_pdf_response(st, conn, store, latest[0].id)
 
 
 @router.get("/organizations/{org_id}", response_model=OrganizationOut)

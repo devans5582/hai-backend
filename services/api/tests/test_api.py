@@ -300,3 +300,22 @@ def test_organizations_fold_into_one_versioned_row(client: TestClient, api_key: 
         and history["items"][1]["assessment"]["parent_assessment_id"] == first["id"]
     )
     assert client.get("/v1/organizations/00000000-0000-4000-8000-000000000000/history", headers=h).status_code == 404
+
+
+def test_report_pdf_downloads_per_assessment_and_per_organization(client: TestClient, api_key: str) -> None:
+    h = {"X-API-Key": api_key}
+    first = client.post("/v1/assessments", json=BODY, headers=h).json()
+    second = client.post(f"/v1/assessments/{first['id']}/reassess", headers=h).json()
+    assert first["links"]["report_pdf"].endswith(f"/v1/assessments/{first['id']}/report.pdf")
+    # one version, before any result exists, still renders
+    r = client.get(f"/v1/assessments/{first['id']}/report.pdf", headers=h)
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert (
+        r.content.startswith(b"%PDF-") and 'filename="HAI-Score-Acme-Corp-v1.pdf"' in r.headers["content-disposition"]
+    )
+    # the organization endpoint exports the latest version
+    org = client.get(f"/v1/organizations/{first['org_id']}/report.pdf", headers=h)
+    assert org.status_code == 200 and 'filename="HAI-Score-Acme-Corp-v2.pdf"' in org.headers["content-disposition"]
+    assert second["id"] != first["id"] and org.content.startswith(b"%PDF-")
+    assert client.get("/v1/organizations/00000000-0000-4000-8000-000000000000/report.pdf", headers=h).status_code == 404
+    assert client.get(f"/v1/assessments/{first['id']}/report.pdf").status_code == 401

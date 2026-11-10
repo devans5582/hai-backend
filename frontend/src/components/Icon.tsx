@@ -37,6 +37,7 @@ const paths = {
   "log-out": "M9 21H5V3h4 M16 17l5-5-5-5 M21 12H9",
   "user-plus": "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M19 8v6 M22 11h-6",
   "alert-triangle": "M12 3 2 21h20z M12 10v5 M12 18h.01",
+  download: "M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4",
 } as const;
 export type IconName = keyof typeof paths;
 export function Icon({ name, className = "", style }: { name: IconName; className?: string; style?: CSSProperties }) {

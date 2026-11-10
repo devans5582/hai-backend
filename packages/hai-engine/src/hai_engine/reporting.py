@@ -20,6 +20,7 @@ from hai_core.generated.enums import ATTRIBUTES, LABELS, RANKS
 from hai_core.generated.models import (
     Assessment,
     AssessmentResult,
+    CertificationDecision,
     CriterionDecision,
     EvidenceSnapshot,
     Organization,
@@ -56,6 +57,57 @@ def collected_sources(conn: Connection, assessment_id: UUID) -> tuple[list[dict[
 
 def coverage_wording(state: str) -> str:
     return str(ATTRIBUTES["coverage_state"][state]["report_wording"])
+
+
+VERSION_SQL = """
+SELECT version, versions FROM (
+    SELECT id, row_number() OVER (ORDER BY created_at, id) AS version, count(*) OVER () AS versions
+    FROM hai.assessments WHERE org_id = :o
+) v WHERE v.id = :a
+"""
+
+BENCHMARK_SQL = """
+SELECT organizations, average_score, average_confidence FROM hai_ops.v_industry_benchmarks
+WHERE industry = :i AND stage_band = CAST(:s AS hai.stage_band) AND size_band = CAST(:z AS hai.size_band)
+"""
+
+
+def assessment_version(conn: Connection, org_id: UUID, assessment_id: UUID) -> dict[str, int]:
+    """This assessment's position among the organization's assessments, oldest first (1-based)."""
+    row = conn.execute(text(VERSION_SQL), {"o": org_id, "a": assessment_id}).mappings().first()
+    if row is None:
+        return {"number": 1, "total": 1}
+    return {"number": int(row["version"]), "total": int(row["versions"])}
+
+
+def industry_benchmark(
+    conn: Connection, industry_code: str | None, stage_band: str, size_band: str, hai_score: float | None
+) -> dict[str, Any] | None:
+    """Peers with the same industry, stage and size (latest result each, access-limited excluded)."""
+    if not industry_code:
+        return None
+    row = conn.execute(text(BENCHMARK_SQL), {"i": industry_code, "s": stage_band, "z": size_band}).mappings().first()
+    if row is None or row["average_score"] is None:
+        return None
+    average = float(row["average_score"])
+    position = None
+    if hai_score is not None:
+        position = "above" if hai_score > average else "below" if hai_score < average else "at"
+    return {
+        "industry_code": industry_code,
+        "industry_label": LABELS["industry"].get(industry_code, industry_code),
+        "organizations": int(row["organizations"]),
+        "average_score": average,
+        "average_confidence": float(row["average_confidence"]) if row["average_confidence"] is not None else None,
+        "position": position,
+    }
+
+
+def current_certification(store: Store, assessment_id: UUID) -> CertificationDecision | None:
+    rows = store.find(CertificationDecision, where={"assessment_id": assessment_id}, order_by="created_at")
+    superseded = {r.supersedes_id for r in rows if r.supersedes_id}
+    live = [r for r in rows if r.id not in superseded]
+    return live[-1] if live else None
 
 
 def _latest(rows: list[Any]) -> list[Any]:
@@ -213,8 +265,24 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
     incident_response = _incident_response(incident_states)
     impact_measures = _impact_measures(target_states)
     comps = manifest.methodology.confidence.components
+    cert = current_certification(store, assessment_id)
+    version = assessment_version(conn, assessment.org_id, assessment_id)
+    benchmark = industry_benchmark(
+        conn,
+        org.industry_code,
+        _enum_str(assessment.stage_band),
+        _enum_str(assessment.size_band),
+        float(result.hai_score) if result and result.hai_score is not None else None,
+    )
     return {
         "product": {"report_name": product.report_name, "long_name": product.long_name},
+        "scale": {
+            "level_max": manifest.methodology.scoring.level_max,
+            "score_scale": manifest.methodology.scoring.score_scale,
+            "certification_threshold": manifest.methodology.certification.threshold,
+            "min_confidence": manifest.methodology.certification.min_confidence,
+        },
+        "version": version,
         "assessment": {
             "id": str(assessment.id),
             "lifecycle_state": _enum_str(assessment.lifecycle_state),
@@ -257,8 +325,35 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
             if result
             else None
         ),
+        "certification": (
+            {
+                "decision": _enum_str(cert.decision),
+                "decision_label": LABELS["certification_outcome"][_enum_str(cert.decision)],
+                "certificate_number": cert.certificate_number,
+                "reviewer_id": cert.reviewer_id,
+                "signed_at": cert.signed_at.isoformat() if cert.signed_at else None,
+                "expires_at": cert.expires_at.isoformat() if cert.expires_at else None,
+                "threshold_applied": float(cert.threshold_applied),
+                "gate_reasons": list(cert.gate_reasons or []),
+            }
+            if cert
+            else None
+        ),
+        "benchmark": benchmark,
         "pillars": pillars_out,
         "criteria": criteria_out,
+        "evidence_classes": [
+            {"code": v.code, "label": v.label, "description": v.description}
+            for v in manifest.vocabulary("evidence_class").values
+        ],
+        "status_definitions": [
+            {"code": v.code, "label": v.label, "wording": str(v.attributes.get("report_wording", v.description))}
+            for v in sorted(manifest.vocabulary("maturity_status").values, key=lambda v: v.rank or 0)
+        ],
+        "rung_definitions": [
+            {"code": v.code, "label": v.label, "description": v.description}
+            for v in sorted(manifest.vocabulary("maturity_rung").values, key=lambda v: v.rank or 0)
+        ],
         "evidence_basis": {
             "by_rung": overall_basis,
             "labels": {code: LABELS["maturity_rung"][code] for code in rung_order},

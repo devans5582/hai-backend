@@ -76,7 +76,7 @@ ontology/            manifest: ontology.yaml, vocabularies/, methodology/, examp
 packages/hai-ontology  meta-model, loader, validator, versioning, codegen, CLI
 packages/hai-core      settings, db, typed store, audit chain, job queue, blob store, auth, accounts, visibility
 packages/hai-pipeline  connectors, entity resolution, text, spans, clustering, admissibility, incidents, snapshot
-packages/hai-engine    classification, packs, LLM providers, validator, rules, scoring, decisions, certification, reports
+packages/hai-engine    classification, packs, LLM providers, validator, rules, scoring, decisions, certification, reports (JSON and PDF)
 services/api           FastAPI (hai-api)
 services/worker        background worker (hai-worker)
 frontend/              React console

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { ExportReportButton } from "../components/ExportReportButton";
 import { Icon } from "../components/Icon";
 import { TableDate } from "../components/TableDate";
 import { Badge, QueryState } from "../components/widgets";
@@ -146,6 +147,11 @@ export function OrganizationDetail() {
                 {org.data.entity_confidence !== null && <span>Entity confidence {fmtNum(org.data.entity_confidence, 2)}</span>}
               </div>
             </div>
+            {history.data?.latest_id && (
+              <div className="actions">
+                <ExportReportButton organizationId={id} subject={`${org.data.display_name} (latest version)`} primary />
+              </div>
+            )}
           </div>
           <section className="card data-table-card" aria-labelledby="org-assessments">
             <div className="data-table-heading"><div><h2 id="org-assessments">Assessment history</h2><p className="muted small">One organization, every assessment as a numbered version. The latest version is what the dashboard shows; earlier versions stay readable and are never edited.</p></div>{history.data && <span className="count-tag">{history.data.total} version{history.data.total === 1 ? "" : "s"}</span>}</div>
@@ -175,7 +181,7 @@ export function OrganizationDetail() {
                     <th scope="col">Outcome</th>
                     <th scope="col">Methodology</th>
                     <th scope="col">Assessed</th>
-                    <th scope="col" className="action-cell"><span className="sr-only">Open</span></th>
+                    <th scope="col" className="action-cell"><span className="sr-only">Export and open</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -187,7 +193,7 @@ export function OrganizationDetail() {
                       <td className="outcome-cell">{v.result ? <Badge tone={toneForOutcome(v.result.outcome_status)}>{v.result.outcome_label}</Badge> : <span className="muted small">No result yet</span>}</td>
                       <td className="small muted">{v.assessment.methodology_version} / {v.assessment.ruleset_version}</td>
                       <td><TableDate value={v.assessment.created_at} /></td>
-                      <td className="action-cell"><Link className="icon-button table-row-action" to={`/assessments/${v.assessment.id}`} aria-label={`Open version ${v.version}`}><Icon name="arrow-right" /></Link></td>
+                      <td className="action-cell"><span className="row-actions"><ExportReportButton assessmentId={v.assessment.id} subject={`${org.data.display_name}, version ${v.version}`} compact /><Link className="icon-button table-row-action" to={`/assessments/${v.assessment.id}`} aria-label={`Open version ${v.version}`}><Icon name="arrow-right" /></Link></span></td>
                     </tr>
                   ))}
                 </tbody>

@@ -289,6 +289,8 @@ Follow it through the API:
 | `GET /v1/assessments/{id}` | lifecycle state, version pins, links |
 | `GET /v1/assessments/{id}/result` | score, confidence, outcome status, pillar scores |
 | `GET /v1/assessments/{id}/report` | the full report with criteria, evidence, sources and connector runs |
+| `GET /v1/assessments/{id}/report.pdf` | the same report as a PDF download (cover, evaluation, pillars, verification, certification, evidence appendix) |
+| `GET /v1/organizations/{org_id}/report.pdf` | the PDF of the organization's latest assessment version |
 | `GET /v1/assessments/{id}/trace/{criterion}` | rule-by-rule trace down to the quoted evidence |
 | `GET /v1/assessments/{id}/connector-runs` | one row per connector, including blocked and failed runs |
 

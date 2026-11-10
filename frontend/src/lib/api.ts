@@ -503,6 +503,42 @@ async function request<T>(method: string, path: string, body?: unknown, extraHea
   return data as T;
 }
 
+export interface FileDownload {
+  blob: Blob;
+  filename: string;
+}
+
+/** Fetch a binary resource with the same credentials as JSON requests. Errors use the API envelope. */
+async function download(path: string, fallbackName: string): Promise<FileDownload> {
+  const response = await fetch(BASE + path, { method: "GET", headers: { Accept: "application/pdf", ...authHeaders() } });
+  if (!response.ok) {
+    let err: { code?: string; message?: string; details?: Record<string, unknown> } | undefined;
+    try {
+      err = ((await response.json()) as { error?: typeof err }).error;
+    } catch {
+      err = undefined;
+    }
+    if (response.status === 401 && readCredentials().session) dropSession();
+    throw new ApiRequestError(response.status, err?.code ?? "http_error", err?.message ?? response.statusText, err?.details ?? {});
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^";]+)"?/.exec(disposition);
+  return { blob: await response.blob(), filename: match?.[1] ?? fallbackName };
+}
+
+/** Hand a downloaded file to the browser. */
+export function saveDownload({ blob, filename }: FileDownload): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const api = {
   health: () => request<{ status: string; ontology_version: string; methodology_version: string }>("GET", "/health"),
   ready: () => request<{ status: string }>("GET", "/ready"),
@@ -515,6 +551,8 @@ export const api = {
   requestCertification: (id: string) => request<Assessment>("POST", `/v1/assessments/${id}/certification-request`),
   getResult: (id: string) => request<Result>("GET", `/v1/assessments/${id}/result`),
   getReport: (id: string) => request<Report>("GET", `/v1/assessments/${id}/report`),
+  downloadReportPdf: (id: string) => download(`/v1/assessments/${id}/report.pdf`, "HAI-Score-report.pdf"),
+  downloadOrganizationReportPdf: (orgId: string) => download(`/v1/organizations/${orgId}/report.pdf`, "HAI-Score-report.pdf"),
   getDecisions: (id: string) => request<Page<Decision>>("GET", `/v1/assessments/${id}/decisions`),
   getTrace: (id: string) => request<Trace>("GET", `/v1/assessments/${id}/trace`),
   getCriterionTrace: (id: string, code: string) => request<Trace>("GET", `/v1/assessments/${id}/trace/${code}`),

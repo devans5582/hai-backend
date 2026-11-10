@@ -19,6 +19,7 @@ from hai_core.errors import NotFoundError
 from hai_core.generated.enums import LABELS
 from hai_core.generated.models import Assessment, CriterionFinding
 from hai_core.visibility import visible_assessment_ids
+from hai_engine.report_pdf import render_report_pdf, report_filename
 from hai_engine.reporting import build_report, coverage_wording
 
 router = APIRouter(prefix="/v1/assessments", tags=["assessments"])
@@ -60,6 +61,7 @@ def assessment_out(a: Assessment, base: str) -> AssessmentOut:
             "self": f"{base}/v1/assessments/{aid}",
             "result": f"{base}/v1/assessments/{aid}/result",
             "report": f"{base}/v1/assessments/{aid}/report",
+            "report_pdf": f"{base}/v1/assessments/{aid}/report.pdf",
             "decisions": f"{base}/v1/assessments/{aid}/decisions",
             "trace": f"{base}/v1/assessments/{aid}/trace",
             "connector_runs": f"{base}/v1/assessments/{aid}/connector-runs",
@@ -190,6 +192,32 @@ def get_report(assessment_id: UUID, st: State, principal: Reader) -> dict[str, A
     with st.read(principal) as (conn, store):
         load_assessment(store, assessment_id, principal)
         return build_report(conn, store, st.manifest, assessment_id)
+
+
+def report_pdf_response(st: AppState, conn: Any, store: Store, assessment_id: UUID) -> Response:
+    """The report rendered as a PDF download; the same stored values the JSON report returns."""
+    report = build_report(conn, store, st.manifest, assessment_id)
+    data = render_report_pdf(report, website=st.settings.report_website, tagline=st.settings.report_tagline)
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{report_filename(report)}"',
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+@router.get(
+    "/{assessment_id}/report.pdf",
+    summary="The report as a PDF: cover, evaluation, pillars, verification, certification, evidence appendix",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+def get_report_pdf(assessment_id: UUID, st: State, principal: Reader) -> Response:
+    with st.read(principal) as (conn, store):
+        load_assessment(store, assessment_id, principal)
+        return report_pdf_response(st, conn, store, assessment_id)
 
 
 @router.get(

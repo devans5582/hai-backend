@@ -376,6 +376,26 @@ manifest is semver versioned; `hai-ontology diff` classifies changes and
 and methodology versions as labels and copy the manifest and migrations in, so
 one image is one ontology version.
 
+## PDF Report Export
+
+`GET /v1/assessments/{id}/report.pdf` and `GET /v1/organizations/{org_id}/report.pdf`
+(the latest version) render the report dictionary from `hai_engine.reporting`
+with `hai_engine.report_pdf` (fpdf2, DejaVu Sans embedded for full Unicode).
+The layout follows Humaital's published HAI Report (Rubric v2): cover with
+score, confidence and outcome; how the organization was evaluated (sources,
+evidence types, depth, the evidence ladder); alignment snapshot with pillar
+status and focus-area coverage; one analysis page per pillar; verification,
+monitoring, incidents and impact; evidence, confidence and certification with
+the reproducibility identifiers; where evidence is missing; and the evidence
+appendix with every collected source and quote.
+
+The renderer reads the report only. It computes no level, score or status; it
+states factual gaps (highest rung reached, rungs not evidenced, focus areas
+without evidence) and does not generate remediation advice, which is
+Humaital's. The console's export buttons (dashboard rows, organization page,
+assessment page) download the file with the signed-in credentials; the
+filename names the organization and the version. ADR 0017.
+
 ## Operations
 
 * `docker-compose.yml`: postgres, migrate (wait, migrate, seed, validate), api,
