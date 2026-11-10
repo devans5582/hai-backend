@@ -7,7 +7,7 @@ import { renderWithProviders } from "./render";
 const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d]); // %PDF-
 
 function stubFetch(status = 200) {
-  const fn = vi.fn(async (input: RequestInfo | URL) => {
+  const fn = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     if (status !== 200) {
       return new Response(JSON.stringify({ error: { code: "not_found", message: "organization has no assessment yet", details: {} } }), { status, headers: { "Content-Type": "application/json" } });
@@ -38,7 +38,7 @@ describe("ExportReportButton", () => {
     renderWithProviders(<ExportReportButton assessmentId="11111111-1111-4111-8111-111111111111" subject="Acme Corp" />);
     await userEvent.click(screen.getByRole("button", { name: /Export PDF: report for Acme Corp/ }));
     await waitFor(() => expect(clicks).toEqual(["HAI-Score-Acme-Corp-v1.pdf"]));
-    const [url, init] = fetchFn.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain("/v1/assessments/11111111-1111-4111-8111-111111111111/report.pdf");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer header.payload.signature");
     expect((init.headers as Record<string, string>).Accept).toBe("application/pdf");
@@ -50,7 +50,7 @@ describe("ExportReportButton", () => {
     renderWithProviders(<ExportReportButton organizationId="22222222-2222-4222-8222-222222222222" subject="Acme Corp" compact />);
     await userEvent.click(screen.getByRole("button", { name: /Export PDF: report for Acme Corp/ }));
     await waitFor(() => expect(clicks).toEqual(["HAI-Score-Acme-Corp-v3.pdf"]));
-    expect((fetchFn.mock.calls[0] as [string])[0]).toContain("/v1/organizations/22222222-2222-4222-8222-222222222222/report.pdf");
+    expect((fetchFn.mock.calls[0] as unknown as [string])[0]).toContain("/v1/organizations/22222222-2222-4222-8222-222222222222/report.pdf");
   });
 
   it("shows the API error instead of downloading when the export fails", async () => {
