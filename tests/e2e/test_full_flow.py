@@ -312,3 +312,43 @@ async def test_blocked_sources_are_unavailable_not_missing(
     assert result["outcome_status"] in ("access_limited", "insufficient_evidence")
     report = client.get(f"/v1/assessments/{aid}/report", headers=partner).json()
     assert report["coverage_summary"]["unavailable"] >= 10
+    assert report["score_availability"]["code"] == "available"
+
+
+async def test_ten_consecutive_assessments_and_downloads_keep_their_results(
+    client: TestClient, partner: dict[str, str], settings: Settings, manifest: Manifest, clean_db: Database
+) -> None:
+    worker = worker_for(settings, manifest, FakeInternet(), HookSink())
+    assessments: list[str] = []
+    scores: list[float] = []
+    try:
+        for index in range(10):
+            created = client.post(
+                "/v1/assessments", json=BODY, headers={**partner, "Idempotency-Key": f"consecutive-{index}"}
+            )
+            assert created.status_code == 202
+            aid = created.json()["id"]
+            assessments.append(aid)
+            await worker.drain()
+            result = client.get(f"/v1/assessments/{aid}/result", headers=partner)
+            assert result.status_code == 200 and result.json()["hai_score"] is not None
+            scores.append(result.json()["hai_score"])
+            report = client.get(f"/v1/assessments/{aid}/report", headers=partner).json()
+            assert report["result"]["hai_score"] == scores[-1]
+            assert report["score_availability"]["code"] == "available"
+            pdf = client.get(f"/v1/assessments/{aid}/report.pdf", headers=partner)
+            assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF-")
+        assert len(set(assessments)) == 10
+        assert len(set(scores)) == 1
+        # An access failure on a later run must not overwrite an earlier numeric result.
+        worker.ctx.transport = httpx.MockTransport(lambda _: httpx.Response(403, text="Access denied"))
+        created = client.post("/v1/assessments", json=BODY, headers=partner)
+        await worker.drain()
+        latest = client.get(f"/v1/assessments/{created.json()['id']}/report", headers=partner).json()
+        assert latest["result"]["hai_score"] is None
+        assert latest["score_availability"]["code"] == "sources_unavailable"
+        assert "cannot be compared" in latest["score_availability"]["message"]
+        for aid, score in zip(assessments, scores, strict=True):
+            assert client.get(f"/v1/assessments/{aid}/result", headers=partner).json()["hai_score"] == score
+    finally:
+        worker.ctx.db.dispose()

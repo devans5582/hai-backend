@@ -6,6 +6,7 @@ import asyncio
 import logging
 import signal
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,6 +22,10 @@ from hai_ontology.meta import Manifest
 from hai_worker.jobs import HANDLERS, SYSTEM, JobFailed, WorkerContext, on_dead
 
 log = logging.getLogger("hai_worker")
+
+
+class LeaseLostError(Exception):
+    """Another claim now owns the job, so this handler must roll back."""
 
 
 class Worker:
@@ -48,7 +53,11 @@ class Worker:
     async def run_once(self) -> Job | None:
         """Claim and run one job. Returns the job, or None when the queue is idle."""
         with self.ctx.db.transaction(SYSTEM.actor, "hai_engine") as conn:
-            self.ctx.queue.reap_expired(conn)
+            expired = self.ctx.queue.reap_expired_jobs(conn)
+        for recovered in expired:
+            if recovered.state == "dead":
+                on_dead(self.ctx, recovered, recovered.last_error or "lease expired")
+        with self.ctx.db.transaction(SYSTEM.actor, "hai_engine") as conn:
             job = self.ctx.queue.claim(
                 conn, self.worker_id, kinds=self.kinds, lease_seconds=self.ctx.settings.worker_lease_seconds
             )
@@ -59,7 +68,10 @@ class Worker:
         try:
             if handler is None:
                 raise JobFailed(f"unknown job kind {job.kind}", retry=False)
-            result = await handler(self.ctx, job)
+            result = await self._run_with_lease(job, handler)
+        except LeaseLostError:
+            log.warning("job lease lost", extra={"job": job.kind, "job_id": str(job.id)})
+            return job
         except JobFailed as exc:
             self._fail(job, str(exc), retry=exc.retry)
             return job
@@ -68,7 +80,10 @@ class Worker:
             self._fail(job, f"{type(exc).__name__}: {exc}", retry=True)
             return job
         with self.ctx.db.transaction(SYSTEM.actor, "hai_engine") as conn:
-            self.ctx.queue.complete(conn, job.id, result)
+            completed = self.ctx.queue.complete(conn, job.id, result, claim=job)
+        if not completed:
+            log.warning("job completion ignored after claim changed", extra={"job_id": str(job.id)})
+            return job
         log.info(
             "job done",
             extra={
@@ -80,9 +95,37 @@ class Worker:
         )
         return job
 
+    async def _run_with_lease(
+        self, job: Job, handler: Callable[[WorkerContext, Job], Awaitable[dict[str, Any]]]
+    ) -> dict[str, Any]:
+        handler_task = asyncio.ensure_future(handler(self.ctx, job))
+        heartbeat_task = asyncio.create_task(self._heartbeat(job))
+        try:
+            done, _ = await asyncio.wait((handler_task, heartbeat_task), return_when=asyncio.FIRST_COMPLETED)
+            if heartbeat_task in done:
+                await heartbeat_task
+            return await handler_task
+        finally:
+            handler_task.cancel()
+            heartbeat_task.cancel()
+            await asyncio.gather(handler_task, heartbeat_task, return_exceptions=True)
+
+    async def _heartbeat(self, job: Job) -> None:
+        interval = max(0.1, min(30.0, self.ctx.settings.worker_lease_seconds / 3))
+        while True:
+            await asyncio.sleep(interval)
+            # A separate short transaction keeps network/model waits from expiring the claim.
+            # Keep synchronous database calls off the handler's event loop.
+            if not await asyncio.to_thread(self._extend_lease, job):
+                raise LeaseLostError(str(job.id))
+
+    def _extend_lease(self, job: Job) -> bool:
+        with self.ctx.db.transaction(SYSTEM.actor, "hai_engine") as conn:
+            return self.ctx.queue.extend_lease(conn, job.id, self.ctx.settings.worker_lease_seconds, claim=job)
+
     def _fail(self, job: Job, error: str, *, retry: bool) -> None:
         with self.ctx.db.transaction(SYSTEM.actor, "hai_engine") as conn:
-            state = self.ctx.queue.fail(conn, job.id, error, retry=retry)
+            state = self.ctx.queue.fail(conn, job.id, error, retry=retry, claim=job)
         log.warning("job failed", extra={"job": job.kind, "job_id": str(job.id), "state": state, "error": error[:300]})
         if state in ("dead", "failed"):
             on_dead(self.ctx, job, error)
@@ -109,12 +152,18 @@ class Worker:
 
     async def run_forever(self) -> None:
         log.info("hai-worker started", extra={"worker_id": self.worker_id, "provider": self.ctx.provider.model_id})
-        while not self._stop:
-            self.schedule_monitoring_tick()
-            job = await self.run_once()
-            if job is None:
-                await asyncio.sleep(self.ctx.settings.worker_poll_seconds)
-        self.ctx.db.dispose()
+        try:
+            while not self._stop:
+                try:
+                    self.schedule_monitoring_tick()
+                    job = await self.run_once()
+                except Exception:
+                    log.exception("worker iteration failed; retrying")
+                    job = None
+                if job is None:
+                    await asyncio.sleep(self.ctx.settings.worker_poll_seconds)
+        finally:
+            self.ctx.db.dispose()
 
     def stop(self) -> None:
         self._stop = True
@@ -131,4 +180,8 @@ def main() -> None:
     loop = asyncio.new_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, worker.stop)
-    loop.run_until_complete(worker.run_forever())
+    try:
+        loop.run_until_complete(worker.run_forever())
+    finally:
+        loop.run_until_complete(loop.shutdown_default_executor())
+        loop.close()

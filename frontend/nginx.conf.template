@@ -7,14 +7,23 @@ server {
     add_header X-Content-Type-Options nosniff;
     add_header X-Frame-Options DENY;
     add_header Referrer-Policy strict-origin-when-cross-origin;
+    add_header X-Request-Id $request_id always;
+
+    # Docker can give a recreated API container a new address. Resolve at request time
+    # so the console reconnects without needing its own container to be restarted.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+    set $hai_api_upstream ${API_UPSTREAM};
+    proxy_set_header Host $host;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_hide_header X-Request-Id;
 
     location /healthz { return 200 'ok'; add_header Content-Type text/plain; }
 
-    location /v1/ { proxy_pass ${API_UPSTREAM}; proxy_set_header Host $host; proxy_set_header X-Request-Id $request_id; proxy_read_timeout 120s; }
-    location /health { proxy_pass ${API_UPSTREAM}; }
-    location /ready { proxy_pass ${API_UPSTREAM}; }
-    location /docs { proxy_pass ${API_UPSTREAM}; }
-    location /openapi.json { proxy_pass ${API_UPSTREAM}; }
+    location /v1/ { proxy_pass $hai_api_upstream; proxy_read_timeout 120s; }
+    location /health { proxy_pass $hai_api_upstream; }
+    location /ready { proxy_pass $hai_api_upstream; }
+    location /docs { proxy_pass $hai_api_upstream; }
+    location /openapi.json { proxy_pass $hai_api_upstream; }
 
     location /assets/ { expires 30d; add_header Cache-Control "public, immutable"; try_files $uri =404; }
     location / { try_files $uri $uri/ /index.html; }

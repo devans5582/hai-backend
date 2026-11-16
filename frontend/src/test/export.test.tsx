@@ -60,4 +60,26 @@ describe("ExportReportButton", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("organization has no assessment yet");
     expect(clicks).toEqual([]);
   });
+
+  it.each([
+    ["text/html", "<html>Console</html>", "unexpected response"],
+    ["application/pdf", "not a PDF", "invalid PDF"],
+    ["application/pdf", "", "invalid PDF"],
+  ])("rejects an invalid report with content type %s", async (contentType, body, message) => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(body, { status: 200, headers: { "Content-Type": contentType, "X-Request-Id": "bad-pdf-123" } })));
+    renderWithProviders(<ExportReportButton assessmentId="assessment-1" subject="Acme Corp" />);
+    await userEvent.click(screen.getByRole("button", { name: /Export PDF/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("alert")).toHaveTextContent("Support reference: bad-pdf-123");
+    expect(clicks).toEqual([]);
+  });
+
+  it("shows a useful timeout error and support reference for an HTML proxy error", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>Gateway Timeout</html>", { status: 504, headers: { "X-Request-Id": "timeout-123" } })));
+    renderWithProviders(<ExportReportButton assessmentId="assessment-1" subject="Acme Corp" />);
+    await userEvent.click(screen.getByRole("button", { name: /Export PDF/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("HTTP 504");
+    expect(screen.getByRole("alert")).toHaveTextContent("Support reference: timeout-123");
+    expect(clicks).toEqual([]);
+  });
 });

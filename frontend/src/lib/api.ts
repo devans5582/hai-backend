@@ -212,6 +212,9 @@ export interface FocusAreaCoverage {
 
 export interface Report {
   product: { report_name: string; long_name: string };
+  score_availability?: { code: string; message: string };
+  methodology_notice?: string | null;
+  coverage_note?: string | null;
   assessment: Record<string, unknown> & { id: string; lifecycle_state: string; versions: Record<string, string> };
   organization: { id: string; name: string; legal_name: string; domain: string; industry_code: string | null };
   result: {
@@ -481,7 +484,41 @@ export interface ApiKey {
 
 const BASE: string = import.meta.env.VITE_API_BASE ?? "";
 
+function responseDetails(response: Response, path: string): Record<string, unknown> {
+  const requestId = response.headers.get("X-Request-Id");
+  return { path, ...(requestId ? { request_id: requestId } : {}) };
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) as unknown : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchApi(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(BASE + path, init);
+  } catch {
+    throw new ApiRequestError(0, "network_error", "Unable to reach the assessment service. Check your connection and try again.", { path });
+  }
+}
+
+function responseError(response: Response, path: string, data: unknown): ApiRequestError {
+  const candidate = data && typeof data === "object" && "error" in data ? data.error : null;
+  const err = candidate && typeof candidate === "object" ? candidate as Record<string, unknown> : {};
+  let fallback = `The request failed (HTTP ${response.status}).`;
+  if ([502, 503].includes(response.status)) fallback = `The assessment service is temporarily unavailable (HTTP ${response.status}). Try again in a moment.`;
+  else if (response.status === 504) fallback = "The assessment service took too long to respond (HTTP 504). Try again in a moment.";
+  else if (response.status >= 500) fallback = `The assessment service could not complete this request (HTTP ${response.status}). Try again in a moment.`;
+  const message = typeof err.message === "string" && err.message ? err.message : fallback;
+  const details = err.details && typeof err.details === "object" ? err.details as Record<string, unknown> : {};
+  return new ApiRequestError(response.status, typeof err.code === "string" ? err.code : "http_error", message, { ...details, ...responseDetails(response, path) });
+}
+
 async function request<T>(method: string, path: string, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
+  const session = readCredentials().session;
   const headers: Record<string, string> = { Accept: "application/json", ...authHeaders(), ...extraHeaders };
   let payload: BodyInit | undefined;
   if (body instanceof FormData) payload = body;
@@ -489,16 +526,18 @@ async function request<T>(method: string, path: string, body?: unknown, extraHea
     headers["Content-Type"] = "application/json";
     payload = JSON.stringify(body);
   }
-  const response = await fetch(BASE + path, { method, headers, body: payload });
+  const response = await fetchApi(path, { method, headers, body: payload });
   if (response.status === 204) return undefined as T;
   const text = await response.text();
-  const data = text ? (JSON.parse(text) as unknown) : null;
+  const data = parseJson(text);
   if (!response.ok) {
-    const err = (data as { error?: { code?: string; message?: string; details?: Record<string, unknown> } } | null)?.error;
     // A session the server no longer accepts (signed out elsewhere, disabled, expired) is dropped here;
     // the auth gate then shows the sign-in page. Sign-in itself is excluded so a wrong password stays an error.
-    if (response.status === 401 && readCredentials().session && !path.startsWith("/v1/auth/login")) dropSession();
-    throw new ApiRequestError(response.status, err?.code ?? "http_error", err?.message ?? response.statusText, err?.details ?? {});
+    if (response.status === 401 && !path.startsWith("/v1/auth/login")) dropSession(session);
+    throw responseError(response, path, data);
+  }
+  if (data === null) {
+    throw new ApiRequestError(response.status, "invalid_response", "The assessment service returned an invalid response. Refresh the page and try again.", responseDetails(response, path));
   }
   return data as T;
 }
@@ -510,20 +549,23 @@ export interface FileDownload {
 
 /** Fetch a binary resource with the same credentials as JSON requests. Errors use the API envelope. */
 async function download(path: string, fallbackName: string): Promise<FileDownload> {
-  const response = await fetch(BASE + path, { method: "GET", headers: { Accept: "application/pdf", ...authHeaders() } });
+  const session = readCredentials().session;
+  const response = await fetchApi(path, { method: "GET", headers: { Accept: "application/pdf", ...authHeaders() } });
   if (!response.ok) {
-    let err: { code?: string; message?: string; details?: Record<string, unknown> } | undefined;
-    try {
-      err = ((await response.json()) as { error?: typeof err }).error;
-    } catch {
-      err = undefined;
-    }
-    if (response.status === 401 && readCredentials().session) dropSession();
-    throw new ApiRequestError(response.status, err?.code ?? "http_error", err?.message ?? response.statusText, err?.details ?? {});
+    if (response.status === 401) dropSession(session);
+    throw responseError(response, path, parseJson(await response.text()));
+  }
+  if (response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/pdf") {
+    throw new ApiRequestError(response.status, "invalid_report", "The service returned an unexpected response instead of a PDF. Try exporting again.", responseDetails(response, path));
+  }
+  const bytes = await response.arrayBuffer();
+  const signature = new Uint8Array(bytes, 0, Math.min(5, bytes.byteLength));
+  if (String.fromCharCode(...signature) !== "%PDF-") {
+    throw new ApiRequestError(response.status, "invalid_report", "The service returned an invalid PDF. Try exporting again.", responseDetails(response, path));
   }
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const match = /filename="?([^";]+)"?/.exec(disposition);
-  return { blob: await response.blob(), filename: match?.[1] ?? fallbackName };
+  return { blob: new Blob([bytes], { type: "application/pdf" }), filename: match?.[1] ?? fallbackName };
 }
 
 /** Hand a downloaded file to the browser. */

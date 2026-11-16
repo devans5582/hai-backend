@@ -73,6 +73,22 @@ describe("ScoreDial and CoverageStrip", () => {
 });
 
 describe("AssessmentDetail", () => {
+  it("explains an unavailable score using the report's stored reason", async () => {
+    mockFetch((url) => {
+      if (url.endsWith(`/v1/assessments/${ASSESSMENT.id}`)) return { body: ASSESSMENT };
+      if (url.endsWith("/report")) return { body: {
+        ...REPORT,
+        result: { ...REPORT.result, hai_score: null },
+        score_availability: { code: "sources_unavailable", message: "No criteria could be scored because the evidence sources were unavailable." },
+      } };
+      if (url.endsWith("/connector-runs") || url.includes("/v1/reviews/tasks") || url.endsWith("/history")) return { body: { items: [], total: 0, limit: 50, offset: 0 } };
+      return undefined;
+    });
+    renderWithProviders(<AssessmentDetail />, { route: `/assessments/${ASSESSMENT.id}`, path: "/assessments/:id" });
+    expect(await screen.findByText("No criteria could be scored because the evidence sources were unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "HAI Score: n/a out of 100" })).toBeInTheDocument();
+  });
+
   it("shows the outcome status exactly as stored and opens the trace drawer", async () => {
     mockFetch((url) => {
       if (url.endsWith(`/v1/assessments/${ASSESSMENT.id}`)) return { body: ASSESSMENT };

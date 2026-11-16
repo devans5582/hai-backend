@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.pool import QueuePool
 
 from hai_api.deps import AppState
 from hai_api.main import create_app
 from hai_core.auth import Scope, create_api_key, mint_jwt
 from hai_core.db.engine import Database
 from hai_core.settings import Settings
+from hai_engine.report_pdf import render_report_pdf
 from hai_ontology.meta import Manifest
 
 pytestmark = pytest.mark.integration
@@ -237,7 +240,7 @@ def test_ontology_endpoints(client: TestClient, manifest: Manifest) -> None:
     rules = client.get("/v1/methodology/rules").json()
     assert rules["total"] == 19 and all(r["implementation"] for r in rules["items"])
     assert client.get("/v1/methodology/decisions").json()["total"] == 13
-    assert client.get("/v1/methodology/scoring").json()["scoring"]["score_cap"] == 85
+    assert client.get("/v1/methodology/scoring").json()["scoring"]["score_cap"] == 100
     ics = client.get("/v1/ontology/integrity-constraints").json()
     assert ics["total"] == 19
 
@@ -302,7 +305,17 @@ def test_organizations_fold_into_one_versioned_row(client: TestClient, api_key: 
     assert client.get("/v1/organizations/00000000-0000-4000-8000-000000000000/history", headers=h).status_code == 404
 
 
-def test_report_pdf_downloads_per_assessment_and_per_organization(client: TestClient, api_key: str) -> None:
+def test_report_pdf_downloads_per_assessment_and_per_organization(
+    client: TestClient, api_key: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state: AppState = cast(FastAPI, client.app).state.hai
+    pool = cast(QueuePool, state.db.engine.pool)
+
+    def render_after_releasing_connection(report: dict[str, Any], **kwargs: Any) -> bytes:
+        assert pool.checkedout() == 0
+        return render_report_pdf(report, **kwargs)
+
+    monkeypatch.setattr("hai_api.routers.assessments.render_report_pdf", render_after_releasing_connection)
     h = {"X-API-Key": api_key}
     first = client.post("/v1/assessments", json=BODY, headers=h).json()
     second = client.post(f"/v1/assessments/{first['id']}/reassess", headers=h).json()

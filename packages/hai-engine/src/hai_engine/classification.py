@@ -8,11 +8,20 @@ independently verified rung needs an independent or regulator publisher
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from hai_core.generated.enums import EvidenceClass, ExecutionLevel, Independence, MaturityRung, Polarity, PublisherType
-from hai_core.signals import LanguageSignals, SignalMatcher
-from hai_ontology.meta import Methodology
+from hai_core.generated.enums import (
+    EvidenceClass,
+    ExecutionLevel,
+    Independence,
+    MaturityRung,
+    PillarCode,
+    Polarity,
+    PublisherType,
+)
+from hai_core.signals import ExecutionSignal, LanguageSignals, SignalMatcher
+from hai_ontology.meta import CriterionDef, Methodology
+from hai_ontology.terms import compile_term
 
 MIN_WORDS_FOR_EVIDENCE = 6
 EXTERNAL_PUBLISHERS = frozenset(
@@ -40,6 +49,9 @@ class LinkClassifier:
         polarity: Polarity | str,
         publisher_type: PublisherType | str,
         independence: Independence | str,
+        criterion: CriterionDef | None = None,
+        section_heading: str | None = None,
+        document_title: str | None = None,
     ) -> Classification:
         pol = Polarity(polarity)
         ptype = PublisherType(publisher_type)
@@ -47,7 +59,29 @@ class LinkClassifier:
         signals = self.matcher.language(quote)
         execution = self.matcher.execution(quote)
         reasons: list[str] = []
-        rung = self._rung(quote, pol, indep, signals, execution.level, reasons)
+        if execution.level in (ExecutionLevel.PARTIAL.value, ExecutionLevel.VERIFIED.value):
+            without_dates = quote
+            for term in signals.execution_dates:
+                without_dates = compile_term(term).sub(" ", without_dates)
+            if self.matcher.execution(without_dates).total_weight == 0:
+                # A date can locate an alleged event, but cannot prove that an
+                # operational control was exercised or that a test failed.
+                execution = replace(execution, level=ExecutionLevel.ASSERTED.value)
+                reasons.append("a calendar reference alone does not demonstrate operational execution")
+        rung = self._rung(quote, pol, indep, signals, execution, reasons)
+        if (
+            criterion is not None
+            and criterion.pillar == PillarCode.SAF.value
+            and rung in (MaturityRung.DOCUMENTED_EXECUTION, MaturityRung.INDEPENDENTLY_VERIFIED)
+            and self.matcher.lex.ai_context.terms
+            and not self.matcher.ai_context(" ".join(part for part in (quote, section_heading, document_title) if part))
+        ):
+            rung = (
+                MaturityRung.SPECIFIED_CONTROL
+                if signals.has_specified_control
+                else (MaturityRung.STATED_COMMITMENT if signals.has_commitment else MaturityRung.NONE)
+            )
+            reasons.append("general operational or financial evidence does not establish AI safety execution")
         evidence_class = self._evidence_class(ptype, indep, signals, quote, rung)
         return Classification(rung, ExecutionLevel(execution.level), evidence_class, tuple(reasons))
 
@@ -57,7 +91,7 @@ class LinkClassifier:
         polarity: Polarity,
         independence: Independence,
         signals: LanguageSignals,
-        execution_level: str,
+        execution: ExecutionSignal,
         reasons: list[str],
     ) -> MaturityRung:
         if polarity is not Polarity.SUPPORTS:
@@ -69,11 +103,14 @@ class LinkClassifier:
         if signals.has_verification and independence in (Independence.INDEPENDENT, Independence.REGULATOR):
             reasons.append("independent verification language from an independent or regulator publisher (IC-07)")
             return MaturityRung.INDEPENDENTLY_VERIFIED
-        if signals.has_documented_execution or execution_level in ("partial", "verified"):
+        operating_process = "process" in execution.categories and "control" in execution.categories
+        if signals.has_documented_execution or (
+            execution.level in ("partial", "verified") and (signals.execution_results or operating_process)
+        ):
             reasons.append("dated results or execution artefacts in the quote")
             return MaturityRung.DOCUMENTED_EXECUTION
         if signals.has_specified_control:
-            reasons.append("a named owner and a measurable threshold in the quote")
+            reasons.append("a named owner and a defined procedure or measurable threshold in the quote")
             return MaturityRung.SPECIFIED_CONTROL
         if signals.has_commitment or signals.has_verification:
             if signals.has_verification:

@@ -64,6 +64,17 @@ def _job(row: Any) -> Job:
     )
 
 
+def _claim_guard(job_id: UUID, claim: Job | None) -> tuple[str, dict[str, Any]]:
+    if claim is None:
+        return "", {}
+    if claim.id != job_id or claim.locked_by is None:
+        raise ValueError("expected a running claim for this job")
+    return (
+        " AND state = 'running' AND locked_by = :owner AND attempts = :attempt",
+        {"owner": claim.locked_by, "attempt": claim.attempts},
+    )
+
+
 class JobQueue:
     def enqueue(
         self,
@@ -110,19 +121,26 @@ class JobQueue:
         ).first()
         return _job(row) if row else None
 
-    def complete(self, conn: Connection, job_id: UUID, result: dict[str, Any] | None = None) -> None:
-        conn.execute(
+    def complete(
+        self, conn: Connection, job_id: UUID, result: dict[str, Any] | None = None, *, claim: Job | None = None
+    ) -> bool:
+        """Finish a job, optionally only while the supplied claim still owns it."""
+        guard, params = _claim_guard(job_id, claim)
+        updated = conn.execute(
             text(
                 "UPDATE hai_ops.jobs SET state = 'done', finished_at = now(), updated_at = now(), lease_until = NULL, "
-                "result = CAST(:result AS jsonb) WHERE id = :id"
+                "result = CAST(:result AS jsonb) WHERE id = :id" + guard
             ),
-            {"id": job_id, "result": json.dumps(result or {}, default=str)},
+            {"id": job_id, "result": json.dumps(result or {}, default=str), **params},
         )
+        return bool(updated.rowcount)
 
-    def fail(self, conn: Connection, job_id: UUID, error: str, *, retry: bool = True) -> str:
-        """Record a failure. Returns the new state: queued (retry), failed (no retry) or dead."""
+    def fail(self, conn: Connection, job_id: UUID, error: str, *, retry: bool = True, claim: Job | None = None) -> str:
+        """Record a failure, or return missing when the supplied claim no longer owns the job."""
+        guard, params = _claim_guard(job_id, claim)
         row = conn.execute(
-            text("SELECT attempts, max_attempts FROM hai_ops.jobs WHERE id = :id FOR UPDATE"), {"id": job_id}
+            text("SELECT attempts, max_attempts FROM hai_ops.jobs WHERE id = :id" + guard + " FOR UPDATE"),
+            {"id": job_id, **params},
         ).first()
         if row is None:
             return "missing"
@@ -146,24 +164,32 @@ class JobQueue:
         )
         return state
 
-    def extend_lease(self, conn: Connection, job_id: UUID, lease_seconds: int) -> None:
-        conn.execute(
+    def extend_lease(self, conn: Connection, job_id: UUID, lease_seconds: int, *, claim: Job | None = None) -> bool:
+        guard, params = _claim_guard(job_id, claim)
+        updated = conn.execute(
             text(
-                "UPDATE hai_ops.jobs SET lease_until = now() + make_interval(secs => :lease) WHERE id = :id AND state = 'running'"  # noqa: E501
+                "UPDATE hai_ops.jobs SET lease_until = now() + make_interval(secs => :lease) "
+                "WHERE id = :id AND state = 'running'" + guard
             ),
-            {"id": job_id, "lease": lease_seconds},
+            {"id": job_id, "lease": lease_seconds, **params},
         )
+        return bool(updated.rowcount)
 
     def reap_expired(self, conn: Connection) -> int:
         """Requeue running jobs whose lease expired (the attempt already counted)."""
-        result = conn.execute(
+        return len(self.reap_expired_jobs(conn))
+
+    def reap_expired_jobs(self, conn: Connection) -> list[Job]:
+        """Return expired jobs after recovery, including dead jobs needing assessment failure handling."""
+        rows = conn.execute(
             text(
                 "UPDATE hai_ops.jobs SET state = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'queued' END, "
-                "locked_by = NULL, lease_until = NULL, last_error = coalesce(last_error, 'lease expired'), updated_at = now() "  # noqa: E501
-                "WHERE state = 'running' AND lease_until < now()"
+                "locked_by = NULL, lease_until = NULL, last_error = 'lease expired', updated_at = now(), "
+                "finished_at = CASE WHEN attempts >= max_attempts THEN now() ELSE finished_at END "
+                "WHERE state = 'running' AND lease_until < now() RETURNING *"
             )
-        )
-        return int(result.rowcount or 0)
+        ).all()
+        return [_job(row) for row in rows]
 
     def get(self, conn: Connection, job_id: UUID) -> Job | None:
         row = conn.execute(text("SELECT * FROM hai_ops.jobs WHERE id = :id"), {"id": job_id}).first()

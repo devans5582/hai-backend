@@ -440,11 +440,24 @@ class _Validator:
                 self.err("E_ENUM_VALUE", f"decay curve for unknown publisher type {key}", "methodology.freshness")
         if "default" not in md.freshness.decay_curves:
             self.err("E_REQUIRED", "decay_curves needs a default", "methodology.freshness")
+        configured_thresholds: set[tuple[str, str]] = set()
         for row in md.certification.stage_size_table.rows:
+            stage_size_key = (row.stage_band, row.size_band)
+            if stage_size_key in configured_thresholds:
+                self.err("E_DUPLICATE", f"duplicate stage/size threshold {stage_size_key}", "methodology.certification")
+            configured_thresholds.add(stage_size_key)
             if row.stage_band not in stages or row.size_band not in sizes:
                 self.err(
                     "E_ENUM_VALUE",
                     f"stage/size row {row.stage_band}/{row.size_band} unknown",
+                    "methodology.certification",
+                )
+        if md.certification.threshold_mode == "stage_size":
+            missing_thresholds = {(stage, size) for stage in stages for size in sizes} - configured_thresholds
+            if missing_thresholds:
+                self.err(
+                    "E_REQUIRED",
+                    f"missing stage/size thresholds: {sorted(missing_thresholds)}",
                     "methodology.certification",
                 )
         for rule in md.lexicons.negative_signals.rules:
@@ -471,6 +484,9 @@ class _Validator:
             ("commitment", lex.commitment.terms),
             ("control.owner", lex.control.owner_terms),
             ("control.threshold", lex.control.threshold_terms),
+            ("control.procedure", lex.control.procedure_terms),
+            ("ai_context", lex.ai_context.terms),
+            ("negative_signals.hypothetical", lex.negative_signals.hypothetical_terms),
             ("execution_dates", lex.execution_dates.terms),
             ("execution_dates.result", lex.execution_dates.result_terms),
             ("independent_verification", lex.independent_verification.terms),

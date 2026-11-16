@@ -39,6 +39,7 @@ class LanguageSignals:
     commitment: tuple[str, ...] = ()
     owner: tuple[str, ...] = ()
     threshold: tuple[str, ...] = ()
+    procedure: tuple[str, ...] = ()
     execution_dates: tuple[str, ...] = ()
     execution_results: tuple[str, ...] = ()
     verification: tuple[str, ...] = ()
@@ -51,7 +52,7 @@ class LanguageSignals:
 
     @property
     def has_specified_control(self) -> bool:
-        return bool(self.owner) and bool(self.threshold)
+        return bool(self.owner) and bool(self.threshold or self.procedure)
 
     @property
     def has_documented_execution(self) -> bool:
@@ -78,6 +79,7 @@ class SignalMatcher:
             commitment=tuple(find_terms(text, self.lex.commitment.terms)),
             owner=tuple(find_terms(text, self.lex.control.owner_terms)),
             threshold=tuple(find_terms(text, self.lex.control.threshold_terms)),
+            procedure=tuple(find_terms(text, self.lex.control.procedure_terms)),
             execution_dates=tuple(find_terms(text, self.lex.execution_dates.terms)),
             execution_results=tuple(find_terms(text, self.lex.execution_dates.result_terms)),
             verification=tuple(find_terms(text, self.lex.independent_verification.terms)),
@@ -87,6 +89,10 @@ class SignalMatcher:
 
     def injection_terms(self, text: str) -> list[str]:
         return find_terms(text, self.lex.injection.terms)
+
+    def ai_context(self, text: str) -> tuple[str, ...]:
+        """Configured AI terminology, for checking the scope of adverse evidence."""
+        return tuple(find_terms(text, self.lex.ai_context.terms))
 
     # ------------------------------------------------------------ focus areas
     def focus_areas(self, text: str) -> tuple[str, ...]:

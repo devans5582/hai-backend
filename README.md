@@ -380,6 +380,30 @@ label, and contract tests check its connector list and review actions against
 the backend files. It is shipped as an unprivileged nginx image that proxies
 `/v1` to `API_UPSTREAM`.
 
+### Troubleshooting Assessments And Downloads
+
+After updating this checkout, run `make up` to rebuild the API, worker and
+console. The console proxy refreshes Docker DNS when the API container is
+recreated. Gateway errors show the HTTP status and a support reference that
+matches `X-Request-Id` in the API logs.
+
+When an assessment result has an N/A score, no criteria entered the score.
+Check the assessment's source runs and the explanation beside the score; blocked or unreachable
+sources can exclude criteria. It is not a numeric change from a previous
+assessment. A new assessment collects fresh evidence, while replaying its
+frozen snapshot reproduces that run. Keep both versions when investigating a
+difference, including each assessment ID, website, input URLs, version pins
+and source errors. Add accessible direct evidence URLs or uploads before
+rerunning a source-limited assessment.
+
+For tester reports, keep the exported PDFs together and attach the exact
+error text, action, time and support reference to the testing record. A
+screenshot helps confirm appearance; the PDF and structured report preserve
+the scores, evidence links and collection failures needed to investigate.
+PDF exports reject HTML error pages and invalid PDF responses instead of
+saving them as reports. Source failures are included in the report's
+evaluation section.
+
 ## LLM Providers
 
 Set `HAI_LLM_PROVIDER` to one of the following. Whatever the provider, the
@@ -467,7 +491,7 @@ Every setting is an environment variable with the `HAI_` prefix;
 ## Status And Ownership
 
 The platform is feature complete for v1 and green on every gate. The
-methodology version is `2.0.0` with status `draft`: criterion definitions,
+methodology version is `3.0.0` with status `draft`: criterion definitions,
 level descriptors, some weights and the framework crosswalk are placeholders
 until Humaital approves them. Nothing is presented as approved content.
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+import httpx
 import pytest
 from sqlalchemy import text
 
@@ -12,9 +13,17 @@ from hai_core.auth import Principal, Scope
 from hai_core.blobstore import BlobStore
 from hai_core.db.engine import Database
 from hai_core.db.store import Store
-from hai_core.errors import ForbiddenError
+from hai_core.errors import ConflictError, ForbiddenError
 from hai_core.generated.enums import IncidentStatus, LifecycleState, SizeBand, StageBand
-from hai_core.generated.models import Assessment, CriterionFinding, Incident, Organization
+from hai_core.generated.models import (
+    Assessment,
+    AssessmentResult,
+    CriterionDecision,
+    CriterionFinding,
+    EvidenceSnapshot,
+    Incident,
+    Organization,
+)
 from hai_core.settings import Settings
 from hai_engine.certification import CertificationService
 from hai_engine.decision import DecisionService
@@ -29,9 +38,33 @@ from tests.fixtures.fake_internet import ORG_DOMAIN, ORG_NAME, FakeInternet
 
 pytestmark = pytest.mark.integration
 NOW = datetime(2026, 10, 24, 12, 0, tzinfo=UTC)
+MISSION_STATEMENT = (
+    "Our mission is to provide an independent, evidence-based standard for evaluating whether organizations "
+    "develop, deploy, and govern AI responsibly and in alignment with human values."
+)
+OVERSIGHT_STATEMENT = (
+    "Designated human oversight is responsible for reviewing material findings, identifying potential conflicts, "
+    "and ensuring that certification decisions follow approved standards."
+)
 
 
-async def _pipeline(db: Database, manifest: Manifest, settings: Settings, net: FakeInternet) -> tuple[UUID, UUID]:
+class GovernanceStatementsInternet(FakeInternet):
+    def _site(self, path: str) -> httpx.Response:
+        response = super()._site(path)
+        if path == "/responsible-ai":
+            content = response.text.replace("</main>", f"<p>{MISSION_STATEMENT}</p><p>{OVERSIGHT_STATEMENT}</p></main>")
+            return httpx.Response(200, text=content, headers={"content-type": "text/html"})
+        return response
+
+
+async def _pipeline(
+    db: Database,
+    manifest: Manifest,
+    settings: Settings,
+    net: FakeInternet,
+    *,
+    stage_band: StageBand = StageBand.GROWTH,
+) -> tuple[UUID, UUID]:
     with db.transaction("pytest", "hai_api") as conn:
         store = Store(conn, actor="pytest", manifest=manifest)
         org = store.insert(Organization(legal_name=ORG_NAME, display_name=ORG_NAME, primary_domain=ORG_DOMAIN))
@@ -40,10 +73,11 @@ async def _pipeline(db: Database, manifest: Manifest, settings: Settings, net: F
                 org_id=org.id,
                 requested_by="pytest",
                 submitted_domain=ORG_DOMAIN,
-                stage_band=StageBand.GROWTH,
+                stage_band=stage_band,
                 size_band=SizeBand.MID,
-                methodology_version="1.0.0",
-                ruleset_version="1.0.0",
+                ontology_version=manifest.ontology_version,
+                methodology_version=manifest.methodology_version,
+                ruleset_version=manifest.ruleset.version,
                 prompt_version="1.0.0",
                 model_id="heuristic:ladder-1",
                 lifecycle_state=LifecycleState.ACQUIRING,
@@ -125,6 +159,37 @@ async def test_report_lists_only_collected_sources(clean_db: Database, manifest:
         assert store.count(CriterionFinding, where={"assessment_id": assessment_id}) == 20
 
 
+async def test_mission_and_assigned_procedures_reach_the_score(
+    clean_db: Database, manifest: Manifest, settings: Settings
+) -> None:
+    _, assessment_id = await _pipeline(clean_db, manifest, settings, GovernanceStatementsInternet())
+    with clean_db.transaction("pytest", "hai_engine") as conn:
+        store = Store(conn, actor="pytest", manifest=manifest)
+        decision = DecisionService(manifest).decide(conn, store, assessment_id)
+        snapshot = store.first(EvidenceSnapshot, where={"assessment_id": assessment_id})
+        assert snapshot is not None
+        mission_links = [
+            st
+            for st in snapshot.link_states.values()
+            if st["quote"] == MISSION_STATEMENT and st["criterion_code"] == "PUR-01"
+        ]
+        oversight_links = [
+            st
+            for st in snapshot.link_states.values()
+            if st["quote"] == OVERSIGHT_STATEMENT and st["criterion_code"] == "ACC-03"
+        ]
+        assert mission_links and oversight_links
+        assert all(
+            st["polarity"] == "supports" and st["admissibility"] == "admissible"
+            for st in mission_links + oversight_links
+        )
+        assert all(st["maturity_rung"] == "stated_commitment" for st in mission_links)
+        assert all(st["maturity_rung"] == "specified_control" for st in oversight_links)
+        by_code = {str(d.criterion_code): d for d in decision.decisions}
+        assert by_code["PUR-01"].level is not None and by_code["PUR-01"].level >= 2
+        assert by_code["ACC-03"].level is not None and by_code["ACC-03"].level >= 3
+
+
 async def test_review_finalize_and_certification(clean_db: Database, manifest: Manifest, settings: Settings) -> None:
     org_id, assessment_id = await _pipeline(clean_db, manifest, settings, FakeInternet())
     svc = DecisionService(manifest)
@@ -198,3 +263,67 @@ async def test_review_finalize_and_certification(clean_db: Database, manifest: M
             text("SELECT count(*) FROM hai.certification_decisions WHERE assessment_id = :a"), {"a": assessment_id}
         ).scalar_one()
     assert n == 3
+
+
+async def test_recalibration_preserves_historical_results(
+    clean_db: Database, manifest: Manifest, settings: Settings
+) -> None:
+    _, assessment_id = await _pipeline(clean_db, manifest, settings, FakeInternet())
+    original = DecisionService(manifest)
+    with clean_db.transaction("pytest", "hai_engine") as conn:
+        store = Store(conn, actor="pytest", manifest=manifest)
+        decision = original.decide(conn, store, assessment_id)
+    recalibrated = [
+        manifest.model_copy(update={"methodology": manifest.methodology.model_copy(update={"version": "99.0.0"})}),
+        manifest.model_copy(update={"ruleset": manifest.ruleset.model_copy(update={"version": "99.0.0"})}),
+        manifest.model_copy(update={"hash": "different-manifest-content"}),
+    ]
+    for changed in recalibrated:
+        service = DecisionService(changed)
+        with clean_db.transaction("pytest", "hai_engine") as conn:
+            store = Store(conn, actor="pytest", manifest=manifest)
+            for action in (service.decide, service.replay, service.finalize):
+                with pytest.raises(ConflictError, match="requires its original methodology"):
+                    action(conn, store, assessment_id)
+            assert store.count(AssessmentResult, where={"assessment_id": assessment_id}) == 1
+            assert store.count(CriterionDecision, where={"assessment_id": assessment_id}) == len(manifest.criteria)
+            latest = original.latest_result(store, assessment_id)
+            assert latest is not None and latest.result_sha256 == decision.result.result_sha256
+            assert latest.hai_score == decision.result.hai_score
+    with clean_db.connect() as conn:
+        store = Store(conn, actor="pytest", manifest=manifest, audit=False)
+        assert original.replay(conn, store, assessment_id)[0]
+
+
+async def test_early_stage_certification_records_the_stage_threshold(
+    clean_db: Database, manifest: Manifest, settings: Settings
+) -> None:
+    _, assessment_id = await _pipeline(clean_db, manifest, settings, FakeInternet(), stage_band=StageBand.EARLY)
+    svc = DecisionService(manifest)
+    reviewer = Principal("reviewer", "rev-1", "Reviewer One", Scope.REVIEWER_DEFAULT)
+    with clean_db.transaction("pytest", "hai_engine") as conn:
+        decision = svc.decide(conn, Store(conn, actor="pytest", manifest=manifest), assessment_id)
+    assert decision.engine.state.threshold_applied == 65
+    with clean_db.transaction("reviewer:rev-1", "hai_reviewer") as conn:
+        store = Store(conn, actor="reviewer:rev-1", manifest=manifest)
+        assessment = store.require(Assessment, assessment_id)
+        cert = CertificationService(manifest.methodology, "k" * 40).sign(
+            store,
+            assessment=assessment,
+            result=decision.result,
+            principal=reviewer,
+            decision="not_certified",
+            reason="reviewed evidence limits",
+            now=NOW,
+        )
+        assert float(cert.threshold_applied) == 65
+        with pytest.raises(ConflictError, match="requires its original methodology"):
+            CertificationService(manifest.methodology.model_copy(update={"version": "99.0.0"}), "k" * 40).sign(
+                store,
+                assessment=assessment,
+                result=decision.result,
+                principal=reviewer,
+                decision="not_certified",
+                reason="wrong methodology",
+                now=NOW,
+            )

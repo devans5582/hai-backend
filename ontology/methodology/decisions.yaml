@@ -33,10 +33,10 @@ decisions:
     status: open
     recommendation: Pick one and record it as a rule.
     current: >-
-      Universal 70 points (whitepaper, legacy report-generator.js:199).
-      certification.threshold_mode is universal. A stage_size table is defined and used
-      when threshold_mode is stage_size; it starts as a copy of the universal value and
-      is marked draft.
+      Methodology 3.0.0 follows the live November 2026 public scoring page:
+      early stage 65 points; growth and mature stages 70. threshold_mode is stage_size
+      with all twelve stage and size combinations recorded. Size does not change the
+      published stage threshold. Confidence, evidence and human review remain separate gates.
     configured_in: ontology/methodology/methodology.yaml certification
 
   - id: D4

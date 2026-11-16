@@ -7,11 +7,13 @@ proposals, but only for span ids it was shown (checked here).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from hai_core.signals import LanguageSignals, NegativeMatch, SignalMatcher
 from hai_ontology.meta import CriterionDef, Methodology
+from hai_ontology.terms import find_terms
+from hai_pipeline.incidents import most_material_criterion
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,17 @@ class LinkProposer(Protocol):
 FOUNDATIONAL_TERMS = ["principles", "framework", "methodology", "charter", "code of conduct", "manifesto"]
 
 
+def assessment_negative(
+    matcher: SignalMatcher, text: str, publisher_type: str, source_tier: str, *, section_heading: str | None = None
+) -> NegativeMatch | None:
+    """Require AI relevance and an asserted event before creating an assessment risk signal."""
+    if matcher.lex.ai_context.terms and not matcher.ai_context(f"{section_heading or ''}\n{text}"):
+        return None
+    if find_terms(text, matcher.lex.negative_signals.hypothetical_terms):
+        return None
+    return matcher.negative(text, publisher_type, source_tier)
+
+
 def heuristic_proposals(
     spans: list[str],
     criteria: list[CriterionDef],
@@ -47,15 +60,36 @@ def heuristic_proposals(
     publisher_type: str,
     source_tier: str,
     proposer_name: str = "heuristic",
+    section_headings: list[str | None] | None = None,
+    require_ai_context: bool = False,
 ) -> list[LinkProposal]:
+    if section_headings is not None and len(section_headings) != len(spans):
+        raise ValueError("section headings must align with the supplied spans")
     matcher = SignalMatcher(methodology)
     out: list[LinkProposal] = []
     for idx, text in enumerate(spans):
+        heading = section_headings[idx] if section_headings is not None else None
+        context = f"{heading or ''}\n{text}"
+        if require_ai_context and matcher.lex.ai_context.terms and not matcher.ai_context(context):
+            continue
         signals = matcher.language(text, criteria)
-        negative = matcher.negative(text, publisher_type, source_tier)
+        if heading:
+            # A local section heading supplies relevance, while evidence of a
+            # control or its operation must still be present in the quoted span.
+            signals = replace(signals, hints=matcher.language(context, criteria).hints)
+        negative = assessment_negative(matcher, text, publisher_type, source_tier, section_heading=heading)
+        negative_targets: set[str] = set()
+        if negative is not None:
+            negative_targets = {
+                c.code for c in criteria if c.pillar in negative.affected_pillars and signals.hints.get(c.code)
+            }
+            if not negative_targets:
+                # Preserve a real AI event for review without presenting one
+                # unscoped keyword hit as a failure of every criterion in a pillar.
+                negative_targets.add(most_material_criterion(negative.affected_pillars, criteria))
         for c in criteria:
             hints = signals.hints.get(c.code, ())
-            is_negative_target = negative is not None and c.pillar in negative.affected_pillars
+            is_negative_target = c.code in negative_targets
             if not hints and not is_negative_target:
                 continue
             if is_negative_target:
@@ -111,6 +145,12 @@ def merge_model_proposals(
         ):
             continue
         signals = matcher.language(spans[idx], [known[code]])
+        if polarity == "contradicts":
+            # Model suggestions obey the same scope gate as heuristic events.
+            if matcher.lex.ai_context.terms and not matcher.ai_context(spans[idx]):
+                continue
+            if find_terms(spans[idx], matcher.lex.negative_signals.hypothetical_terms):
+                continue
         out.append(
             LinkProposal(
                 span_index=idx,

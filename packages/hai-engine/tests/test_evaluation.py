@@ -69,6 +69,109 @@ def test_dated_results_are_documented_execution(manifest: Manifest) -> None:
     )
 
 
+def test_documented_procedure_and_owner_do_not_need_a_numeric_threshold(manifest: Manifest) -> None:
+    methodology = manifest.methodology.model_copy(deep=True)
+    methodology.lexicons.control.procedure_terms[:] = ["requires human approval"]
+    c = LinkClassifier(methodology)
+    result = c.classify(
+        "Our accountable executive requires human approval before high-risk AI deployments proceed.",
+        polarity="supports",
+        publisher_type="org_disclosure",
+        independence="self",
+    )
+    assert result.maturity_rung is MaturityRung.SPECIFIED_CONTROL
+    assert result.evidence_class is EvidenceClass.OPERATIONAL_EVIDENCE
+    assert result.execution_level is not ExecutionLevel.VERIFIED
+    # A procedure without an assigned owner does not establish accountability.
+    unowned = c.classify(
+        "The deployment process requires human approval before high-risk AI systems go live.",
+        polarity="supports",
+        publisher_type="org_disclosure",
+        independence="self",
+    )
+    assert unowned.maturity_rung is not MaturityRung.SPECIFIED_CONTROL
+    # Older manifests without procedure terms retain their numeric-threshold requirement.
+    methodology.lexicons.control.procedure_terms.clear()
+    legacy = LinkClassifier(methodology).classify(
+        "Our accountable executive requires human approval before high-risk AI deployments proceed.",
+        polarity="supports",
+        publisher_type="org_disclosure",
+        independence="self",
+    )
+    assert legacy.maturity_rung is not MaturityRung.SPECIFIED_CONTROL
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "Our mission is to provide an independent, evidence-based standard for evaluating whether organizations "
+        "develop, deploy, and govern AI responsibly and in alignment with human values.",
+        "Transparency Notes are created to help customers understand our AI systems and make informed choices.",
+        "Identified weaknesses, assessment errors, and material governance concerns are addressed through "
+        "documented review and appropriate corrective action.",
+        "Material findings, assessment errors, methodology changes, and corrective actions are subject to "
+        "documented oversight.",
+    ],
+)
+def test_factual_mission_and_governance_statements_receive_baseline_credit(manifest: Manifest, quote: str) -> None:
+    result = LinkClassifier(manifest.methodology).classify(
+        quote, polarity="supports", publisher_type="org_disclosure", independence="self"
+    )
+    assert result.maturity_rung is MaturityRung.STATED_COMMITMENT
+    assert result.evidence_class in (EvidenceClass.CORE_GOVERNANCE, EvidenceClass.FOUNDATIONAL_GOVERNANCE)
+
+
+def test_designated_human_oversight_and_defined_review_are_a_documented_control(manifest: Manifest) -> None:
+    result = LinkClassifier(manifest.methodology).classify(
+        "Designated human oversight is responsible for reviewing material findings, identifying potential conflicts, "
+        "and ensuring that certification decisions follow approved standards.",
+        polarity="supports",
+        publisher_type="org_disclosure",
+        independence="self",
+    )
+    assert result.maturity_rung is MaturityRung.SPECIFIED_CONTROL
+
+
+def test_generic_assessment_business_description_is_not_operational_proof(manifest: Manifest) -> None:
+    quote = (
+        "While many organizations have published AI principles and governance policies, few have a consistent, "
+        "evidence-based method for measuring whether those commitments are reflected in practice. Humaital was "
+        "created to address that gap by providing an independent assessment of publicly available evidence across "
+        "six foundational human pillars: Trust, Purpose, Safety, Transparency, Accountability, and Impact."
+    )
+    result = LinkClassifier(manifest.methodology).classify(
+        quote, polarity="supports", publisher_type="org_disclosure", independence="self"
+    )
+    assert result.maturity_rung is MaturityRung.STATED_COMMITMENT
+
+
+def test_financial_operations_do_not_establish_ai_safety_execution(manifest: Manifest) -> None:
+    result = LinkClassifier(manifest.methodology).classify(
+        "Financial risk management within the Group is governed by policies reviewed by the Board of Directors. "
+        "Policy implementation and day-to-day risk management are carried out by the treasury functions and "
+        "regular reporting on these risks is performed by the relevant accounting and controlling functions.",
+        polarity="supports",
+        publisher_type="org_disclosure",
+        independence="self",
+        criterion=manifest.criterion("SAF-01"),
+        section_heading="Financial risk management",
+        document_title="Risk management",
+    )
+    assert result.maturity_rung in (MaturityRung.NONE, MaturityRung.STATED_COMMITMENT)
+
+
+def test_operational_metrics_under_ai_heading_keep_their_context(manifest: Manifest) -> None:
+    result = LinkClassifier(manifest.methodology).classify(
+        "In Q2 2025 the committee completed 14 risk reviews and resolved 3 incidents reported.",
+        polarity="supports",
+        publisher_type="org_disclosure",
+        independence="self",
+        criterion=manifest.criterion("SAF-01"),
+        section_heading="Responsible AI risk management",
+    )
+    assert result.maturity_rung is MaturityRung.DOCUMENTED_EXECUTION
+
+
 def test_independent_verification_needs_an_independent_source(manifest: Manifest) -> None:
     c = LinkClassifier(manifest.methodology)
     quote = "An independent audit in March 2026 confirmed that the model risk controls operate as designed."

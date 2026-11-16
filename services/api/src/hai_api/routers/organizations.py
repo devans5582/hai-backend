@@ -18,6 +18,7 @@ from hai_core.generated.enums import LABELS
 from hai_core.generated.models import Assessment, Organization
 from hai_core.monitoring import list_subscriptions, register_upload, subscribe
 from hai_core.visibility import require_visible_organization, restriction, visible_organization_ids
+from hai_engine.reporting import build_report, industry_benchmarks
 
 router = APIRouter(prefix="/v1", tags=["organizations"])
 
@@ -292,7 +293,8 @@ def organization_report_pdf(org_id: UUID, st: State, principal: Reader) -> Respo
         latest = store.find(Assessment, where={"org_id": org_id}, order_by="created_at", descending=True, limit=1)
         if not latest:
             raise NotFoundError(f"organization {org_id} has no assessment yet")
-        return report_pdf_response(st, conn, store, latest[0].id)
+        report = build_report(conn, store, st.manifest, latest[0].id)
+    return report_pdf_response(st, report)
 
 
 @router.get("/organizations/{org_id}", response_model=OrganizationOut)
@@ -443,19 +445,16 @@ async def upload_evidence(
 @router.get(
     "/benchmarks/industries",
     tags=["benchmarks"],
-    summary="Peers by industry, stage band and size band (access-limited runs excluded)",
+    summary="Peers by industry, stage and size under the current ontology, methodology and rules",
 )
 def benchmarks(st: State, principal: Reader, industry: str | None = None) -> dict[str, Any]:
     with st.read(principal) as (conn, _):
-        rows = (
-            conn.execute(
-                text(
-                    "SELECT industry, stage_band::text, size_band::text, organizations, average_score, average_confidence FROM hai_ops.v_industry_benchmarks WHERE (CAST(:i AS text) IS NULL OR industry = :i) ORDER BY industry, stage_band, size_band"
-                ),
-                {"i": industry},
-            )
-            .mappings()
-            .all()
+        rows = industry_benchmarks(
+            conn,
+            ontology_version=st.manifest.ontology_version,
+            methodology_version=st.manifest.methodology_version,
+            ruleset_version=st.manifest.ruleset.version,
+            industry_code=industry,
         )
     items = [
         {

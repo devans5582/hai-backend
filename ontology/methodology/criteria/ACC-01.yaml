@@ -32,7 +32,7 @@ criterion:
       descriptor: "DRAFT: A stated intent or policy reference to ownership of outcomes, quoted from the organization. TODO(humaital)."
     - level: 3
       required_maturity_rung: specified_control
-      descriptor: "DRAFT: A named control for ownership of outcomes with an accountable owner and a measurable threshold. TODO(humaital)."
+      descriptor: "DRAFT: A named control for ownership of outcomes with an accountable owner and a defined procedure or measurable threshold. TODO(humaital)."
     - level: 4
       required_maturity_rung: documented_execution
       descriptor: "DRAFT: Dated results showing the control for ownership of outcomes has operated. TODO(humaital)."
@@ -47,6 +47,9 @@ criterion:
     - "ai governance owner"
     - "chief ai"
     - "ai officer"
+    - "designated human oversight"
+    - "human responsibility"
+    - "responsible ai team"
   indicators:
     - code: A1_R1
       kind: legacy_r

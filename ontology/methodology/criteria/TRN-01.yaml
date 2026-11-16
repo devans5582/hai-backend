@@ -35,7 +35,7 @@ criterion:
       descriptor: "DRAFT: A stated intent or policy reference to explainability, quoted from the organization. TODO(humaital)."
     - level: 3
       required_maturity_rung: specified_control
-      descriptor: "DRAFT: A named control for explainability with an accountable owner and a measurable threshold. TODO(humaital)."
+      descriptor: "DRAFT: A named control for explainability with an accountable owner and a defined procedure or measurable threshold. TODO(humaital)."
     - level: 4
       required_maturity_rung: documented_execution
       descriptor: "DRAFT: Dated results showing the control for explainability has operated. TODO(humaital)."
@@ -49,6 +49,10 @@ criterion:
     - "decision explanation"
     - "xai"
     - "interpretability"
+    - "transparency note*"
+    - "responsible ai transparency report"
+    - "model card*"
+    - "intelligible machine learning"
   indicators:
     - code: TR1_R1
       kind: legacy_r

@@ -168,6 +168,11 @@ class AcquisitionService:
                 aliases=list(org.aliases or []),
                 pending_uploads=self._pending_uploads(conn, org.id),
                 api_tokens=self._tokens(),
+                as_of=as_of.date(),
+                freshness_window_months=max(
+                    c.freshness_window_months or self.manifest.methodology.freshness.default_window_months
+                    for c in self.manifest.criteria
+                ),
             )
             staged: list[StagedDocument] = []
             connector_rows = {c.code: c for c in store.find(ConnectorRow)}
@@ -194,13 +199,19 @@ class AcquisitionService:
                     sd = self._stage(run.id, cfg.code, doc, org, PublisherType(cfg.publisher_type))
                     if sd is not None:
                         staged.append(sd)
+                items_returned = len([s for s in staged if s.run_id == run.id])
+                required_source = cfg.code == "WEBSITE" or (cfg.code == "DIRECT_URL" and bool(ctx.direct_urls))
+                if required_source and result.outcome == ConnectorRunOutcome.SUCCEEDED.value and not items_returned:
+                    result.outcome = ConnectorRunOutcome.FAILED.value
+                    result.error_code = "empty_content"
+                    result.notes.append("No readable document text was obtained from the requested evidence source")
                 store.update(
                     ConnectorRun,
                     run.id,
                     {
                         "outcome": ConnectorRunOutcome(result.outcome),
                         "error_code": result.error_code,
-                        "items_returned": len([s for s in staged if s.run_id == run.id]),
+                        "items_returned": items_returned,
                         "finished_at": self.now or datetime.now(UTC),
                         "notes": "; ".join(result.notes)[:2000] or None,
                     },
@@ -280,8 +291,11 @@ class AcquisitionService:
                 self.manifest.methodology,
                 publisher_type=sd.publisher_type.value,
                 source_tier=tier.value,
+                section_headings=[c.section_heading for c in candidates],
+                require_ai_context=sd.connector_code == "EDGAR",
             )
             published = sd.fetched.published_at or sd.extracted.published_at
+            admissible_proposals: list[LinkProposal] = []
             for p in proposals:
                 c = candidates[p.span_index]
                 criterion = self.manifest.criterion(p.criterion_code)
@@ -299,6 +313,8 @@ class AcquisitionService:
                     methodology=self.manifest.methodology,
                     matcher=self.matcher,
                 )
+                if decision.admissibility == Admissibility.ADMISSIBLE.value:
+                    admissible_proposals.append(p)
                 focus = (
                     self.matcher.focus_area_for(c.quote, criterion) if p.polarity == Polarity.SUPPORTS.value else None
                 )
@@ -323,7 +339,7 @@ class AcquisitionService:
                     )
                 )
                 report.links += 1
-            report.incidents += self._incidents(store, org, sd, candidates, proposals, published)
+            report.incidents += self._incidents(store, org, sd, candidates, admissible_proposals, published)
         return report
 
     # ---------------------------------------------------------------- helpers
@@ -409,7 +425,9 @@ class AcquisitionService:
             extracted.published_at = doc.published_at
         raw = self.blobs.put(doc.content)
         txt = self.blobs.put_text(extracted.text)
-        if doc.url.startswith("upload://"):
+        if doc.url.startswith("upload://") or code == "EDGAR":
+            # The SEC hosts issuer-authored 10-K/proxy/8-K filings. Hosting
+            # does not make the issuer's assertions regulator verification.
             info_type, name, domain, is_org = PublisherType.ORG_DISCLOSURE, org.display_name, org.primary_domain, True
         else:
             info = classify_publisher(
@@ -493,9 +511,12 @@ class AcquisitionService:
             if p.negative is None or p.negative.rule_code in seen:
                 continue
             seen.add(p.negative.rule_code)
-            cand = build_incident(
-                str(org.id), p.negative, published, list(self.manifest.criteria), candidates[p.span_index].quote
-            )
+            targeted = [
+                self.manifest.criterion(link.criterion_code)
+                for link in proposals
+                if link.span_index == p.span_index and link.negative is not None
+            ]
+            cand = build_incident(str(org.id), p.negative, published, targeted, candidates[p.span_index].quote)
             if store.first(Incident, where={"canonical_event_key": cand.canonical_event_key}):
                 continue
             store.insert(

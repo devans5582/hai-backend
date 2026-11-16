@@ -31,7 +31,7 @@ criterion:
       descriptor: "DRAFT: A stated intent or policy reference to alignment of words and actions, quoted from the organization. TODO(humaital)."
     - level: 3
       required_maturity_rung: specified_control
-      descriptor: "DRAFT: A named control for alignment of words and actions with an accountable owner and a measurable threshold. TODO(humaital)."
+      descriptor: "DRAFT: A named control for alignment of words and actions with an accountable owner and a defined procedure or measurable threshold. TODO(humaital)."
     - level: 4
       required_maturity_rung: documented_execution
       descriptor: "DRAFT: Dated results showing the control for alignment of words and actions has operated. TODO(humaital)."

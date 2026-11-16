@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import Connection, text
 
 from hai_core.db.store import Store
+from hai_core.errors import ConflictError
 from hai_core.generated.enums import Admissibility, CoverageState, MaturityStatus, OutcomeStatus, PillarCode
 from hai_core.generated.models import (
     Assessment,
@@ -292,6 +293,28 @@ class DecisionService:
     def __init__(self, manifest: Manifest) -> None:
         self.manifest = manifest
 
+    def require_pinned_versions(self, assessment: Assessment, snapshot: EvidenceSnapshot) -> None:
+        """Never reinterpret an earlier assessment with a different scoring manifest."""
+        pinned = {
+            "ontology": assessment.ontology_version,
+            "methodology": assessment.methodology_version,
+            "ruleset": assessment.ruleset_version,
+            "manifest_hash": snapshot.manifest_hash,
+        }
+        running = {
+            "ontology": self.manifest.ontology_version,
+            "methodology": self.manifest.methodology_version,
+            "ruleset": self.manifest.ruleset.version,
+            "manifest_hash": self.manifest.hash,
+        }
+        if pinned != running:
+            raise ConflictError(
+                "This assessment requires its original methodology and ruleset. "
+                "Use the matching engine to replay or finalize it, "
+                "or start a new assessment with the current methodology.",
+                details={"assessment_id": str(assessment.id), "pinned_versions": pinned, "running_versions": running},
+            )
+
     # ------------------------------------------------------------- read inputs
     def accepted_findings(self, store: Store, assessment_id: UUID) -> tuple[dict[str, FrozenFinding], dict[str, UUID]]:
         rows = store.find(
@@ -391,6 +414,7 @@ class DecisionService:
         snapshot = store.first(EvidenceSnapshot, where={"assessment_id": assessment_id})
         if snapshot is None:
             raise ValueError("no evidence snapshot; freeze before deciding")
+        self.require_pinned_versions(assessment, snapshot)
         findings, finding_ids = self.accepted_findings(store, assessment_id)
         overlay = overlay if overlay is not None else ReviewOverlay()
         signed = self.signed_certification_exists(conn, assessment_id)
@@ -527,6 +551,7 @@ class DecisionService:
         stored = self.latest_result(store, assessment_id)
         if snapshot is None or stored is None:
             raise ValueError("nothing to replay")
+        self.require_pinned_versions(assessment, snapshot)
         decisions = self._latest_decisions(store, assessment_id)
         overlay = ReviewOverlay.from_dict(
             (decisions[0].trace or {}).get("inputs", {}).get("overlay")

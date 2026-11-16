@@ -483,12 +483,7 @@ def gate_review_triggers(ctx: AssessmentContext, state: AssessmentState, params:
 def gate_certification(ctx: AssessmentContext, state: AssessmentState, params: dict[str, Any]) -> str:
     del params
     cert = ctx.methodology.certification
-    threshold = cert.threshold
-    if cert.threshold_mode == "stage_size":
-        for row in cert.stage_size_table.rows:
-            if row.stage_band == ctx.stage_band and row.size_band == ctx.size_band:
-                threshold = row.threshold
-                break
+    threshold = cert.threshold_for(ctx.stage_band, ctx.size_band)
     state.threshold_applied = threshold
     reasons: list[str] = []
     if state.hai_score is None:

@@ -494,6 +494,14 @@ class Certification(Strict):
     validity_months: int
     stage_size_table: StageSizeTable
 
+    def threshold_for(self, stage_band: str, size_band: str) -> float:
+        if self.threshold_mode == "universal":
+            return self.threshold
+        for row in self.stage_size_table.rows:
+            if row.stage_band == stage_band and row.size_band == size_band:
+                return row.threshold
+        raise ValueError(f"no certification threshold configured for {stage_band}/{size_band}")
+
 
 class Outcome(Strict):
     access_limited_unavailable_share: float
@@ -551,6 +559,7 @@ class TermList(Strict):
 class ControlLexicon(Strict):
     owner_terms: list[str]
     threshold_terms: list[str]
+    procedure_terms: list[str] = Field(default_factory=list)
 
 
 class ExecutionDates(Strict):
@@ -595,6 +604,7 @@ class NegativeSignals(Strict):
     rules: list[NegativeRule]
     default: NegativeDefault
     wording_rules: list[str]
+    hypothetical_terms: list[str] = Field(default_factory=list)
 
 
 class Irrelevance(Strict):
@@ -611,6 +621,7 @@ class Lexicons(Strict):
     injection: TermList
     irrelevance: Irrelevance
     focus_areas: dict[str, TermList] = {}
+    ai_context: TermList = Field(default_factory=lambda: TermList(terms=[]))
 
 
 class EvidenceStrengthLabel(Strict):

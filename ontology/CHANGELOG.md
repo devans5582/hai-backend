@@ -5,6 +5,31 @@ methodology are versioned separately with semver. A diff tool classifies each
 change (patch, minor, major) and CI refuses a version that did not move far
 enough.
 
+## Ontology 1.3.0, Methodology 3.0.0, Ruleset 2.0.0 (2026-11-16)
+
+Assessment validation against nine November 10 PDF reports, their preliminary
+review note, and the live November 2026 Humaital public methodology. ADR 0018;
+full source inventory and findings in `docs/assessment-validation-2026-11-16.md`.
+This is an implementation draft; canonical criterion definitions and numeric
+confidence details remain pending Humaital sign-off.
+
+* Documented controls accept an accountable owner with a defined procedure or
+  measurable threshold. Mission statements, factual disclosures and assigned
+  oversight receive evidence credit rather than requiring pledge wording.
+* Add retrieval synonyms found in actual reports. Add explicit AI-context and
+  hypothetical-event lexicons to separate AI incidents from unrelated corporate
+  risk disclosures. Criterion weights, missing-evidence denominators, the
+  five-level numeric curve and freshness windows stay in force.
+* Restore the available 100-point range; low confidence blocks certification
+  instead of reducing the alignment score. These caps did not cause the low
+  scores in the reviewed batch; collection and mapping corrections address them.
+* Publish all twelve stage/size certification rows: early stage 65, growth and
+  mature 70. Report and signed decision use the same stage threshold.
+* Regenerate the manifest-derived artifacts and ship additive migration
+  `0006_ontology_1_3.sql`. Existing snapshots, results and prior versions remain
+  stored. Current rules refuse to rewrite or replay a mismatched historical
+  snapshot; replay it with its original release.
+
 ## Ontology 1.2.0 (2026-11-09)
 
 * `industry` vocabulary: the twelve categories Humaital supplied (Education,

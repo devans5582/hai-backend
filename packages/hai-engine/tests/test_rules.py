@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import uuid4
 
 import pytest
 
+from hai_engine.classification import LinkClassifier
 from hai_engine.rules import RULE_IMPLEMENTATIONS, RuleEngine, RuleRegistryError
 from hai_engine.rules import builtin as rules
 from hai_engine.rules.context import (
@@ -22,6 +24,7 @@ from hai_engine.rules.registry import criterion_rule, resolve
 from hai_engine.scoring import aggregate, criterion_ratio
 from hai_ontology.meta import CriterionDef, Manifest
 from hai_ontology.validator import validate
+from hai_pipeline.proposals import heuristic_proposals
 
 AS_OF = datetime(2026, 10, 24, tzinfo=UTC)
 
@@ -201,6 +204,54 @@ def test_coverage_states(manifest: Manifest) -> None:
         coverage(links=[link("SAF-01", "stated_commitment", admissibility="inadmissible_stale")]).coverage_state
         == "missing"
     )
+
+
+@pytest.mark.parametrize(("rung", "level"), [("documented_execution", 4), ("independently_verified", 5)])
+def test_dated_allegation_is_not_a_failed_execution_test(
+    manifest: Manifest, engine: RuleEngine, rung: str, level: int
+) -> None:
+    quote = "In Q2 2026 Acme's AI division faced a lawsuit filed by a supplier."
+    proposals = heuristic_proposals(
+        [quote], list(manifest.criteria), manifest.methodology, publisher_type="press", source_tier="T3"
+    )
+    assert len(proposals) == 1 and proposals[0].polarity == "contradicts"
+    assert not proposals[0].matched_hints  # The risk is preserved through the single-criterion review fallback.
+    code = proposals[0].criterion_code
+    classification = LinkClassifier(manifest.methodology).classify(
+        quote, polarity="contradicts", publisher_type="press", independence="independent"
+    )
+    assert classification.execution_level.value == "asserted"
+    adverse = replace(
+        link(code, "none", polarity="contradicts", execution=classification.execution_level.value), quote=quote
+    )
+    outcome = engine.run_criterion(
+        ctx(
+            manifest,
+            code,
+            links=[link(code, rung, independence="independent"), adverse],
+            incidents=[incident(code, "alleged", "high")],
+        )
+    )
+    assert outcome.state.coverage_state == "contradictory"
+    assert outcome.state.level == level and "CAP-FAILED-EXECUTION" not in outcome.state.caps_applied
+    assert not outcome.state.adjustments
+    assert any(flag.startswith("unverified_incident:") for flag in outcome.state.review_flags)
+
+
+def test_actual_test_failure_keeps_the_failed_execution_cap(manifest: Manifest, engine: RuleEngine) -> None:
+    quote = "In Q2 2026 3 incidents reported after testing failed under the Chief AI Officer's AI shutdown protocol."
+    classification = LinkClassifier(manifest.methodology).classify(
+        quote, polarity="contradicts", publisher_type="independent_audit", independence="independent"
+    )
+    assert classification.execution_level.value in ("partial", "verified")
+    failure = replace(
+        link("SAF-01", "none", polarity="contradicts", execution=classification.execution_level.value),
+        quote=quote,
+        target_type="test_outcome",
+    )
+    outcome = engine.run_criterion(ctx(manifest, links=[link("SAF-01", "documented_execution"), failure]))
+    assert outcome.state.coverage_state == "failed"
+    assert outcome.state.level == 3 and "CAP-FAILED-EXECUTION" in outcome.state.caps_applied
 
 
 def test_missing_when_sources_were_searched(manifest: Manifest) -> None:
@@ -701,7 +752,24 @@ def test_assessment_rules_and_outcome_status(manifest: Manifest, engine: RuleEng
     assert st.threshold_applied == 70
 
 
-def test_score_ceiling_and_low_confidence_cap(manifest: Manifest, engine: RuleEngine) -> None:
+def test_stage_thresholds_apply_to_every_organization_size(manifest: Manifest, engine: RuleEngine) -> None:
+    outcomes = _full_outcomes(manifest, engine)
+    for stage in manifest.vocabulary("stage_band").codes:
+        for size in manifest.vocabulary("size_band").codes:
+            result = engine.run_assessment(
+                outcomes,
+                stage_band=stage,
+                size_band=size,
+                certification_requested=False,
+                signed_certification=False,
+                connector_runs=runs(WEBSITE="succeeded"),
+                incidents=(),
+                as_of=AS_OF,
+            )
+            assert result.state.threshold_applied == (65 if stage == "early" else 70)
+
+
+def test_full_score_scale_and_separate_confidence_gate(manifest: Manifest, engine: RuleEngine) -> None:
     outcomes = []
     for crit in manifest.criteria:
         outcomes.append(
@@ -739,8 +807,8 @@ def test_score_ceiling_and_low_confidence_cap(manifest: Manifest, engine: RuleEn
     )
     assert (
         result.state.score_before_caps == 100.0
-        and result.state.hai_score == 85.0
-        and "CAP-SCORE-CEILING" in result.state.caps_applied
+        and result.state.hai_score == 100.0
+        and "CAP-SCORE-CEILING" not in result.state.caps_applied
     )
     assert result.state.confidence_pct is not None and result.state.confidence_pct >= 70
     assert result.state.certification_eligible is True and "certification:requested" in result.state.review_triggers
@@ -756,6 +824,46 @@ def test_score_ceiling_and_low_confidence_cap(manifest: Manifest, engine: RuleEn
         as_of=AS_OF,
     )
     assert signed.state.outcome_status == "hai_certified"
+    # Confidence gates certification without applying a second maturity penalty.
+    for outcome in outcomes:
+        outcome.state.confidence = 10.0
+    low_confidence = engine.run_assessment(
+        outcomes,
+        stage_band="growth",
+        size_band="mid",
+        certification_requested=False,
+        signed_certification=False,
+        connector_runs=runs(WEBSITE="succeeded"),
+        incidents=(),
+        as_of=AS_OF,
+    )
+    assert low_confidence.state.hai_score == 100.0 and low_confidence.state.confidence_pct == 10.0
+    assert not low_confidence.state.certification_eligible
+    assert low_confidence.state.outcome_status == "confidence_too_low"
+    # Older configured caps remain executable for explicit historical comparisons.
+    legacy_methodology = manifest.methodology.model_copy(
+        update={
+            "scoring": manifest.methodology.scoring.model_copy(
+                update={
+                    "score_cap": 85,
+                    "low_confidence_cap": manifest.methodology.scoring.low_confidence_cap.model_copy(
+                        update={"cap": 75}
+                    ),
+                }
+            )
+        }
+    )
+    legacy = RuleEngine(manifest.model_copy(update={"methodology": legacy_methodology})).run_assessment(
+        outcomes,
+        stage_band="growth",
+        size_band="mid",
+        certification_requested=False,
+        signed_certification=False,
+        connector_runs=runs(WEBSITE="succeeded"),
+        incidents=(),
+        as_of=AS_OF,
+    )
+    assert legacy.state.hai_score == 75.0
 
 
 def test_blocked_sources_are_unavailable_not_missing_in_the_engine(manifest: Manifest, engine: RuleEngine) -> None:

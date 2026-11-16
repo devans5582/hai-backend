@@ -47,6 +47,8 @@ class ConnectorContext:
     aliases: list[str] = field(default_factory=list)
     pending_uploads: list[dict[str, object]] = field(default_factory=list)
     api_tokens: dict[str, str] = field(default_factory=dict)
+    as_of: date | None = None
+    freshness_window_months: int = 24
 
 
 @dataclass

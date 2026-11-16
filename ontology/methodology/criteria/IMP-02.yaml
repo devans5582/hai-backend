@@ -36,7 +36,7 @@ criterion:
       descriptor: "DRAFT: A stated intent or policy reference to shared human benefit, quoted from the organization. TODO(humaital)."
     - level: 3
       required_maturity_rung: specified_control
-      descriptor: "DRAFT: A named control for shared human benefit with an accountable owner and a measurable threshold. TODO(humaital)."
+      descriptor: "DRAFT: A named control for shared human benefit with an accountable owner and a defined procedure or measurable threshold. TODO(humaital)."
     - level: 4
       required_maturity_rung: documented_execution
       descriptor: "DRAFT: Dated results showing the control for shared human benefit has operated. TODO(humaital)."

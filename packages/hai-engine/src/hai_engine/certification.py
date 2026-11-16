@@ -82,6 +82,8 @@ class CertificationService:
     ) -> CertificationDecision:
         if not principal.is_reviewer:
             raise ForbiddenError("only a named reviewer can sign a certification decision (IC-13)")
+        if assessment.methodology_version != self.methodology.version:
+            raise ConflictError("This assessment requires its original methodology for certification.")
         if decision not in (CertificationOutcome.CERTIFIED.value, CertificationOutcome.NOT_CERTIFIED.value):
             raise ValidationFailedError("decision must be certified or not_certified")
         if decision == CertificationOutcome.CERTIFIED.value and result.gate_reasons:
@@ -100,7 +102,9 @@ class CertificationService:
         row = CertificationDecision(
             assessment_id=assessment.id,
             result_id=result.id,
-            threshold_applied=self.methodology.certification.threshold,
+            threshold_applied=self.methodology.certification.threshold_for(
+                str(assessment.stage_band), str(assessment.size_band)
+            ),
             decision=CertificationOutcome(decision),
             gate_reasons=list(result.gate_reasons),
             reviewer_id=principal.id,

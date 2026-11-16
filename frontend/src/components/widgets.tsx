@@ -96,6 +96,7 @@ export function QueryState({ isLoading, error, children }: { isLoading: boolean;
       <div className="alert error" role="alert">
         <strong>{e.status === 401 ? "Sign in to continue" : "We couldn’t load this information"}</strong>
         <p className="query-error-message">{e.status === 401 ? "Your session has ended or your credentials were not accepted." : e.message ?? "Check your connection and try again."}</p>
+        {typeof e.details?.["request_id"] === "string" && <p className="query-error-message small muted">Support reference: <code>{e.details["request_id"]}</code></p>}
         {e.fieldErrors && Object.keys(e.fieldErrors).length > 0 && (
           <ul className="query-error-fields small">{Object.entries(e.fieldErrors).map(([field, msg]) => <li key={field}><code>{field}</code> {msg}</li>)}</ul>
         )}

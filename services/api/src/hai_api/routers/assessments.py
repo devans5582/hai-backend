@@ -194,9 +194,8 @@ def get_report(assessment_id: UUID, st: State, principal: Reader) -> dict[str, A
         return build_report(conn, store, st.manifest, assessment_id)
 
 
-def report_pdf_response(st: AppState, conn: Any, store: Store, assessment_id: UUID) -> Response:
+def report_pdf_response(st: AppState, report: dict[str, Any]) -> Response:
     """The report rendered as a PDF download; the same stored values the JSON report returns."""
-    report = build_report(conn, store, st.manifest, assessment_id)
     data = render_report_pdf(report, website=st.settings.report_website, tagline=st.settings.report_tagline)
     return Response(
         content=data,
@@ -217,7 +216,8 @@ def report_pdf_response(st: AppState, conn: Any, store: Store, assessment_id: UU
 def get_report_pdf(assessment_id: UUID, st: State, principal: Reader) -> Response:
     with st.read(principal) as (conn, store):
         load_assessment(store, assessment_id, principal)
-        return report_pdf_response(st, conn, store, assessment_id)
+        report = build_report(conn, store, st.manifest, assessment_id)
+    return report_pdf_response(st, report)
 
 
 @router.get(

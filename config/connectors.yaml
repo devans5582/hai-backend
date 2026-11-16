@@ -18,7 +18,19 @@ connectors:
     publisher_type: org_disclosure
     access_terms: Public pages of the organization's own website; robots.txt is honoured.
     limits: { pages: 25, time_seconds: 60 }
-    max_discovered_links: 10
+    max_discovered_links: 20  # per page; the shared page/time budgets bound the whole crawl
+    max_discovery_depth: 2
+    # Follow published evidence links before probing guessed paths. AI-specific
+    # links take priority over generic navigation when the crawl is bounded.
+    priority_link_keywords:
+      - responsible ai
+      - ai governance
+      - ai policy
+      - ai principle*
+      - ai ethic*
+      - artificial intelligence
+      - machine learning
+      - model card*
     # Phase 6 FORCED_PATHS (scraper.js:44-84), minus Humaital-specific slugs
     seed_paths:
       - /responsible-ai
@@ -55,6 +67,13 @@ connectors:
       - /governance
     # Phase 6 GOVERNANCE_KEYWORDS (scraper.js:15-31), matched as whole words in link text or href
     link_keywords:
+      - ai
+      - about
+      - safety
+      - impact
+      - model card*
+      - audit*
+      - assurance
       - privacy
       - trust
       - security
@@ -96,11 +115,11 @@ connectors:
       - investor relations
       - newsroom
     # Phase 6 HARD_SKIP_PATHS (scraper.js:144-147)
-    skip_paths: [/privacy, /terms, /cookie-policy, /legal, /cookie, /sitemap, /careers, /press-release]
+    # Privacy and legal disclosures can be criterion evidence; keep them.
+    skip_paths: [/cookie-policy, /cookie, /sitemap, /careers, /press-release]
     # Phase 6 BLOCK_KEYWORDS and status codes (scraper.js:179-185)
     block_markers:
       - Just a moment...
-      - Cloudflare
       - Access Denied
       - Security challenge
       - Please enable JS
@@ -109,7 +128,8 @@ connectors:
       - Attention Required!
       - Pardon Our Interruption
     block_status_codes: [403, 406, 451]
-    min_text_chars: 300
+    # Match the span minimum; concise published policies are still evidence.
+    min_text_chars: 40
 
   - code: DIRECT_URL
     name: Requester-supplied governance pages
@@ -121,12 +141,12 @@ connectors:
   - code: EDGAR
     name: SEC EDGAR full-text search
     enabled: true
-    publisher_type: regulator_record
+    publisher_type: org_disclosure
     access_terms: SEC fair-access policy; identify with a User-Agent that names the operator.
     search_url: https://efts.sec.gov/LATEST/search-index
     archive_url: https://www.sec.gov/Archives/edgar/data
     forms: ["10-K", "DEF 14A", "8-K", "20-F"]
-    query_terms: artificial intelligence governance responsible
+    query_terms: '"artificial intelligence" OR "responsible AI" OR "AI governance" OR "machine learning"'
     max_filings: 3
     limits: { pages: 6, time_seconds: 40 }
 

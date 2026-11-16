@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api, saveDownload } from "../lib/api";
+import { api, ApiRequestError, saveDownload } from "../lib/api";
 import { Icon } from "./Icon";
 
 type Target = { assessmentId: string; organizationId?: never } | { organizationId: string; assessmentId?: never };
@@ -37,6 +37,7 @@ export function ExportReportButton({ subject, compact = false, primary = false, 
   const label = pending ? "Preparing PDF…" : done ? "PDF downloaded" : "Export PDF";
   const accessible = `${label}: report for ${subject}`;
   const message = exportPdf.error ? (exportPdf.error as Error).message : null;
+  const requestId = exportPdf.error instanceof ApiRequestError ? exportPdf.error.details["request_id"] : null;
   if (compact) {
     return (
       <button
@@ -60,6 +61,7 @@ export function ExportReportButton({ subject, compact = false, primary = false, 
       {message && (
         <span className="export-error small" role="alert">
           Export failed: {message}
+          {typeof requestId === "string" && <> Support reference: <code>{requestId}</code></>}
         </span>
       )}
     </span>

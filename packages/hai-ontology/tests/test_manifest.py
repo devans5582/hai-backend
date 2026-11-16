@@ -21,6 +21,32 @@ def test_manifest_is_valid(manifest: Manifest) -> None:
     assert report.warnings == []
 
 
+def test_procedure_and_ai_scope_patterns_are_validated(manifest: Manifest) -> None:
+    for group in ("procedure", "ai_context", "hypothetical"):
+        broken = manifest.model_copy(deep=True)
+        lexicons = broken.methodology.lexicons
+        terms = {
+            "procedure": lexicons.control.procedure_terms,
+            "ai_context": lexicons.ai_context.terms,
+            "hypothetical": lexicons.negative_signals.hypothetical_terms,
+        }[group]
+        terms.append("(")
+        assert "E_LEXICON_REGEX" in validate(broken).codes()
+
+
+def test_stage_size_thresholds_must_be_complete_and_unambiguous(manifest: Manifest) -> None:
+    broken = manifest.model_copy(deep=True)
+    table = broken.methodology.certification.stage_size_table
+    cert = broken.methodology.certification.model_copy(update={"threshold_mode": "stage_size"})
+    broken = broken.model_copy(update={"methodology": broken.methodology.model_copy(update={"certification": cert})})
+    table.rows[:] = table.rows[:1]
+    assert "E_REQUIRED" in validate(broken).codes()
+    table.rows.append(table.rows[0])
+    assert "E_DUPLICATE" in validate(broken).codes()
+    with pytest.raises(ValueError, match="no certification threshold configured"):
+        cert.threshold_for("unconfigured-stage", "small")
+
+
 def test_shape_matches_spec(manifest: Manifest) -> None:
     assert len(manifest.entities) == 31
     by_layer = {layer: [e for e in manifest.entities if e.layer == layer] for layer in Layer}

@@ -16,7 +16,7 @@ from uuid import UUID
 from sqlalchemy import Connection, text
 
 from hai_core.db.store import Store
-from hai_core.generated.enums import ATTRIBUTES, LABELS, RANKS
+from hai_core.generated.enums import ATTRIBUTES, LABELS, RANKS, CoverageState, LifecycleState, OutcomeStatus
 from hai_core.generated.models import (
     Assessment,
     AssessmentResult,
@@ -67,8 +67,29 @@ SELECT version, versions FROM (
 """
 
 BENCHMARK_SQL = """
-SELECT organizations, average_score, average_confidence FROM hai_ops.v_industry_benchmarks
-WHERE industry = :i AND stage_band = CAST(:s AS hai.stage_band) AND size_band = CAST(:z AS hai.size_band)
+WITH latest_results AS (
+    SELECT DISTINCT ON (a.org_id)
+        a.org_id, a.ontology_version, a.methodology_version, a.ruleset_version,
+        a.stage_band, a.size_band, o.industry_code, r.hai_score, r.confidence_pct, r.outcome_status
+    FROM hai.assessment_results r
+    JOIN hai.assessments a ON a.id = r.assessment_id
+    JOIN hai.organizations o ON o.id = a.org_id
+    WHERE NOT EXISTS (SELECT 1 FROM hai.assessment_results later WHERE later.supersedes_id = r.id)
+      AND a.lifecycle_state IN (CAST(:completed AS hai.lifecycle_state), CAST(:unverified AS hai.lifecycle_state))
+    ORDER BY a.org_id, r.created_at DESC, r.id DESC
+)
+SELECT industry_code AS industry, stage_band::text, size_band::text,
+       count(*) AS organizations,
+       round(avg(hai_score)::numeric, 1) AS average_score,
+       round(avg(confidence_pct)::numeric, 1) AS average_confidence
+FROM latest_results
+WHERE ontology_version = :ontology AND methodology_version = :methodology AND ruleset_version = :ruleset
+  AND outcome_status <> CAST(:excluded_outcome AS hai.outcome_status) AND hai_score IS NOT NULL
+  AND (CAST(:industry AS text) IS NULL OR industry_code = :industry)
+  AND (CAST(:stage AS text) IS NULL OR stage_band = CAST(:stage AS hai.stage_band))
+  AND (CAST(:size AS text) IS NULL OR size_band = CAST(:size AS hai.size_band))
+GROUP BY industry_code, stage_band, size_band
+ORDER BY industry_code, stage_band, size_band
 """
 
 
@@ -80,15 +101,61 @@ def assessment_version(conn: Connection, org_id: UUID, assessment_id: UUID) -> d
     return {"number": int(row["version"]), "total": int(row["versions"])}
 
 
+def industry_benchmarks(
+    conn: Connection,
+    *,
+    ontology_version: str,
+    methodology_version: str,
+    ruleset_version: str,
+    industry_code: str | None = None,
+    stage_band: str | None = None,
+    size_band: str | None = None,
+) -> list[dict[str, Any]]:
+    """Group the latest completed results by cohort, using exactly the supplied version pins.
+
+    Select the organization's latest result before filtering versions or outcomes;
+    never fall back to its older methodology or superseded result to fill a peer group.
+    """
+    params = {
+        "ontology": ontology_version,
+        "methodology": methodology_version,
+        "ruleset": ruleset_version,
+        "industry": industry_code,
+        "stage": stage_band,
+        "size": size_band,
+        "completed": LifecycleState.COMPLETED.value,
+        "unverified": LifecycleState.COMPLETED_UNVERIFIED.value,
+        "excluded_outcome": OutcomeStatus.ACCESS_LIMITED.value,
+    }
+    return [dict(row) for row in conn.execute(text(BENCHMARK_SQL), params).mappings().all()]
+
+
 def industry_benchmark(
-    conn: Connection, industry_code: str | None, stage_band: str, size_band: str, hai_score: float | None
+    conn: Connection,
+    industry_code: str | None,
+    stage_band: str,
+    size_band: str,
+    hai_score: float | None,
+    *,
+    ontology_version: str,
+    methodology_version: str,
+    ruleset_version: str,
 ) -> dict[str, Any] | None:
-    """Peers with the same industry, stage and size (latest result each, access-limited excluded)."""
+    """Compare a report with peers assessed under the same ontology, methodology and rules."""
     if not industry_code:
         return None
-    row = conn.execute(text(BENCHMARK_SQL), {"i": industry_code, "s": stage_band, "z": size_band}).mappings().first()
-    if row is None or row["average_score"] is None:
+    rows = industry_benchmarks(
+        conn,
+        ontology_version=ontology_version,
+        methodology_version=methodology_version,
+        ruleset_version=ruleset_version,
+        industry_code=industry_code,
+        stage_band=stage_band,
+        size_band=size_band,
+    )
+    if not rows or rows[0]["average_score"] is None:
         return None
+    row = rows[0]
     average = float(row["average_score"])
     position = None
     if hai_score is not None:
@@ -117,6 +184,39 @@ def _latest(rows: list[Any]) -> list[Any]:
 
 def _enum_str(value: Any) -> str:
     return str(value.value) if hasattr(value, "value") else str(value)
+
+
+def score_availability(
+    assessment: Assessment, result: AssessmentResult | None, coverage: dict[str, int]
+) -> dict[str, str]:
+    """Explain a missing numeric score without substituting a result from another run."""
+    if result is None:
+        if assessment.lifecycle_state == LifecycleState.FAILED:
+            return {
+                "code": "failed",
+                "message": "This assessment failed before a result was produced. Review the failure details and rerun.",
+            }
+        return {
+            "code": "pending",
+            "message": "No result has been produced for this assessment. "
+            f"Assessment state: {LABELS['lifecycle_state'][_enum_str(assessment.lifecycle_state)]}.",
+        }
+    if result.hai_score is not None:
+        return {"code": "available", "message": "A numeric score was calculated for this assessment."}
+    unavailable = coverage.get(CoverageState.UNAVAILABLE.value, 0)
+    if unavailable:
+        return {
+            "code": "sources_unavailable",
+            "message": "No HAI Score could be calculated because no criteria could be included in the score. "
+            f"Evidence sources could not be reached for {unavailable} criteria. "
+            "This run cannot be compared with a numeric score from an earlier assessment. "
+            "Review the source errors and rerun, or supply accessible evidence.",
+        }
+    return {
+        "code": "no_counted_criteria",
+        "message": "No HAI Score could be calculated because no criteria could be included in the score. "
+        "Review criterion coverage and applicability. This is not a score of zero.",
+    }
 
 
 def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_id: UUID) -> dict[str, Any]:
@@ -273,13 +373,34 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
         _enum_str(assessment.stage_band),
         _enum_str(assessment.size_band),
         float(result.hai_score) if result and result.hai_score is not None else None,
+        ontology_version=assessment.ontology_version,
+        methodology_version=assessment.methodology_version,
+        ruleset_version=assessment.ruleset_version,
     )
+    coverage_summary = {
+        state: sum(1 for c in criteria_out if c["coverage_state"] == state) for state in LABELS["coverage_state"]
+    }
+    same_methodology = (
+        assessment.ontology_version == manifest.ontology_version
+        and assessment.methodology_version == manifest.methodology_version
+        and assessment.ruleset_version == manifest.ruleset.version
+    )
+    threshold = (
+        float(cert.threshold_applied)
+        if cert
+        else manifest.methodology.certification.threshold_for(
+            _enum_str(assessment.stage_band), _enum_str(assessment.size_band)
+        )
+        if same_methodology
+        else None
+    )
+    unavailable = coverage_summary.get(CoverageState.UNAVAILABLE.value, 0)
     return {
         "product": {"report_name": product.report_name, "long_name": product.long_name},
         "scale": {
             "level_max": manifest.methodology.scoring.level_max,
             "score_scale": manifest.methodology.scoring.score_scale,
-            "certification_threshold": manifest.methodology.certification.threshold,
+            "certification_threshold": threshold,
             "min_confidence": manifest.methodology.certification.min_confidence,
         },
         "version": version,
@@ -288,6 +409,7 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
             "lifecycle_state": _enum_str(assessment.lifecycle_state),
             "lifecycle_label": LABELS["lifecycle_state"][_enum_str(assessment.lifecycle_state)],
             "requested_by": assessment.requested_by,
+            "failure_reason": assessment.failure_reason,
             "submitted_domain": assessment.submitted_domain,
             "stage_band": _enum_str(assessment.stage_band),
             "size_band": _enum_str(assessment.size_band),
@@ -370,9 +492,28 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
             "weights": comps.weights,
             "evidence_type_credit": dict(comps.evidence_type_credit),
         },
-        "coverage_summary": {
-            state: sum(1 for c in criteria_out if c["coverage_state"] == state) for state in LABELS["coverage_state"]
-        },
+        "score_availability": score_availability(assessment, result, coverage_summary),
+        "methodology_notice": (
+            f"This assessment uses methodology {assessment.methodology_version} and ruleset "
+            f"{assessment.ruleset_version}. The current catalog uses methodology {manifest.methodology_version} "
+            f"and ruleset {manifest.ruleset.version}. Historical scores and evidence have been preserved; "
+            "the explanatory catalog reflects the current release. "
+            "Start a new assessment to use the current methodology."
+            if not same_methodology
+            else None
+        ),
+        "coverage_note": (
+            f"{counted_criteria} of {len(criteria_out)} criteria counted; {unavailable} could not be assessed. "
+            + (
+                "Unavailable criteria are excluded and remaining pillar weights are renormalized. "
+                "Compare this partial-coverage result only with its evidence limitations in view."
+                if result and result.hai_score is not None
+                else "No numeric score could be calculated. Review the source errors before rerunning."
+            )
+            if result and unavailable
+            else None
+        ),
+        "coverage_summary": coverage_summary,
         "connector_runs": [
             {
                 **r,

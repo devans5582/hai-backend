@@ -100,7 +100,7 @@ class Settings(BaseSettings):
 
     # Worker
     worker_poll_seconds: float = 2.0
-    worker_lease_seconds: int = 180
+    worker_lease_seconds: int = Field(default=180, gt=0)
     worker_id: str = "worker-1"
     monitoring_tick_minutes: int = 60
 

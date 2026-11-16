@@ -90,8 +90,9 @@ export function saveCredentials(next: Partial<Credentials>) {
 }
 
 /** Called by the API client on a 401 for a session: the session is gone server-side. */
-export function dropSession() {
-  if (localStorage.getItem(KEY_SESSION)) {
+export function dropSession(expectedSession: string | null) {
+  // A delayed response from an older request must not sign out a newer login.
+  if (expectedSession && localStorage.getItem(KEY_SESSION) === expectedSession) {
     localStorage.removeItem(KEY_SESSION);
     notify();
   }

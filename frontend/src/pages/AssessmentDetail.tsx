@@ -117,6 +117,11 @@ export function AssessmentDetail() {
                   <h2>Assessment result</h2>
                   <p className="muted small">Human Alignment Index · out of 100</p>
                   <ScoreDial score={r.result?.hai_score ?? null} />
+                  {r.result?.hai_score === null && r.score_availability?.message && (
+                    <p className="alert info small" role="status">{r.score_availability.message}</p>
+                  )}
+                  {r.coverage_note && <p className="alert info small" role="status">{r.coverage_note}</p>}
+                  {r.methodology_notice && <p className="alert info small" role="status">{r.methodology_notice}</p>}
                   <div className="row" style={{ justifyContent: "center", marginTop: "0.75rem" }}>
                     <Badge tone={toneForOutcome(r.result?.outcome_status)}>{r.result?.outcome_label ?? "No result yet"}</Badge>
                   </div>

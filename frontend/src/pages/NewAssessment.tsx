@@ -71,7 +71,7 @@ export function NewAssessment() {
       </div>
       <div className="form-layout">
         <form className="card form-main" onSubmit={submit} noValidate aria-describedby={generic ? "form-error" : undefined} aria-busy={create.isPending}>
-          {generic && <div className="alert error" role="alert" id="form-error">{generic}</div>}
+          {generic && <div className="alert error" role="alert" id="form-error">{generic}{typeof err?.details["request_id"] === "string" && <p className="small">Support reference: <code>{err.details["request_id"]}</code></p>}</div>}
           <section className="form-section" aria-labelledby="organization-heading">
             <div className="section-heading">
               <span className="step-number">01</span>

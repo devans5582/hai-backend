@@ -8,12 +8,16 @@ silently dropped. A transport can be injected for tests (the fake internet).
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from urllib import robotparser
 from urllib.parse import urlsplit
 
 import httpx
+from selectolax.lexbor import LexborHTMLParser
 
 from hai_core.generated.enums import ConnectorRunOutcome
 from hai_pipeline.urls import canonical_url
@@ -111,6 +115,7 @@ class Fetcher:
         )
         self._last_hit: dict[str, float] = {}
         self._robots: dict[str, robotparser.RobotFileParser | None] = {}
+        self._rate_limited_until: dict[str, float] = {}
         self._sleep = sleep if sleep is not None else asyncio.sleep
         self.retry_backoff = retry_backoff_seconds
         self.requests_made = 0
@@ -163,8 +168,27 @@ class Fetcher:
         if budget is not None:
             budget.check()
             budget.spend()
+        started = time.monotonic()
+        if budget is None:
+            return await self._fetch(canonical, budget=budget, method=method, headers=headers)
+        try:
+            # The connector's deadline includes robots, pacing and retry sleeps,
+            # not just the time before its first request.
+            async with asyncio.timeout(budget.remaining_seconds):
+                return await self._fetch(canonical, budget=budget, method=method, headers=headers)
+        except TimeoutError:
+            elapsed = int((time.monotonic() - started) * 1000)
+            return FetchResult(canonical, canonical, None, b"", "", "failed", "time_budget_exhausted", elapsed)
+
+    async def _fetch(
+        self, canonical: str, *, budget: Budget | None, method: str, headers: dict[str, str] | None
+    ) -> FetchResult:
         host = urlsplit(canonical).hostname or ""
         started = time.monotonic()
+        if self._rate_limited_until.get(host, 0) > started:
+            return FetchResult(
+                canonical, canonical, 429, b"", "", ConnectorRunOutcome.RATE_LIMITED.value, "http_429", 0
+            )
         if not await self._allowed(canonical):
             return FetchResult(canonical, canonical, None, b"", "", "blocked", "robots_disallow", 0)
         attempt = 0
@@ -191,6 +215,19 @@ class Fetcher:
             ctype = resp.headers.get("content-type", "")
             content = resp.content[: self.max_bytes]
             if resp.status_code in RATE_LIMIT_STATUS:
+                delay = _retry_after_seconds(resp.headers.get("retry-after"))
+                if delay is None:
+                    delay = min(self.retry_backoff * attempt, 5.0)
+                self._rate_limited_until[host] = time.monotonic() + delay
+                # Honour short server-requested waits. A long cooldown should
+                # stop probes to this host rather than consume the entire run.
+                if (
+                    attempt <= self.max_retries
+                    and delay <= 5.0
+                    and (budget is None or delay < budget.remaining_seconds)
+                ):
+                    await self._sleep(delay)  # type: ignore[operator]
+                    continue
                 return FetchResult(
                     canonical,
                     str(resp.url),
@@ -201,6 +238,7 @@ class Fetcher:
                     "http_429",
                     elapsed,
                 )
+            self._rate_limited_until.pop(host, None)
             if resp.status_code in self.block_status_codes:
                 return FetchResult(
                     canonical,
@@ -238,8 +276,17 @@ class Fetcher:
     def _looks_blocked(self, content: bytes) -> bool:
         if not self.block_markers:
             return False
-        head = content[:20000].decode("utf-8", errors="replace").lower()
-        return any(marker in head for marker in self.block_markers)
+        tree = LexborHTMLParser(content)
+        headings = [" ".join(node.text().lower().split()) for node in tree.css("title, h1, h2")]
+        tree.strip_tags(["head", "script", "style", "noscript", "template", "svg"])
+        body = tree.body or tree.root
+        visible = " ".join(body.text(separator=" ").lower().split()) if body is not None else ""
+        # CDN script URLs and a noscript fallback occur on ordinary content
+        # pages too. Challenge pages lead with the denial in a heading or a
+        # short visible message. Policy prose may legitimately discuss access
+        # denied events, so an embedded body-text mention is not a challenge.
+        messages = [*headings, *([visible] if len(visible) < 2000 else [])]
+        return any(_starts_with_marker(message, marker) for message in messages for marker in self.block_markers)
 
     async def get_json(
         self, url: str, *, budget: Budget | None = None, headers: dict[str, str] | None = None
@@ -262,3 +309,23 @@ class Fetcher:
                 "bad_json",
                 result.elapsed_ms,
             ), None
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        seconds = float(value)
+        return max(0.0, seconds) if math.isfinite(seconds) else None
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+        except (ValueError, TypeError, OverflowError):
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
+def _starts_with_marker(message: str, marker: str) -> bool:
+    return message.startswith(marker) and (len(message) == len(marker) or not message[len(marker)].isalnum())

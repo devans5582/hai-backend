@@ -36,7 +36,7 @@ criterion:
       descriptor: "DRAFT: A stated intent or policy reference to consistency of behavior, quoted from the organization. TODO(humaital)."
     - level: 3
       required_maturity_rung: specified_control
-      descriptor: "DRAFT: A named control for consistency of behavior with an accountable owner and a measurable threshold. TODO(humaital)."
+      descriptor: "DRAFT: A named control for consistency of behavior with an accountable owner and a defined procedure or measurable threshold. TODO(humaital)."
     - level: 4
       required_maturity_rung: documented_execution
       descriptor: "DRAFT: Dated results showing the control for consistency of behavior has operated. TODO(humaital)."
@@ -51,6 +51,9 @@ criterion:
     - "release log"
     - "drift monitoring"
     - "model versioning"
+    - "model evaluation"
+    - "reliability testing"
+    - "model monitoring"
   indicators:
     - code: T2_R1
       kind: legacy_r

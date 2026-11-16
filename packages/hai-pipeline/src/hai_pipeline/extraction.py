@@ -1,6 +1,6 @@
 """Text extraction from HTML and PDF with a versioned extractor.
 
-HTML: drop chrome (script, style, nav, header, footer, aside, forms), keep
+HTML: drop chrome (script, style, nav, site header, footer, aside, forms), keep
 paragraph structure, record headings with their character offsets, the
 canonical URL, the title and a published date when the page asserts one.
 """
@@ -15,7 +15,7 @@ from io import BytesIO
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 from selectolax.lexbor import LexborNode as Node
 
-EXTRACTOR_VERSION = "hai-extract-1.0.0"
+EXTRACTOR_VERSION = "hai-extract-1.1.0"
 
 _DROP_TAGS = (
     "script",
@@ -26,7 +26,6 @@ _DROP_TAGS = (
     "canvas",
     "iframe",
     "nav",
-    "header",
     "footer",
     "aside",
     "form",
@@ -54,6 +53,7 @@ _BLOCK_TAGS = {
     "section",
     "article",
     "main",
+    "header",
     "tr",
     "ul",
     "ol",
@@ -200,6 +200,12 @@ def extract_html(html: str | bytes, *, base_url: str | None = None) -> Extracted
         href = a.attributes.get("href") or ""
         if href and not href.startswith(("#", "javascript:", "mailto:", "tel:")):
             doc.links.append((href, _clean(a.text())))
+    for header in tree.css("header"):
+        parent = header.parent
+        while parent is not None and parent.tag not in ("main", "article"):
+            parent = parent.parent
+        if parent is None:
+            header.decompose()
     tree.strip_tags(list(_DROP_TAGS))
     body = tree.body or tree.root
     if body is None:

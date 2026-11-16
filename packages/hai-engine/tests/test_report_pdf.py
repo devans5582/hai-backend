@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 from typing import Any
+
+from pypdf import PdfReader
 
 from hai_core.generated.enums import (
     Admissibility,
@@ -419,6 +422,22 @@ def test_pdf_renders_every_section_from_the_report() -> None:
 def test_pdf_without_a_result_still_renders() -> None:
     data = render_report_pdf(sample_report(with_result=False))
     assert data.startswith(b"%PDF-")
+
+
+def test_pdf_explains_an_unavailable_score_and_preserves_source_errors() -> None:
+    report = sample_report()
+    report["result"]["hai_score"] = None
+    report["score_availability"] = {
+        "code": "sources_unavailable",
+        "message": "Evidence sources could not be reached. This run cannot be compared with an earlier numeric score.",
+    }
+    report["connector_runs"][1]["notes"] = "The source returned HTTP 403 during collection."
+    data = render_report_pdf(report)
+    text = " ".join(" ".join(page.extract_text() for page in PdfReader(BytesIO(data)).pages).split())
+    assert "No numeric score" in text and "has no numeric HAI Score" in text
+    assert "This run cannot be compared with an earlier numeric score." in text
+    assert "The source returned HTTP 403 during collection." in text
+    assert "scored n/a" not in text
 
 
 def test_filename_names_the_organization_and_version() -> None:

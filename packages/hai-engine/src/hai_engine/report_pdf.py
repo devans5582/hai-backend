@@ -328,10 +328,19 @@ def _executive_summary(r: dict[str, Any]) -> str:
             statuses[p["status_label"]] = statuses.get(p["status_label"], 0) + 1
     status_text = ", ".join(f"{n} {label.lower()}" for label, n in statuses.items()) or "not yet determined"
     cov = ", ".join(f"{n} {_label('coverage_state', k).lower()}" for k, n in coverage.items() if n)
-    text = (
-        f"{org} scored {_num(result.get('hai_score'))} / {_num(scale.get('score_scale', 100), 0)} with evidence "
-        f"confidence {_pct(result.get('confidence_pct'))}. Outcome: {result.get('outcome_label')}. "
-        f"{counted} of {total} criteria entered the score ({cov}). Pillar status: {status_text}."
+    if result.get("hai_score") is None:
+        explanation = (r.get("score_availability") or {}).get("message") or (
+            "No criteria could be included in the score."
+        )
+        text = f"{org} has no numeric HAI Score for this assessment. {explanation} "
+    else:
+        text = (
+            f"{org} scored {_num(result.get('hai_score'))} / {_num(scale.get('score_scale', 100), 0)} with evidence "
+            f"confidence {_pct(result.get('confidence_pct'))}. "
+        )
+    text += (
+        f"Outcome: {result.get('outcome_label')}. {counted} of {total} criteria entered the score ({cov}). "
+        f"Pillar status: {status_text}."
     )
     if result.get("gate_reasons"):
         text += " Gates: " + "; ".join(str(g) for g in result["gate_reasons"]) + "."
@@ -382,11 +391,21 @@ def _cover(pdf: ReportPDF, r: dict[str, Any]) -> None:
     pdf.ln(10)
     if result:
         pdf.font(44, RED, "B")
-        score = _num(result.get("hai_score"))
+        score = _num(result.get("hai_score"), empty="N/A")
         pdf.cell(0, 18, score, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.font(10, GREY)
+        score_label = (
+            "No numeric score"
+            if result.get("hai_score") is None
+            else f"out of {_num(scale.get('score_scale', 100), 0)}"
+        )
         pdf.cell(
-            0, 6, f"out of {_num(scale.get('score_scale', 100), 0)}", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT
+            0,
+            6,
+            score_label,
+            align="C",
+            new_x=XPos.LMARGIN,
+            new_y=YPos.NEXT,
         )
         pdf.ln(2)
         pdf.font(11, DARK)
@@ -424,6 +443,12 @@ def _cover(pdf: ReportPDF, r: dict[str, Any]) -> None:
     pdf.rule(4)
     pdf.h2("Executive Summary")
     pdf.para(_executive_summary(r), 9.5)
+    if r.get("methodology_notice"):
+        pdf.para(str(r["methodology_notice"]), 8.6, AMBER)
+    if r.get("coverage_note"):
+        pdf.para(str(r["coverage_note"]), 8.6, AMBER)
+    if a.get("failure_reason"):
+        pdf.para("Assessment failure: " + _clip(a["failure_reason"], 500), 8.8, RED)
     pdf.rule(3)
     pdf.h2("What This Means")
     pdf.bullets(WHAT_THIS_MEANS, 9)
@@ -466,9 +491,13 @@ def _how_evaluated(pdf: ReportPDF, r: dict[str, Any]) -> None:
     for run in runs:
         outcome = _label("connector_run_outcome", run.get("outcome"))
         docs = by_connector.get(str(run.get("code")), 0)
-        detail = f"{docs} document{'s' if docs != 1 else ''} collected" if docs else outcome
+        detail = (
+            f"{docs} document{'s' if docs != 1 else ''} collected" if docs else f"{outcome}; no documents collected"
+        )
         if run.get("error_code"):
             detail += f" ({run['error_code']})"
+        if run.get("notes"):
+            detail += ": " + _clip(run["notes"], 220)
         items.append(f"{run.get('name') or run.get('code')}: {detail}")
     if items:
         pdf.bullets(items, 8.8)
@@ -985,11 +1014,18 @@ def _evidence_page(pdf: ReportPDF, r: dict[str, Any]) -> None:
     cert = r.get("certification")
     threshold = scale.get("certification_threshold")
     min_conf = scale.get("min_confidence")
-    pdf.para(
-        f"Certification requires a HAI Score of at least {_num(threshold, 0)}, evidence confidence of at least "
-        f"{_num(min_conf, 0)}%, admissible evidence in every pillar and a named reviewer's signature.",
-        8.8,
-    )
+    if threshold is None:
+        pdf.para(
+            "The certification threshold for this historical result must be read from its pinned methodology "
+            "and stored gate trace. The current threshold has not been substituted.",
+            8.8,
+        )
+    else:
+        pdf.para(
+            f"Certification requires a HAI Score of at least {_num(threshold, 0)}, evidence confidence of at least "
+            f"{_num(min_conf, 0)}%, admissible evidence in every pillar and a named reviewer's signature.",
+            8.8,
+        )
     if cert:
         tone = GREEN if cert["decision"] == CertificationOutcome.CERTIFIED.value else RED
         pdf.kv(

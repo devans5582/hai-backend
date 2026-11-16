@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+import httpx
 import pytest
 from sqlalchemy import text
 
@@ -151,11 +152,20 @@ async def test_every_connector_runs_and_is_recorded(clean_db: Database, manifest
         ).all()
         assert report.clusters >= 1 and any(c[1] >= 2 for c in clusters)
 
-        # Publishers and tiers: the SEC filing is a regulator record, the archive is independent of the tier
+        # Issuer-authored SEC filings are self disclosures; hosting does not confer regulatory verification.
         pubs = conn.execute(text("SELECT domain, publisher_type::text FROM hai.publishers ORDER BY domain")).all()
         types: dict[str, str] = dict(pubs)
-        assert types.get("sec.gov") == "regulator_record" and types.get("acme.example") == "org_disclosure"
+        assert types.get("acme.example") == "org_disclosure"
         assert types.get("dailywire.example") == "press" and types.get("archive.org") == "archive"
+        filing_links = conn.execute(
+            text(
+                "SELECT DISTINCT p.publisher_type::text, l.independence::text FROM hai.evidence_links l "
+                "JOIN hai.evidence_spans s ON s.id = l.span_id "
+                "JOIN hai.source_documents d ON d.id = s.source_document_id "
+                "JOIN hai.publishers p ON p.id = d.publisher_id WHERE d.canonical_url LIKE '%sec.gov/Archives/%'"
+            )
+        ).all()
+        assert filing_links and all(tuple(row) == ("org_disclosure", "self") for row in filing_links)
         archive_links = conn.execute(
             text(
                 "SELECT DISTINCT l.independence::text FROM hai.evidence_links l JOIN hai.evidence_spans s ON s.id = l.span_id JOIN hai.source_documents d ON d.id = s.source_document_id JOIN hai.publishers p ON p.id = d.publisher_id WHERE p.publisher_type = 'archive'"  # noqa: E501
@@ -201,3 +211,24 @@ async def test_blocked_sources_are_recorded_as_blocked(
             {"a": assessment_id},
         ).one()
     assert row[0] == "blocked" and row[1] == "http_403" and row[2] == 0
+
+
+async def test_stale_negative_quotes_do_not_create_incidents(
+    clean_db: Database, manifest: Manifest, settings: Settings
+) -> None:
+    class HistoricalNews(FakeInternet):
+        def _news_feed(self, query: str) -> httpx.Response:
+            feed = super()._news_feed(query)
+            return httpx.Response(
+                200, content=feed.content.replace(b"2026", b"2020"), headers={"content-type": "application/rss+xml"}
+            )
+
+    _, assessment_id = _new_assessment(clean_db, manifest)
+    report = await _acquire(clean_db, manifest, settings, HistoricalNews(), assessment_id)
+    assert report.incidents == 0
+    with clean_db.connect() as conn:
+        stale = conn.execute(
+            text("SELECT count(*) FROM hai.evidence_links WHERE admissibility = 'inadmissible_stale'")
+        ).scalar_one()
+        assert stale > 0
+        assert conn.execute(text("SELECT count(*) FROM hai.incidents")).scalar_one() == 0

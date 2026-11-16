@@ -18,3 +18,5 @@ One file per decision. Status is accepted unless noted.
 * [0014](./0014-reviewer-copilot-and-due-diligence-packs.md) Extension Point: Reviewer Copilot And Due Diligence Packs
 * [0015](./0015-console-accounts-roles-and-visibility.md) Console Accounts, Roles And Organization Visibility
 * [0016](./0016-focus-areas-and-scoring-review.md) The Seven Focus Areas And The Scoring Review
+* [0017](./0017-pdf-report-export.md) PDF Report Export
+* [0018](./0018-assessment-calibration.md) Assessment Calibration From The Validation Reports

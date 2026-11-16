@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import urlencode
 
+from hai_core.freshness import DAYS_PER_MONTH
+from hai_core.generated.enums import PublisherType
 from hai_pipeline.config import ConnectorConfig
 from hai_pipeline.connectors.base import ConnectorContext, ConnectorResult, FetchedDocument
 from hai_pipeline.entity_resolution import normalise_name
@@ -43,8 +46,21 @@ class EdgarConnector:
         archive_url = str(config.opt("archive_url", "https://www.sec.gov/Archives/edgar/data")).rstrip("/")
         forms = ",".join(str(f) for f in config.opt("forms", ["10-K"]))
         max_filings = int(config.opt("max_filings", 3))
-        q = quote(f'"{ctx.organization_name}" {config.opt("query_terms", "")}'.strip())
-        url = f"{search_url}?q={q}&dateRange=custom&startdt=2020-01-01&forms={quote(forms)}"
+        as_of = ctx.as_of or datetime.now(UTC).date()
+        earliest = as_of - timedelta(days=int(ctx.freshness_window_months * DAYS_PER_MONTH))
+        params = {
+            "q": str(config.opt("query_terms", "")),
+            "dateRange": "custom",
+            "startdt": earliest.isoformat(),
+            "enddt": as_of.isoformat(),
+            "forms": forms,
+            "sort": "desc",
+        }
+        if ctx.cik:
+            params["ciks"] = ctx.cik
+        else:
+            params["entityName"] = ctx.organization_name
+        url = f"{search_url}?{urlencode(params)}"
         result.attempted_urls.append(url)
         fetched, data = await fetcher.get_json(url, budget=budget)
         if not fetched.ok or not isinstance(data, dict):
@@ -53,13 +69,21 @@ class EdgarConnector:
             result.notes.append(f"search {result.outcome}")
             return result
         hits: list[dict[str, Any]] = list(data.get("hits", {}).get("hits", []))
+        # Defend the small filing budget even if the provider ignores its
+        # requested date order. Old relevance hits must not crowd out current evidence.
+        hits.sort(key=lambda hit: str(hit.get("_source", {}).get("file_date", "")), reverse=True)
         seen: set[str] = set()
         matched = 0
         rejected = 0
+        outdated = 0
         for hit in hits:
             if matched >= max_filings:
                 break
             src = hit.get("_source", {})
+            published = parse_date(str(src.get("file_date", "")))
+            if published is not None and not earliest <= published <= as_of:
+                outdated += 1
+                continue
             names = src.get("display_names") or []
             filer = str(names[0]) if names else ""
             if not filer_matches(filer, ctx.organization_name, cik=ctx.cik, entity_id=str(src.get("entity_id", ""))):
@@ -91,13 +115,16 @@ class EdgarConnector:
                     url=doc.final_url or doc_url,
                     content=doc.content,
                     content_type=doc.content_type or "text/html",
-                    publisher_hint="U.S. Securities and Exchange Commission",
-                    publisher_type_hint=config.publisher_type,
-                    published_at=parse_date(str(src.get("file_date", ""))),
+                    publisher_hint=ctx.organization_name,
+                    publisher_type_hint=PublisherType.ORG_DISCLOSURE.value,
+                    published_at=published,
                     title=f"SEC {src.get('form_type', '')} filing: {filer}".strip(),
-                    rights="Public domain (U.S. government record)",
+                    note="Issuer-authored disclosure hosted by the SEC; not a regulator finding.",
                 )
             )
             matched += 1
-        result.notes.append(f"{len(hits)} hits, {matched} entity-matched filings fetched, {rejected} rejected")
+        result.notes.append(
+            f"{len(hits)} hits, {matched} entity-matched filings fetched, {rejected} rejected, "
+            f"{outdated} outside freshness window"
+        )
         return result

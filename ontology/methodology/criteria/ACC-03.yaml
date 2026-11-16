@@ -37,7 +37,7 @@ criterion:
       descriptor: "DRAFT: A stated intent or policy reference to governance and oversight, quoted from the organization. TODO(humaital)."
     - level: 3
       required_maturity_rung: specified_control
-      descriptor: "DRAFT: A named control for governance and oversight with an accountable owner and a measurable threshold. TODO(humaital)."
+      descriptor: "DRAFT: A named control for governance and oversight with an accountable owner and a defined procedure or measurable threshold. TODO(humaital)."
     - level: 4
       required_maturity_rung: documented_execution
       descriptor: "DRAFT: Dated results showing the control for governance and oversight has operated. TODO(humaital)."
@@ -51,6 +51,10 @@ criterion:
     - "governance framework"
     - "ai governance"
     - "board oversight"
+    - "responsible ai standard"
+    - "board oversight of ai"
+    - "oversight of technology-related risks"
+    - "human oversight"
   indicators:
     - code: A3_R1
       kind: legacy_r

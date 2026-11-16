@@ -32,7 +32,8 @@ from hai_ontology.meta import Manifest
 log = logging.getLogger(__name__)
 
 LINKS_SQL = """
-SELECT l.id, s.quote, l.polarity::text, p.publisher_type::text, l.independence::text
+SELECT l.id, s.quote, l.polarity::text, p.publisher_type::text, l.independence::text,
+       l.criterion_code::text, s.section_heading, d.title
 FROM hai.evidence_links l
 JOIN hai.evidence_spans s ON s.id = l.span_id
 JOIN hai.source_documents d ON d.id = s.source_document_id
@@ -47,9 +48,15 @@ def classify_links(conn: Connection, store: Store, manifest: Manifest, assessmen
     classifier = LinkClassifier(manifest.methodology)
     rows = conn.execute(text(LINKS_SQL), {"a": assessment_id}).all()
     n = 0
-    for link_id, quote, polarity, publisher_type, independence in rows:
+    for link_id, quote, polarity, publisher_type, independence, criterion_code, section_heading, title in rows:
         result = classifier.classify(
-            str(quote), polarity=str(polarity), publisher_type=str(publisher_type), independence=str(independence)
+            str(quote),
+            polarity=str(polarity),
+            publisher_type=str(publisher_type),
+            independence=str(independence),
+            criterion=manifest.criterion(str(criterion_code)),
+            section_heading=str(section_heading) if section_heading else None,
+            document_title=str(title) if title else None,
         )
         store.update(
             EvidenceLink,

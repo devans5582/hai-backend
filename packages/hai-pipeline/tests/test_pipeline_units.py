@@ -67,6 +67,23 @@ def test_dates() -> None:
     assert find_dates("Reviewed on 2025-06-30 and again on 1 July 2025.") == [date(2025, 6, 30), date(2025, 7, 1)]
 
 
+def test_article_header_keeps_policy_evidence_and_heading_offsets() -> None:
+    html = (
+        "<html><body><header><p>Site navigation and account links.</p></header><main><article>"
+        "<header><h1>Responsible AI Policy</h1><p>We are committed to fairness, privacy and human oversight "
+        "in all our AI systems.</p></header><p>Our governance board reviews our policy every quarter.</p>"
+        "</article></main></body></html>"
+    )
+    doc = extract_html(html)
+    assert "Site navigation" not in doc.text
+    assert "We are committed to fairness, privacy and human oversight" in doc.text
+    assert doc.headings[0].text == "Responsible AI Policy"
+    spans = split_spans(doc)
+    policy = next(s for s in spans if "We are committed" in s.quote)
+    assert policy.section_heading == "Responsible AI Policy"
+    assert policy.verify(doc.text)
+
+
 def test_spans_have_exact_offsets() -> None:
     doc = extract_html(RESPONSIBLE_AI_HTML)
     spans = split_spans(doc)
@@ -195,6 +212,35 @@ def test_model_proposals_may_only_reference_shown_spans(manifest: Manifest) -> N
     assert next(p for p in merged if p.criterion_code == "TRU-03").polarity == "supports"  # not overridden
 
 
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "Consumer Class Action Settlement. We explain how to recycle Microsoft products and packaging.",
+        "Municipalities may take enforcement action for improper disposal of WEEE.",
+        "Our AI systems may be subject to enforcement action if we fail to comply with applicable laws.",
+        "Chevron reported a settlement of litigation involving environmental emissions and oil spills.",
+    ],
+)
+def test_corporate_navigation_and_hypothetical_risks_do_not_create_ai_incidents(manifest: Manifest, quote: str) -> None:
+    proposals = heuristic_proposals(
+        [quote], list(manifest.criteria), manifest.methodology, publisher_type="org_disclosure", source_tier="T3"
+    )
+    assert not any(p.negative is not None or p.polarity == "contradicts" for p in proposals)
+
+
+def test_an_unscoped_actual_ai_event_gets_one_review_target(manifest: Manifest) -> None:
+    proposals = heuristic_proposals(
+        ["Acme was sued in a class action lawsuit filed over its AI hiring tool."],
+        list(manifest.criteria),
+        manifest.methodology,
+        publisher_type="press",
+        source_tier="T3",
+    )
+    contradictions = [p for p in proposals if p.polarity == "contradicts"]
+    assert len(contradictions) == 1
+    assert contradictions[0].criterion_code == "ACC-01" and contradictions[0].negative is not None
+
+
 def test_evidence_class_heuristic(manifest: Manifest) -> None:
     m = SignalMatcher(manifest.methodology)
     s = m.language("Our Chief AI Officer owns AI risk; releases are reviewed against a 2% threshold.")
@@ -206,6 +252,26 @@ def test_evidence_class_heuristic(manifest: Manifest) -> None:
         == "foundational_governance"
     )
     assert evidence_class_for("press", s2, "The company said it is committed.") == "core_governance"
+
+
+def test_filing_relevance_uses_excerpt_and_local_section(manifest: Manifest) -> None:
+    spans = [
+        "Our treasury risk management policy measures currency exposures and we completed 24 hedging reviews in 2026.",
+        "Our Board oversees risks associated with artificial intelligence and cybersecurity.",
+        "Our Board reviews risks every quarter and requires human approval before deploying each model.",
+    ]
+    proposals = heuristic_proposals(
+        spans,
+        list(manifest.criteria),
+        manifest.methodology,
+        publisher_type="org_disclosure",
+        source_tier="T3",
+        section_headings=["Treasury risk management", "Governance and Oversight", "AI risk management"],
+        require_ai_context=True,
+    )
+    assert not any(p.span_index == 0 for p in proposals)
+    assert any(p.span_index == 1 and p.criterion_code == "ACC-03" for p in proposals)
+    assert any(p.span_index == 2 and p.criterion_code == "SAF-01" for p in proposals)
 
 
 def test_admissibility_order(manifest: Manifest) -> None:

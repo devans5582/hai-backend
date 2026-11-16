@@ -35,7 +35,7 @@ criterion:
       descriptor: "DRAFT: A stated intent or policy reference to data disclosure, quoted from the organization. TODO(humaital)."
     - level: 3
       required_maturity_rung: specified_control
-      descriptor: "DRAFT: A named control for data disclosure with an accountable owner and a measurable threshold. TODO(humaital)."
+      descriptor: "DRAFT: A named control for data disclosure with an accountable owner and a defined procedure or measurable threshold. TODO(humaital)."
     - level: 4
       required_maturity_rung: documented_execution
       descriptor: "DRAFT: Dated results showing the control for data disclosure has operated. TODO(humaital)."
@@ -50,6 +50,9 @@ criterion:
     - "data use"
     - "data transparency"
     - "gdpr"
+    - "data protection"
+    - "training data"
+    - "data privacy"
   indicators:
     - code: TR2_R1
       kind: legacy_r

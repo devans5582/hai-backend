@@ -107,7 +107,7 @@ criterion:
 |---|---|
 | none | A mention, title or metadata only. Never lifts a level. |
 | stated_commitment | A quoted policy or statement by the organization. |
-| specified_control | A quote naming an owner and a measurable threshold. |
+| specified_control | A quote naming an accountable owner and a defined procedure or measurable threshold. |
 | documented_execution | A quote with a dated test or monitoring result. Self-reported counts. |
 | independently_verified | A span from a publisher whose independence is independent or regulator (IC-07). |
 
