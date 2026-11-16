@@ -7,9 +7,19 @@ import argparse
 import os
 import secrets
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
-from hai_core.accounts import DEMO_USER_EMAIL, DEMO_USER_PASSWORD, bootstrap_owner, is_bootstrapped
+from sqlalchemy.engine import URL, make_url
+
+from hai_core.accounts import (
+    DEMO_USER_EMAIL,
+    DEMO_USER_PASSWORD,
+    bootstrap_owner,
+    find_user_by_email,
+    is_bootstrapped,
+    verify_password,
+)
 from hai_core.audit import verify_chain
 from hai_core.auth import DEMO_API_KEY, Scope, create_api_key, list_api_keys, revoke_api_key
 from hai_core.db.engine import Database
@@ -17,7 +27,7 @@ from hai_core.db.migrate import MigrationError, migrate, migration_status, schem
 from hai_core.logging import configure_logging
 from hai_core.manifest import get_manifest, role_codes, verify_generated_code
 from hai_core.seed import seed_all
-from hai_core.settings import get_settings
+from hai_core.settings import Settings, get_settings
 from hai_ontology.loader import find_repo_root
 
 
@@ -43,6 +53,114 @@ def cmd_wait(args: argparse.Namespace) -> int:
     ok = wait_for_database(get_settings().database_url, timeout_seconds=args.timeout)
     print("database reachable" if ok else "database not reachable")
     return 0 if ok else 1
+
+
+def _print_info(blocks: list[tuple[str, list[tuple[str, str]]]]) -> None:
+    """Use the same aligned, plain-text layout in terminals and captured logs."""
+    label_width = max(len(label) for _, rows in blocks for label, _ in rows)
+    content = [(title, [f"{label:<{label_width}} : {value}" for label, value in rows]) for title, rows in blocks]
+    width = max(64, *(len(line) for title, rows in content for line in [title, *rows]))
+    border = "+-" + "-" * width + "-+"
+    for title, rows in content:
+        print()
+        print(border)
+        print(f"| {title:<{width}} |")
+        print(border)
+        for line in rows:
+            print(f"| {line:<{width}} |")
+        print(border)
+    print()
+
+
+def _connection_rows(url: URL) -> list[tuple[str, str]]:
+    return [
+        ("Host", url.host or "(local socket)"),
+        ("Port", str(url.port or 5432)),
+        ("Database", url.database or "(default)"),
+        ("Username", url.username or "(current user)"),
+        ("Password", url.password if url.password is not None else "(not set)"),
+        ("Connection URL", url.render_as_string(hide_password=False)),
+    ]
+
+
+def _login_rows(settings: Settings, console_url: str) -> list[tuple[str, str]]:
+    rows = [("Console URL", console_url)]
+    if settings.is_production:
+        return [*rows, ("Account", "Use your existing account or Set up the platform on a new installation.")]
+    db = _db()
+    try:
+        with db.connect() as conn:
+            user = find_user_by_email(conn, DEMO_USER_EMAIL)
+            ready = is_bootstrapped(conn)
+    finally:
+        db.dispose()
+    if (
+        user is not None
+        and user.status == "active"
+        and (user.locked_until is None or user.locked_until <= datetime.now(UTC))
+        and verify_password(DEMO_USER_PASSWORD, user.password_hash)
+    ):
+        rows.extend(
+            [
+                ("Email", DEMO_USER_EMAIL),
+                ("Password", DEMO_USER_PASSWORD),
+                ("Role", user.role.replace("_", " ").title()),
+            ]
+        )
+    elif not ready:
+        rows.append(("Next step", "Choose Set up the platform to create your first owner account."))
+    else:
+        rows.append(("Account", "Use your existing account; the development demo login is unavailable."))
+    return rows
+
+
+def cmd_connection_info(args: argparse.Namespace) -> int:
+    """Print the configured login without connecting; local dev can supply its default port."""
+    settings = get_settings()
+    if settings.is_production:
+        if args.url_only:
+            print("make dev is unavailable with HAI_ENV=production; use make up for production.", file=sys.stderr)
+            return 1
+        return 0
+    url = make_url(settings.database_url)
+    if args.dev_port is not None and "database_url" not in settings.model_fields_set:
+        url = url.set(port=args.dev_port)
+    if args.url_only:
+        print(url.render_as_string(hide_password=False))
+        return 0
+    _print_info([("Database Connection", _connection_rows(url))])
+    return 0
+
+
+def cmd_login_info(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    if settings.is_production:
+        return 0
+    console_url = getattr(args, "console_url", None) or settings.console_base_url
+    _print_info([("Console Login", _login_rows(settings, console_url))])
+    return 0
+
+
+def cmd_startup_info(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    console_url = args.console_url or settings.console_base_url
+    api_url = (args.api_url or settings.public_base_url).rstrip("/")
+    if settings.is_production:
+        _print_info([("Service URLs", [("Console", console_url), ("API", api_url), ("API Docs", f"{api_url}/docs")])])
+        return 0
+    url = make_url(settings.database_url)
+    if args.database_host is not None:
+        url = url.set(host=args.database_host)
+    if args.database_port is not None:
+        url = url.set(port=args.database_port)
+    _print_info(
+        [
+            ("Console Login", _login_rows(settings, console_url)),
+            ("Service URLs", [("API", api_url), ("API Docs", f"{api_url}/docs")]),
+            ("Database Connection", _connection_rows(url)),
+        ]
+    )
+    return 0
 
 
 def cmd_migrate(_args: argparse.Namespace) -> int:
@@ -160,6 +278,19 @@ def cmd_verify_audit(_args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="hai-db", description="HAI database tools")
     sub = p.add_subparsers(dest="command", required=True)
+    s = sub.add_parser("connection-info", help="show the configured database login without connecting")
+    s.add_argument("--dev-port", type=int, help="default local port when HAI_DATABASE_URL is not configured")
+    s.add_argument("--url-only", action="store_true", help="print only the connection URL")
+    s.set_defaults(func=cmd_connection_info)
+    s = sub.add_parser("login-info", help="show console sign-in details")
+    s.add_argument("--console-url", help="console URL exposed by the selected startup command")
+    s.set_defaults(func=cmd_login_info)
+    s = sub.add_parser("startup-info", help="show formatted console login, service URLs and database connection")
+    s.add_argument("--console-url")
+    s.add_argument("--api-url")
+    s.add_argument("--database-host", help="database host exposed outside Docker")
+    s.add_argument("--database-port", type=int, help="database port exposed outside Docker")
+    s.set_defaults(func=cmd_startup_info)
     s = sub.add_parser("wait", help="wait for the database")
     s.add_argument("--timeout", type=float, default=60.0)
     s.set_defaults(func=cmd_wait)

@@ -197,13 +197,29 @@ make migrate seed
 make dev                                             # api :8000, worker, console :5173
 ```
 
+`make dev` displays a formatted startup summary after launching the services:
+Console Login (URL, email, password and role), Service URLs, and Database
+Connection (host, port, database, username, password and connection URL).
+The local console URL is `http://localhost:5173`. An explicit `HAI_DATABASE_URL`
+in your environment or `.env` takes precedence; otherwise it uses `DB_PORT`
+(55432 by default, matching `make db`). API and worker receive that same URL.
+Run `make dev-info` to display the login without starting the services.
+
+Credential banners are limited to development and test environments. With
+`HAI_ENV=production`, `make up` displays only service URLs; demo logins and
+database credentials are omitted. `make dev` refuses production configuration.
+
 ## Your First Assessment
 
 Open the console and sign in. In development the seed creates a demo owner,
 **demo@humaital.com** with password **demo**, and the sign-in page offers it
 as a one-click **Use demo account** button (`make up` seeds the Docker
 database; the non-Docker setup seeds with `make seed`). Production never seeds
-it and refuses it. On a database without the demo seed the sign-in page offers
+it and refuses it. After startup, `make up` shows the same formatted summary,
+using the published Docker ports (console 8080 by default). It shows the demo
+login when that account is active and still uses the seeded password. Run
+`make login-info` to display the sign-in details again for the running Docker
+stack. On a database without the demo seed the sign-in page offers
 **Set up the platform** instead: create the first owner account (email, name
 and a password of at least 10 characters). The owner invites everyone else from
 **Team and access**: administrators, reviewers, analysts and viewers for

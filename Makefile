@@ -8,7 +8,8 @@ COMPOSE ?= docker compose
 # docker-compose.yml reads host port overrides from .env; make up and make smoke follow the same values.
 API_PORT ?= $(shell sed -n 's/^API_PORT=//p' .env 2>/dev/null | tail -n 1)
 FRONTEND_PORT ?= $(shell sed -n 's/^FRONTEND_PORT=//p' .env 2>/dev/null | tail -n 1)
-export API_PORT FRONTEND_PORT
+POSTGRES_PORT ?= $(shell sed -n 's/^POSTGRES_PORT=//p' .env 2>/dev/null | tail -n 1)
+export API_PORT FRONTEND_PORT POSTGRES_PORT
 BASE ?= git:origin/main
 DB_CONTAINER ?= hai-dev-pg
 DB_PORT ?= 55432
@@ -22,8 +23,8 @@ shell_quote = '$(subst ','"'"',$(1))'
 API_KEY_ARGS = --name $(call shell_quote,$(or $(NAME),demo)) $(if $(SCOPES),--scopes $(call shell_quote,$(SCOPES)),)
 
 .PHONY: help install install-frontend hooks ontology-validate codegen codegen-check check-bump ontology-diff migrate-plan \
-        baseline db db-stop migrate seed seed-docker owner owner-docker api-key api-key-docker verify-audit run-api run-worker run-frontend dev fmt fmt-check lint typecheck \
-        test-unit test-integration test-enforced test coverage frontend-check check build up down logs reset smoke bundle clean
+        baseline db db-stop migrate seed seed-docker owner owner-docker api-key api-key-docker verify-audit run-api run-worker run-frontend dev-info dev fmt fmt-check lint typecheck \
+        test-unit test-integration test-enforced test coverage frontend-check check build up login-info down logs reset smoke bundle clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nTargets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -105,9 +106,17 @@ run-worker: ## Run the worker
 run-frontend: ## Run the Vite dev server (proxies /v1 to localhost:8000)
 	cd frontend && $(NPM) run dev
 
+dev-info: ## Show the database login used by make dev
+	@$(UV) run hai-db connection-info --dev-port $(call shell_quote,$(DB_PORT))
+
 dev: ## API, worker and frontend together with hot reload (Ctrl-C stops all)
-	@trap 'kill 0' INT TERM; \
-	$(MAKE) run-api & $(MAKE) run-worker & $(MAKE) run-frontend & wait
+	@hai_dev_database_url="$$($(UV) run hai-db connection-info --url-only --dev-port $(call shell_quote,$(DB_PORT)))" || exit $$?; \
+	export HAI_DATABASE_URL="$$hai_dev_database_url"; \
+	hai_dev_startup_info="$$($(UV) run hai-db startup-info --console-url http://localhost:5173 --api-url http://localhost:8000)" || exit $$?; \
+	trap 'kill 0' INT TERM; \
+	$(MAKE) run-api & $(MAKE) run-worker & $(MAKE) run-frontend & \
+	printf '\n%s\n' "$$hai_dev_startup_info"; \
+	wait
 
 # ------------------------------------------------------------------ quality
 fmt: ## Format Python
@@ -149,7 +158,13 @@ build: ## Build the api, worker, tools and frontend images
 
 up: ## Start the stack (postgres, migrate, api, worker, frontend)
 	$(COMPOSE) up -d --build
-	@echo "console http://localhost:$${FRONTEND_PORT:-8080}  api http://localhost:$${API_PORT:-8000}/docs"
+	@$(COMPOSE) exec -T api hai-db startup-info \
+		--console-url $(call shell_quote,http://localhost:$(or $(FRONTEND_PORT),8080)) \
+		--api-url $(call shell_quote,http://localhost:$(or $(API_PORT),8000)) \
+		--database-host localhost --database-port $(call shell_quote,$(or $(POSTGRES_PORT),5432))
+
+login-info: ## Show console login details for the running Docker stack
+	@$(COMPOSE) exec -T api hai-db login-info --console-url $(call shell_quote,http://localhost:$(or $(FRONTEND_PORT),8080))
 
 down: ## Stop the stack
 	$(COMPOSE) down
