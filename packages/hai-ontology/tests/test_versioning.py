@@ -141,6 +141,16 @@ def test_methodology_weight_change_needs_methodology_major(manifest: Manifest, c
     assert required_bump(changes, "ontology") is ChangeLevel.NONE
 
 
+def test_score_calibration_change_needs_methodology_major(manifest: Manifest, copy: Path) -> None:
+    _edit(copy / "methodology" / "methodology.yaml", "multiplier: 4.5", "multiplier: 4.0")
+    changes = diff(manifest, load_manifest(copy))
+    assert required_bump(changes, "methodology") is ChangeLevel.MAJOR
+    assert required_bump(changes, "ontology") is ChangeLevel.NONE
+    results = {result.scope: result for result in check_bump(manifest, load_manifest(copy))}
+    assert not results["methodology"].ok
+    assert results["ontology"].ok
+
+
 def test_ladder_change_is_major_and_descriptor_wording_is_patch(manifest: Manifest, copy: Path) -> None:
     path = copy / "methodology" / "criteria" / "SAF-01.yaml"
     _edit(path, "DRAFT: No public evidence of risk mitigation.", "DRAFT: Nothing found on risk mitigation.")

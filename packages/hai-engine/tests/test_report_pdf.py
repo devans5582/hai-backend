@@ -5,6 +5,7 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any
 
+import pytest
 from pypdf import PdfReader
 
 from hai_core.generated.enums import (
@@ -422,6 +423,39 @@ def test_pdf_renders_every_section_from_the_report() -> None:
 def test_pdf_without_a_result_still_renders() -> None:
     data = render_report_pdf(sample_report(with_result=False))
     assert data.startswith(b"%PDF-")
+
+
+@pytest.mark.parametrize("baseline, displayed", [(12.5, 56.3), (7.7, 34.7), (30.0, 100.0), (0.0, 0.0), (None, None)])
+def test_pdf_discloses_stored_calibration_and_baseline_certification(
+    baseline: float | None, displayed: float | None
+) -> None:
+    report = sample_report()
+    report["result"]["hai_score"] = displayed
+    report["result"]["calibration"] = {
+        "baseline_score": baseline,
+        "multiplier": 4.5,
+        "calibrated_score": displayed,
+        "cap": 100,
+        "certification_basis": "baseline",
+        "pillar_basis": "baseline",
+        "threshold": 70,
+    }
+    data = render_report_pdf(report)
+    text = " ".join(" ".join(page.extract_text() for page in PdfReader(BytesIO(data)).pages).split())
+    baseline_text = "N/A" if baseline is None else f"{baseline:g}"
+    displayed_text = "N/A" if displayed is None else f"{displayed:g}"
+    assert f"Calibration: 4.5x; baseline {baseline_text}/100; displayed {displayed_text}/100." in text
+    assert "Pillar scores use the baseline scale before overall score calibration" in text
+    assert "the baseline HAI Score is the weighted sum of the pillars" in text
+    assert "Certification requires a baseline HAI Score of at least 70" in text
+
+
+def test_pdf_without_recorded_calibration_keeps_the_original_score_basis() -> None:
+    data = render_report_pdf(sample_report())
+    text = " ".join(" ".join(page.extract_text() for page in PdfReader(BytesIO(data)).pages).split())
+    assert "Calibration:" not in text
+    assert "baseline HAI Score" not in text
+    assert "Certification requires a HAI Score of at least 70" in text
 
 
 def test_pdf_explains_an_unavailable_score_and_preserves_source_errors() -> None:

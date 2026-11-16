@@ -390,12 +390,20 @@ class PillarWeightProfiles(Strict):
         return dict(default)
 
 
+class ScoringCalibration(Strict):
+    """An explicit overall-score calibration; evidence and certification retain their baseline."""
+
+    multiplier: float = Field(default=1.0, gt=0, allow_inf_nan=False)
+    certification_basis: Literal["baseline"] = "baseline"
+
+
 class Scoring(Strict):
     level_min: int
     level_max: int
     criterion_ratio: str
     pillar_aggregation: Literal["equal_mean", "materiality_weighted"]
     pillar_weight_profiles: PillarWeightProfiles = PillarWeightProfiles()
+    calibration: ScoringCalibration = Field(default_factory=ScoringCalibration)
     score_scale: float
     score_cap: float
     low_confidence_cap: LowConfidenceCap

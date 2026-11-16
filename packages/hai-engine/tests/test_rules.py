@@ -21,8 +21,8 @@ from hai_engine.rules.context import (
     FrozenLink,
 )
 from hai_engine.rules.registry import criterion_rule, resolve
-from hai_engine.scoring import aggregate, criterion_ratio
-from hai_ontology.meta import CriterionDef, Manifest
+from hai_engine.scoring import aggregate, calibrate_score, criterion_ratio
+from hai_ontology.meta import CriterionDef, Manifest, ScoringCalibration
 from hai_ontology.validator import validate
 from hai_pipeline.proposals import heuristic_proposals
 
@@ -646,6 +646,24 @@ def test_all_level_one_scores_zero(manifest: Manifest) -> None:
     assert aggregate(manifest.methodology, manifest.pillars, _states(manifest, 1)).hai_score == 0.0
 
 
+@pytest.mark.parametrize(
+    ("baseline", "expected"),
+    [
+        (None, None),
+        (0.0, 0.0),
+        (5.3, 23.9),
+        (7.4, 33.3),
+        (7.7, 34.7),
+        (12.5, 56.3),
+        (20.0, 90.0),
+        (25.0, 100.0),
+        (100.0, 100.0),
+    ],
+)
+def test_generous_calibration_is_bounded_and_rounds_once(baseline: float | None, expected: float | None) -> None:
+    assert calibrate_score(baseline, 4.5) == expected
+
+
 def test_unavailable_criteria_are_excluded_not_zeroed(manifest: Manifest) -> None:
     states = _states(manifest, 5)
     for i, (crit, _st) in enumerate(states):
@@ -744,12 +762,123 @@ def test_assessment_rules_and_outcome_status(manifest: Manifest, engine: RuleEng
         as_of=AS_OF,
     )
     st = result.state
-    assert st.hai_score is not None and 0 < st.hai_score <= 85
+    assert st.hai_score is not None and 0 < st.hai_score <= 100
     assert (
         next(t.rule_code for t in result.trace) == "SCORING" and result.applied_rule_codes[-1] == "GATE-OUTCOME-STATUS"
     )
     assert st.outcome_status in ("confidence_too_low", "certification_not_yet_achieved")
     assert st.threshold_applied == 70
+
+
+def test_calibration_preserves_pillars_confidence_effectiveness_and_legacy_hash_shape(
+    manifest: Manifest, engine: RuleEngine
+) -> None:
+    outcomes = _full_outcomes(manifest, engine)
+    unscaled = manifest.model_copy(
+        update={
+            "methodology": manifest.methodology.model_copy(
+                update={
+                    "scoring": manifest.methodology.scoring.model_copy(update={"calibration": ScoringCalibration()})
+                }
+            )
+        }
+    )
+    calibrated = manifest.model_copy(
+        update={
+            "methodology": manifest.methodology.model_copy(
+                update={
+                    "scoring": manifest.methodology.scoring.model_copy(
+                        update={"calibration": ScoringCalibration(multiplier=4.5)}
+                    )
+                }
+            )
+        }
+    )
+    kwargs: dict[str, Any] = {
+        "stage_band": "growth",
+        "size_band": "mid",
+        "certification_requested": False,
+        "signed_certification": False,
+        "connector_runs": runs(WEBSITE="succeeded"),
+        "incidents": (),
+        "as_of": AS_OF,
+    }
+    baseline = RuleEngine(unscaled).run_assessment(outcomes, **kwargs)
+    uplifted = RuleEngine(calibrated).run_assessment(outcomes, **kwargs)
+    assert uplifted.state.baseline_score == baseline.state.hai_score
+    assert uplifted.state.hai_score == calibrate_score(baseline.state.hai_score, 4.5)
+    assert uplifted.state.pillar_scores == baseline.state.pillar_scores
+    assert uplifted.state.confidence_pct == baseline.state.confidence_pct
+    assert uplifted.state.effectiveness == baseline.state.effectiveness
+    assert uplifted.state.calibration_snapshot()["threshold"] == 70
+    assert uplifted.trace[0].after["baseline_score"] == baseline.state.hai_score
+    canonical_args = {"methodology_version": "test", "ruleset_version": "test", "snapshot_sha256": "frozen"}
+    assert "calibration" not in baseline.canonical(**canonical_args)
+    assert uplifted.canonical(**canonical_args)["calibration"] == uplifted.state.calibration_snapshot()
+    assert baseline.result_hash(**canonical_args) != uplifted.result_hash(**canonical_args)
+
+
+@pytest.mark.parametrize(("level", "eligible"), [(2, False), (4, True)])
+def test_calibrated_score_cannot_grant_certification(
+    manifest: Manifest, engine: RuleEngine, level: int, eligible: bool
+) -> None:
+    calibrated = manifest.model_copy(
+        update={
+            "methodology": manifest.methodology.model_copy(
+                update={
+                    "scoring": manifest.methodology.scoring.model_copy(
+                        update={"calibration": ScoringCalibration(multiplier=4.5)}
+                    )
+                }
+            )
+        }
+    )
+    outcomes = _full_outcomes(manifest, engine)
+    for outcome in outcomes:
+        outcome.state.level = level
+        outcome.state.confidence = 90.0
+        outcome.state.review_flags = []
+    result = RuleEngine(calibrated).run_assessment(
+        outcomes,
+        stage_band="growth",
+        size_band="mid",
+        certification_requested=True,
+        signed_certification=True,
+        connector_runs=runs(WEBSITE="succeeded"),
+        incidents=(),
+        as_of=AS_OF,
+    )
+    assert result.state.hai_score == 100.0
+    assert result.state.baseline_score == 25.0 * (level - 1)
+    assert result.state.certification_eligible is eligible
+    assert (result.state.outcome_status == "hai_certified") is eligible
+    assert result.state.gate_reasons == ([] if eligible else ["baseline score 25.0 below threshold 70"])
+
+
+def test_calibration_follows_live_pillar_weight_renormalization(manifest: Manifest, engine: RuleEngine) -> None:
+    outcomes = _full_outcomes(manifest, engine)
+    for outcome in outcomes:
+        outcome.state.level = 2 if outcome.criterion.pillar == "TRU" else 1
+        outcome.state.confidence = 80.0
+        if outcome.criterion.pillar == "IMP":
+            outcome.state.level = None
+            outcome.state.coverage_state = "unavailable"
+    result = engine.run_assessment(
+        outcomes,
+        stage_band="growth",
+        size_band="mid",
+        certification_requested=False,
+        signed_certification=False,
+        connector_runs=runs(WEBSITE="succeeded"),
+        incidents=(),
+        as_of=AS_OF,
+    )
+    # Trust's 25 baseline points have 20/80 of the live pillar weight, then round once.
+    assert result.state.baseline_score == 6.2
+    assert result.state.hai_score == 27.9
+    assert result.state.pillar_scores["TRU"][0] == 25.0
+    assert result.state.pillar_scores["IMP"][2:4] == (0, 4)
+    assert result.state.counted_criteria == 16 and result.state.excluded_criteria == 4
 
 
 def test_stage_thresholds_apply_to_every_organization_size(manifest: Manifest, engine: RuleEngine) -> None:

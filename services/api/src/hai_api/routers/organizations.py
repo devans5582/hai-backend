@@ -18,7 +18,7 @@ from hai_core.generated.enums import LABELS
 from hai_core.generated.models import Assessment, Organization
 from hai_core.monitoring import list_subscriptions, register_upload, subscribe
 from hai_core.visibility import require_visible_organization, restriction, visible_organization_ids
-from hai_engine.reporting import build_report, industry_benchmarks
+from hai_engine.reporting import build_report, industry_benchmarks, score_calibration_from_trace
 
 router = APIRouter(prefix="/v1", tags=["organizations"])
 
@@ -93,7 +93,7 @@ WITH visible AS (
 ),
 runs AS (
     SELECT a.org_id, a.id, a.lifecycle_state::text AS lifecycle_state, a.created_at, a.finished_at,
-           a.certification_requested,
+           a.certification_requested, a.ontology_version, a.methodology_version, a.ruleset_version,
            row_number() OVER (PARTITION BY a.org_id ORDER BY a.created_at, a.id) AS version,
            count(*) OVER (PARTITION BY a.org_id) AS versions
     FROM hai.assessments a WHERE a.org_id IN (SELECT id FROM visible)
@@ -101,7 +101,8 @@ runs AS (
 latest AS (SELECT DISTINCT ON (org_id) * FROM runs ORDER BY org_id, created_at DESC, id DESC),
 previous AS (SELECT DISTINCT ON (r.org_id) r.* FROM runs r JOIN latest l ON l.org_id = r.org_id AND r.id <> l.id ORDER BY r.org_id, r.created_at DESC, r.id DESC),
 results AS (
-    SELECT DISTINCT ON (res.assessment_id) res.assessment_id, res.hai_score, res.confidence_pct, res.outcome_status::text
+    SELECT DISTINCT ON (res.assessment_id) res.assessment_id, res.hai_score, res.confidence_pct, res.outcome_status::text,
+           res.trace
     FROM hai.assessment_results res
     WHERE NOT EXISTS (SELECT 1 FROM hai.assessment_results later WHERE later.supersedes_id = res.id)
     ORDER BY res.assessment_id, res.created_at DESC
@@ -109,9 +110,11 @@ results AS (
 SELECT o.id AS org_id, o.display_name, o.legal_name, o.primary_domain, o.industry_code, o.stage_band::text, o.size_band::text,
        o.identifiers_verified, o.created_at AS org_created_at,
        l.id AS latest_id, l.lifecycle_state, l.created_at AS latest_created_at, l.finished_at AS latest_finished_at,
-       l.version, l.versions, l.certification_requested,
-       lr.hai_score, lr.confidence_pct, lr.outcome_status,
-       p.id AS previous_id, p.created_at AS previous_created_at, pr.hai_score AS previous_score, pr.outcome_status AS previous_outcome
+       l.version, l.versions, l.certification_requested, l.ontology_version, l.methodology_version, l.ruleset_version,
+       lr.hai_score, lr.confidence_pct, lr.outcome_status, lr.trace,
+       p.id AS previous_id, p.created_at AS previous_created_at, pr.hai_score AS previous_score, pr.outcome_status AS previous_outcome,
+       p.ontology_version AS previous_ontology_version, p.methodology_version AS previous_methodology_version,
+       p.ruleset_version AS previous_ruleset_version, pr.trace AS previous_trace
 FROM hai.organizations o
 JOIN visible v ON v.id = o.id
 LEFT JOIN latest l ON l.org_id = o.id
@@ -131,21 +134,29 @@ SELECT count(*) FROM hai.organizations o WHERE {restriction}
 HISTORY_SQL = """
 WITH runs AS (
     SELECT a.id, a.lifecycle_state::text AS lifecycle_state, a.created_at, a.finished_at, a.requested_by,
-           a.methodology_version, a.ruleset_version, a.model_id, a.parent_assessment_id, a.certification_requested,
+           a.ontology_version, a.methodology_version, a.ruleset_version, a.model_id, a.parent_assessment_id,
+           a.certification_requested,
            row_number() OVER (ORDER BY a.created_at, a.id) AS version
     FROM hai.assessments a WHERE a.org_id = :o
 ),
 results AS (
     SELECT DISTINCT ON (res.assessment_id) res.assessment_id, res.hai_score, res.confidence_pct, res.effectiveness,
-           res.outcome_status::text
+           res.outcome_status::text, res.trace
     FROM hai.assessment_results res
     WHERE NOT EXISTS (SELECT 1 FROM hai.assessment_results later WHERE later.supersedes_id = res.id)
     ORDER BY res.assessment_id, res.created_at DESC
 )
-SELECT r.*, res.hai_score, res.confidence_pct, res.effectiveness, res.outcome_status
+SELECT r.*, res.hai_score, res.confidence_pct, res.effectiveness, res.outcome_status, res.trace
 FROM runs r LEFT JOIN results res ON res.assessment_id = r.id
 ORDER BY r.version DESC
 """
+
+
+def _version_basis(row: Any, prefix: str = "") -> dict[str, str] | None:
+    keys = ("ontology_version", "methodology_version", "ruleset_version")
+    if any(row[prefix + key] is None for key in keys):
+        return None
+    return {key: str(row[prefix + key]) for key in keys}
 
 
 def _result_summary(row: Any) -> dict[str, Any] | None:
@@ -156,6 +167,8 @@ def _result_summary(row: Any) -> dict[str, Any] | None:
         "confidence_pct": float(row["confidence_pct"]) if row["confidence_pct"] is not None else None,
         "outcome_status": row["outcome_status"],
         "outcome_label": LABELS["outcome_status"][row["outcome_status"]],
+        "calibration": score_calibration_from_trace(row["trace"]),
+        "version_basis": _version_basis(row),
     }
 
 
@@ -202,6 +215,7 @@ def organizations_overview(
                 "certification_requested": bool(r["certification_requested"]),
                 "created_at": r["latest_created_at"].isoformat() if r["latest_created_at"] else None,
                 "finished_at": r["latest_finished_at"].isoformat() if r["latest_finished_at"] else None,
+                "version_basis": _version_basis(r),
             }
             if r["latest_id"]
             else None
@@ -212,12 +226,15 @@ def organizations_overview(
                 "created_at": r["previous_created_at"].isoformat() if r["previous_created_at"] else None,
                 "hai_score": float(r["previous_score"]) if r["previous_score"] is not None else None,
                 "outcome_status": r["previous_outcome"],
+                "calibration": score_calibration_from_trace(r["previous_trace"]),
+                "version_basis": _version_basis(r, "previous_"),
             }
             if r["previous_id"]
             else None
         )
         score = float(r["hai_score"]) if r["hai_score"] is not None else None
         prev_score = previous["hai_score"] if previous else None
+        comparable = bool(latest and previous and latest["version_basis"] == previous["version_basis"])
         items.append(
             {
                 "organization": {
@@ -237,7 +254,9 @@ def organizations_overview(
                 "latest": latest,
                 "result": _result_summary(r),
                 "previous": previous,
-                "score_delta": round(score - prev_score, 1) if score is not None and prev_score is not None else None,
+                "score_delta": round(score - prev_score, 1)
+                if comparable and score is not None and prev_score is not None
+                else None,
             }
         )
     return {"items": items, "total": total, "limit": limit, "offset": offset}
@@ -261,6 +280,7 @@ def organization_history(org_id: UUID, st: State, principal: Reader) -> dict[str
                 "created_at": r["created_at"].isoformat() if r["created_at"] else None,
                 "finished_at": r["finished_at"].isoformat() if r["finished_at"] else None,
                 "requested_by": r["requested_by"],
+                "ontology_version": r["ontology_version"],
                 "methodology_version": r["methodology_version"],
                 "ruleset_version": r["ruleset_version"],
                 "model_id": r["model_id"],

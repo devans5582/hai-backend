@@ -5,7 +5,7 @@ errors are ``{"error": {"code", "message", "details"}}``."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -69,6 +69,16 @@ class AssessmentOut(BaseModel):
     links: dict[str, str]
 
 
+class ScoreCalibrationOut(BaseModel):
+    baseline_score: float | None
+    multiplier: float
+    calibrated_score: float | None
+    cap: float
+    certification_basis: Literal["baseline"]
+    pillar_basis: Literal["baseline"]
+    threshold: float | None = None
+
+
 class ResultOut(BaseModel):
     assessment_id: UUID
     result_id: UUID
@@ -81,6 +91,7 @@ class ResultOut(BaseModel):
     review_triggers: list[str]
     caps_applied: list[str]
     score_before_caps: float | None
+    calibration: ScoreCalibrationOut | None
     pillars: list[dict[str, Any]]
     ruleset_version: str
     result_sha256: str

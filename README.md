@@ -507,7 +507,10 @@ Every setting is an environment variable with the `HAI_` prefix;
 ## Status And Ownership
 
 The platform is feature complete for v1 and green on every gate. The
-methodology version is `3.0.0` with status `draft`: criterion definitions,
+methodology version is `4.0.0` with status `draft`: the overall score uses a
+disclosed 4.5x calibration, rounded to one decimal and capped at 100. Reports
+retain the baseline score; certification thresholds use that baseline.
+Criterion definitions,
 level descriptors, some weights and the framework crosswalk are placeholders
 until Humaital approves them. Nothing is presented as approved content.
 

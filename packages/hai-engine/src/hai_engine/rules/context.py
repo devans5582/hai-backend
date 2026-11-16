@@ -340,6 +340,9 @@ class AssessmentContext:
 @dataclass
 class AssessmentState:
     hai_score: float | None = None
+    baseline_score: float | None = None
+    calibration_multiplier: float = 1.0
+    calibration_cap: float = 100.0
     score_before_caps: float | None = None
     confidence_pct: float | None = None
     effectiveness: float | None = None
@@ -357,9 +360,23 @@ class AssessmentState:
     unavailable_criteria: int = 0
     admissible_links: int = 0
 
+    def calibration_snapshot(self) -> dict[str, Any]:
+        """The persisted basis of this result, independent of later methodology changes."""
+        return {
+            "baseline_score": self.baseline_score,
+            "multiplier": self.calibration_multiplier,
+            "calibrated_score": self.hai_score,
+            "cap": self.calibration_cap,
+            "certification_basis": "baseline",
+            "pillar_basis": "baseline",
+            "threshold": self.threshold_applied,
+        }
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "hai_score": self.hai_score,
+            "baseline_score": self.baseline_score,
+            "calibration_multiplier": self.calibration_multiplier,
             "confidence_pct": self.confidence_pct,
             "effectiveness": self.effectiveness,
             "outcome_status": self.outcome_status,

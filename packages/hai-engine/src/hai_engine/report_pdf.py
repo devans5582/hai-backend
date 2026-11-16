@@ -360,6 +360,18 @@ def _position_text(benchmark: dict[str, Any] | None) -> str:
     )
 
 
+def _calibration_text(result: dict[str, Any]) -> str | None:
+    calibration = result.get("calibration")
+    if not calibration:
+        return None
+    return (
+        f"Calibration: {_num(calibration.get('multiplier'))}x; "
+        f"baseline {_num(calibration.get('baseline_score'), empty='N/A')}/100; "
+        f"displayed {_num(calibration.get('calibrated_score'), empty='N/A')}/100. "
+        f"Score ceiling: {_num(calibration.get('cap'), 0)}/100."
+    )
+
+
 # ------------------------------------------------------------------- pages
 def _cover(pdf: ReportPDF, r: dict[str, Any]) -> None:
     pdf.add_page()
@@ -407,6 +419,10 @@ def _cover(pdf: ReportPDF, r: dict[str, Any]) -> None:
             new_x=XPos.LMARGIN,
             new_y=YPos.NEXT,
         )
+        calibration_text = _calibration_text(result)
+        if calibration_text:
+            pdf.font(8.2, GREY)
+            pdf.multi_cell(0, 4.3, calibration_text, align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(2)
         pdf.font(11, DARK)
         pdf.cell(
@@ -574,9 +590,16 @@ def _snapshot(pdf: ReportPDF, r: dict[str, Any]) -> None:
     pdf.add_page()
     pdf.h1("Alignment Snapshot")
     pdf.h3("HAI Governance Profile")
+    calibrated = bool((r.get("result") or {}).get("calibration"))
     pdf.para(
-        "Your alignment across the six HAI pillars based on the frozen evidence. Scores are pillar means on the "
-        "methodology's scale; weights are the share each pillar carries in the HAI Score.",
+        "Your alignment across the six HAI pillars based on the frozen evidence. "
+        + (
+            "Pillar scores use the baseline scale before overall score calibration; weights are each pillar's "
+            "share of the baseline HAI Score."
+            if calibrated
+            else "Scores are pillar means on the methodology's scale; weights are the share each pillar carries "
+            "in the HAI Score."
+        ),
         9,
         GREY,
     )
@@ -594,7 +617,11 @@ def _snapshot(pdf: ReportPDF, r: dict[str, Any]) -> None:
                 f"{p.get('criteria_counted', 0)} counted, {p.get('criteria_excluded', 0)} excluded",
             ]
         )
-    pdf.grid(["Pillar", "Score", "Weight", "Status", "Confidence", "Criteria"], rows, [34, 24, 18, 34, 24, 40])
+    pdf.grid(
+        ["Pillar", "Baseline" if calibrated else "Score", "Weight", "Status", "Confidence", "Criteria"],
+        rows,
+        [34, 24, 18, 34, 24, 40],
+    )
     pdf.h3("Status Definitions")
     for d in r.get("status_definitions", []):
         pdf.font(8.6, pdf.status_tone(d["code"]), "B")
@@ -647,6 +674,7 @@ def _snapshot(pdf: ReportPDF, r: dict[str, Any]) -> None:
 def _pillar_pages(pdf: ReportPDF, r: dict[str, Any]) -> None:
     scale = r.get("scale", {})
     level_max = scale.get("level_max", 5)
+    score_label = "Baseline" if (r.get("result") or {}).get("calibration") else "Score"
     criteria_by_pillar: dict[str, list[dict[str, Any]]] = {}
     for c in r.get("criteria", []):
         criteria_by_pillar.setdefault(str(c["pillar"]), []).append(c)
@@ -668,7 +696,7 @@ def _pillar_pages(pdf: ReportPDF, r: dict[str, Any]) -> None:
         pdf.cell(
             60,
             5.5,
-            f"Score: {_num(p.get('score'))} / {_num(scale.get('score_scale', 100), 0)}  (weight {weight_pct}%)",
+            f"{score_label}: {_num(p.get('score'))} / {_num(scale.get('score_scale', 100), 0)}  (weight {weight_pct}%)",
             new_x=XPos.LEFT,
             new_y=YPos.NEXT,
         )
@@ -677,6 +705,7 @@ def _pillar_pages(pdf: ReportPDF, r: dict[str, Any]) -> None:
         pdf.set_xy(pdf.l_margin + 128, y + 2.5)
         pdf.font(8.8, BODY)
         pdf.cell(0, 5.5, f"Evidence confidence: {_pct(p.get('confidence'))}", new_x=XPos.LEFT, new_y=YPos.NEXT)
+        pdf.font(8.2, BODY)
         pdf.cell(0, 5.5, f"{p.get('criteria_counted', 0)} criteria counted, {p.get('criteria_excluded', 0)} excluded")
         pdf.set_y(y + 21)
         if p.get("status_wording"):
@@ -998,20 +1027,30 @@ def _evidence_page(pdf: ReportPDF, r: dict[str, Any]) -> None:
             key_width=46,
             size=9,
         )
+        calibration_text = _calibration_text(result)
+        if calibration_text:
+            pdf.para(calibration_text, 8.6, GREY)
     else:
         pdf.para("No result has been produced yet.", 8.8, MUTED, "I")
     pdf.para(
         f"The score is criterion-evaluated: each of the {len(r.get('criteria', []))} criteria is levelled from "
         "admissible "
-        "evidence by the rules engine, pillar means are weighted by criterion materiality and the HAI Score is the "
-        "weighted sum of the pillars. Nothing enters the score except through an evidence link naming one quote, "
+        "evidence by the rules engine, pillar means are weighted by criterion materiality and "
+        + (
+            "the baseline HAI Score is the weighted sum of the pillars. Overall calibration is then applied by "
+            "the engine, followed by the recorded caps. "
+            if result and result.get("calibration")
+            else "the HAI Score is the weighted sum of the pillars. "
+        )
+        + "Nothing enters the score except through an evidence link naming one quote, "
         "one target and one criterion.",
         8.6,
         GREY,
     )
 
-    pdf.h2("Certification Readiness")
     cert = r.get("certification")
+    pdf.ensure(85 if cert else 42)
+    pdf.h2("Certification Readiness")
     threshold = scale.get("certification_threshold")
     min_conf = scale.get("min_confidence")
     if threshold is None:
@@ -1022,7 +1061,8 @@ def _evidence_page(pdf: ReportPDF, r: dict[str, Any]) -> None:
         )
     else:
         pdf.para(
-            f"Certification requires a HAI Score of at least {_num(threshold, 0)}, evidence confidence of at least "
+            f"Certification requires a {'baseline ' if result and result.get('calibration') else ''}HAI Score "
+            f"of at least {_num(threshold, 0)}, evidence confidence of at least "
             f"{_num(min_conf, 0)}%, admissible evidence in every pillar and a named reviewer's signature.",
             8.8,
         )
@@ -1035,7 +1075,10 @@ def _evidence_page(pdf: ReportPDF, r: dict[str, Any]) -> None:
                 ("Reviewer", _s(cert.get("reviewer_id"))),
                 ("Signed", _date(cert.get("signed_at"))),
                 ("Valid until", _date(cert.get("expires_at"))),
-                ("Threshold applied", _num(cert.get("threshold_applied"), 0)),
+                (
+                    "Baseline threshold" if result and result.get("calibration") else "Threshold applied",
+                    _num(cert.get("threshold_applied"), 0),
+                ),
             ],
             key_width=46,
             size=9,

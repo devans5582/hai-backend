@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ExportReportButton } from "../components/ExportReportButton";
 import { Icon } from "../components/Icon";
+import { ScoreCalibrationLabel } from "../components/ScoreCalibrationNote";
 import { TableDate } from "../components/TableDate";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
@@ -189,7 +190,7 @@ export function OrganizationDetail() {
                     <tr key={v.assessment.id} className={v.is_latest ? "row-latest" : ""}>
                       <td><Link to={`/assessments/${v.assessment.id}`} className="version-link">v{v.version}{v.is_latest && <Badge tone="red">Latest</Badge>}</Link><div className="small muted mono">{v.assessment.id.slice(0, 8)}</div></td>
                       <td><Badge tone={toneForLifecycle(v.assessment.lifecycle_state)}>{v.assessment.lifecycle_label}</Badge></td>
-                      <td className="numeric-cell">{v.result ? fmtNum(v.result.hai_score) : <span className="muted">n/a</span>}</td>
+                      <td className="numeric-cell">{v.result ? <div className="table-score"><strong>{fmtNum(v.result.hai_score)}</strong><ScoreCalibrationLabel calibration={v.result.calibration} /></div> : <span className="muted">n/a</span>}</td>
                       <td className="outcome-cell">{v.result ? <Badge tone={toneForOutcome(v.result.outcome_status)}>{v.result.outcome_label}</Badge> : <span className="muted small">No result yet</span>}</td>
                       <td className="small muted">{v.assessment.methodology_version} / {v.assessment.ruleset_version}</td>
                       <td><TableDate value={v.assessment.created_at} /></td>

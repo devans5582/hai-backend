@@ -13,7 +13,7 @@ from hai_core.auth import Principal, Scope
 from hai_core.blobstore import BlobStore
 from hai_core.db.engine import Database
 from hai_core.db.store import Store
-from hai_core.errors import ConflictError, ForbiddenError
+from hai_core.errors import ConflictError, ForbiddenError, ValidationFailedError
 from hai_core.generated.enums import IncidentStatus, LifecycleState, SizeBand, StageBand
 from hai_core.generated.models import (
     Assessment,
@@ -122,7 +122,15 @@ async def test_report_lists_only_collected_sources(clean_db: Database, manifest:
         store = Store(conn, actor="pytest", manifest=manifest)
         decision = svc.decide(conn, store, assessment_id)
     r = decision.result
-    assert r.hai_score is not None and 0 < float(r.hai_score) <= 85
+    assert r.hai_score is not None and 0 < float(r.hai_score) <= 100
+    assert isinstance(r.trace, dict)
+    calibration = r.trace["calibration"]
+    assert calibration["multiplier"] == 4.5 and calibration["certification_basis"] == "baseline"
+    assert calibration["calibrated_score"] == float(r.hai_score)
+    assert calibration["baseline_score"] == decision.engine.state.baseline_score
+    assert calibration["threshold"] == 70
+    assert decision.engine.state.baseline_score is not None
+    assert decision.engine.state.baseline_score < float(r.hai_score)
     assert len(decision.decisions) == 20 and len(decision.pillar_scores) == 6
     by_code = {str(d.criterion_code.value): d for d in decision.decisions}
     assert (
@@ -234,13 +242,34 @@ async def test_review_finalize_and_certification(clean_db: Database, manifest: M
             now=NOW,
         )
     assert signed.certificate_number is None and signed.reviewer_id == "rev-1"
-    # force a certified decision by clearing gate reasons on a copy, then verify and revoke
+    # Clearing gate reasons cannot turn a calibrated score into certification evidence.
     with clean_db.transaction("pytest", "hai_reviewer") as conn:
         store = Store(conn, actor="pytest", manifest=manifest)
         assessment = store.require(Assessment, assessment_id)
         result = svc.latest_result(store, assessment_id)
         assert result is not None
+        assert isinstance(result.trace, dict)
         eligible = result.model_copy(update={"gate_reasons": []})
+        with pytest.raises(ValidationFailedError, match="baseline score"):
+            certs.sign(
+                store,
+                assessment=assessment,
+                result=eligible,
+                principal=reviewer,
+                decision="certified",
+                reason="uplift cannot meet the baseline threshold",
+                now=NOW,
+            )
+        # A synthetic eligible result exercises signature verification and revocation separately.
+        assert isinstance(eligible.trace, dict)
+        eligible = eligible.model_copy(
+            update={
+                "trace": {
+                    **eligible.trace,
+                    "calibration": {**eligible.trace["calibration"], "baseline_score": 100.0},
+                }
+            }
+        )
         cert = certs.sign(
             store,
             assessment=assessment,
@@ -253,6 +282,7 @@ async def test_review_finalize_and_certification(clean_db: Database, manifest: M
         assert cert.certificate_number and cert.expires_at is not None
         verified = certs.verify(store, cert.certificate_number, now=NOW)
         assert verified.valid and verified.status == "valid" and verified.organization == ORG_NAME
+        assert verified.calibration == result.trace["calibration"]
         assert certs.verify(store, cert.certificate_number, now=datetime(2028, 1, 1, tzinfo=UTC)).status == "expired"
         assert certs.verify(store, "HAI-0000-NOPE").status == "not_found"
         revoked = certs.revoke(store, current=cert, principal=reviewer, reason="appeal upheld", now=NOW)

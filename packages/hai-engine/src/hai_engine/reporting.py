@@ -59,6 +59,24 @@ def coverage_wording(state: str) -> str:
     return str(ATTRIBUTES["coverage_state"][state]["report_wording"])
 
 
+def score_calibration(result: AssessmentResult | None) -> dict[str, Any] | None:
+    """Return only calibration recorded with this result, never the current methodology's settings."""
+    return score_calibration_from_trace(result.trace if result else None)
+
+
+def score_calibration_from_trace(trace: Any) -> dict[str, Any] | None:
+    """Project stored calibration for result summaries that load trace JSON directly."""
+    if not isinstance(trace, dict):
+        return None
+    recorded = trace.get("calibration")
+    if not isinstance(recorded, dict):
+        return None
+    keys = ("baseline_score", "multiplier", "calibrated_score", "cap", "certification_basis", "pillar_basis")
+    if not all(key in recorded for key in keys):
+        return None
+    return {**{key: recorded[key] for key in keys}, "threshold": recorded.get("threshold")}
+
+
 VERSION_SQL = """
 SELECT version, versions FROM (
     SELECT id, row_number() OVER (ORDER BY created_at, id) AS version, count(*) OVER () AS versions
@@ -225,6 +243,7 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
     snapshot = store.first(EvidenceSnapshot, where={"assessment_id": assessment_id})
     results = _latest(store.find(AssessmentResult, where={"assessment_id": assessment_id}, order_by="created_at"))
     result = results[-1] if results else None
+    calibration = score_calibration(result)
     decisions = {
         _enum_str(d.criterion_code): d
         for d in _latest(store.find(CriterionDecision, where={"assessment_id": assessment_id}, order_by="created_at"))
@@ -388,6 +407,8 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
     threshold = (
         float(cert.threshold_applied)
         if cert
+        else calibration.get("threshold")
+        if calibration
         else manifest.methodology.certification.threshold_for(
             _enum_str(assessment.stage_band), _enum_str(assessment.size_band)
         )
@@ -441,6 +462,7 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
                 "review_triggers": list(result.review_triggers or []),
                 "caps_applied": list(result.caps_applied or []),
                 "score_before_caps": float(result.score_before_caps) if result.score_before_caps is not None else None,
+                "calibration": calibration,
                 "result_id": str(result.id),
                 "result_sha256": result.result_sha256,
             }

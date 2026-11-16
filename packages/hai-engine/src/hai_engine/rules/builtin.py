@@ -20,7 +20,7 @@ from hai_core.generated.enums import (
 )
 from hai_engine.rules.context import AssessmentContext, AssessmentState, CriterionContext, CriterionState
 from hai_engine.rules.registry import assessment_rule, criterion_rule
-from hai_engine.scoring import aggregate
+from hai_engine.scoring import aggregate, calibrate_score
 from hai_ontology.conditions import UnsafeExpressionError, evaluate
 
 _RUNGS = RANKS["maturity_rung"]
@@ -486,10 +486,19 @@ def gate_certification(ctx: AssessmentContext, state: AssessmentState, params: d
     threshold = cert.threshold_for(ctx.stage_band, ctx.size_band)
     state.threshold_applied = threshold
     reasons: list[str] = []
-    if state.hai_score is None:
+    certification_score = state.hai_score
+    if state.calibration_multiplier != 1.0:
+        # Calibration cannot improve certification eligibility or bypass a policy cap.
+        certification_score = (
+            min(state.baseline_score, state.hai_score)
+            if state.baseline_score is not None and state.hai_score is not None
+            else None
+        )
+    score_label = "baseline score" if state.calibration_multiplier != 1.0 else "score"
+    if certification_score is None:
         reasons.append("no score computed")
-    elif state.hai_score < threshold:
-        reasons.append(f"score {state.hai_score:.1f} below threshold {threshold:.0f}")
+    elif certification_score < threshold:
+        reasons.append(f"{score_label} {certification_score:.1f} below threshold {threshold:.0f}")
     if state.confidence_pct is None or state.confidence_pct < cert.min_confidence:
         reasons.append(f"confidence {state.confidence_pct or 0:.1f} below minimum {cert.min_confidence:.0f}")
     if cert.require_evidence_in_every_pillar:
@@ -551,8 +560,11 @@ def compute_scores(ctx: AssessmentContext, state: AssessmentState) -> str:
         effectiveness_ranks=[o.state.best_rung_rank for o in ctx.criteria],
         stage_band=ctx.stage_band,
     )
-    state.hai_score = result.hai_score
-    state.score_before_caps = result.hai_score
+    state.baseline_score = result.hai_score
+    state.calibration_multiplier = ctx.methodology.scoring.calibration.multiplier
+    state.calibration_cap = min(100.0, ctx.methodology.scoring.score_cap)
+    state.hai_score = calibrate_score(result.hai_score, state.calibration_multiplier)
+    state.score_before_caps = state.hai_score
     state.confidence_pct = result.confidence_pct
     state.effectiveness = result.effectiveness
     state.pillar_scores = {p.code: (p.score, p.confidence, p.counted, p.excluded, p.status) for p in result.pillars}
@@ -564,4 +576,10 @@ def compute_scores(ctx: AssessmentContext, state: AssessmentState) -> str:
     state.admissible_links = sum(
         len(o.context.admissible_support) + len(o.context.admissible_contradicting) for o in ctx.criteria
     )
-    return result.note
+    if state.calibration_multiplier == 1.0:
+        return result.note
+    return (
+        f"{result.note}; overall calibration {state.calibration_multiplier:g}x, bounded 0-100; "
+        f"baseline {state.baseline_score}, calibrated {state.hai_score}; "
+        "pillars, confidence, effectiveness and certification retain their baseline"
+    )

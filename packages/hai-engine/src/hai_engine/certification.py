@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,7 @@ from hai_core.db.store import Store
 from hai_core.errors import ConflictError, ForbiddenError, NotFoundError, ValidationFailedError
 from hai_core.generated.enums import CertificationOutcome
 from hai_core.generated.models import Assessment, AssessmentResult, CertificationDecision
+from hai_engine.reporting import score_calibration
 from hai_ontology.meta import Methodology
 
 
@@ -59,6 +61,7 @@ class Verification:
     expires_at: str | None = None
     reviewer: str | None = None
     methodology_version: str | None = None
+    calibration: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
@@ -90,6 +93,25 @@ class CertificationService:
             raise ValidationFailedError(
                 "gates failed: " + "; ".join(result.gate_reasons), details={"gate_reasons": list(result.gate_reasons)}
             )
+        calibration = score_calibration(result)
+        if decision == CertificationOutcome.CERTIFIED.value and self.methodology.scoring.calibration.multiplier != 1:
+            # A displayed uplift cannot substitute for certification's original evidence score.
+            baseline = calibration.get("baseline_score") if calibration is not None else None
+            threshold = self.methodology.certification.threshold_for(
+                str(assessment.stage_band), str(assessment.size_band)
+            )
+            if (
+                isinstance(baseline, bool)
+                or not isinstance(baseline, (int, float))
+                or not math.isfinite(baseline)
+                or baseline < threshold
+                or calibration is None
+                or calibration.get("certification_basis") != "baseline"
+            ):
+                raise ValidationFailedError(
+                    "certification requires the baseline score to meet its threshold",
+                    details={"baseline_score": baseline, "threshold": threshold},
+                )
         when = now or datetime.now(UTC)
         expires = (
             when + timedelta(days=30 * self.methodology.certification.validity_months)
@@ -193,6 +215,7 @@ class CertificationService:
             expires_at=cert.expires_at.isoformat() if cert.expires_at else None,
             reviewer=cert.reviewer_id,
             methodology_version=assessment.methodology_version,
+            calibration=score_calibration(result),
         )
 
     def current_for(self, store: Store, assessment_id: UUID) -> CertificationDecision | None:

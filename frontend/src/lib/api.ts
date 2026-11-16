@@ -61,6 +61,22 @@ export interface PillarResult {
   criteria_excluded: number;
 }
 
+export interface ScoreCalibration {
+  baseline_score: number | null;
+  multiplier: number;
+  calibrated_score: number | null;
+  cap: number;
+  certification_basis: "baseline";
+  pillar_basis: "baseline";
+  threshold: number | null;
+}
+
+export interface ResultVersionBasis {
+  ontology_version: string;
+  methodology_version: string;
+  ruleset_version: string;
+}
+
 export interface Result {
   assessment_id: string;
   result_id: string;
@@ -73,6 +89,7 @@ export interface Result {
   review_triggers: string[];
   caps_applied: string[];
   score_before_caps: number | null;
+  calibration: ScoreCalibration | null;
   pillars: PillarResult[];
   ruleset_version: string;
   result_sha256: string;
@@ -226,6 +243,7 @@ export interface Report {
     gate_reasons: string[];
     review_triggers: string[];
     caps_applied: string[];
+    calibration?: ScoreCalibration | null;
   } | null;
   pillars: ReportPillar[];
   criteria: ReportCriterion[];
@@ -294,9 +312,9 @@ export interface OrganizationOverview {
     identifiers_verified: boolean;
   };
   versions: number;
-  latest: { id: string; version: number; lifecycle_state: LifecycleState; lifecycle_label: string; certification_requested: boolean; created_at: string | null; finished_at: string | null } | null;
-  result: { hai_score: number | null; confidence_pct: number | null; outcome_status: OutcomeStatus; outcome_label: string } | null;
-  previous: { id: string; created_at: string | null; hai_score: number | null; outcome_status: OutcomeStatus | null } | null;
+  latest: { id: string; version: number; lifecycle_state: LifecycleState; lifecycle_label: string; certification_requested: boolean; created_at: string | null; finished_at: string | null; version_basis?: ResultVersionBasis } | null;
+  result: { hai_score: number | null; confidence_pct: number | null; outcome_status: OutcomeStatus; outcome_label: string; calibration?: ScoreCalibration | null; version_basis?: ResultVersionBasis } | null;
+  previous: { id: string; created_at: string | null; hai_score: number | null; outcome_status: OutcomeStatus | null; calibration?: ScoreCalibration | null; version_basis?: ResultVersionBasis } | null;
   score_delta: number | null;
 }
 
@@ -304,7 +322,7 @@ export interface HistoryEntry {
   version: number;
   is_latest: boolean;
   assessment: { id: string; lifecycle_state: LifecycleState; lifecycle_label: string; created_at: string | null; finished_at: string | null; requested_by: string; methodology_version: string; ruleset_version: string; model_id: string; parent_assessment_id: string | null; certification_requested: boolean };
-  result: { hai_score: number | null; confidence_pct: number | null; effectiveness?: number; outcome_status: OutcomeStatus; outcome_label: string } | null;
+  result: { hai_score: number | null; confidence_pct: number | null; effectiveness?: number; outcome_status: OutcomeStatus; outcome_label: string; calibration?: ScoreCalibration | null; version_basis?: ResultVersionBasis } | null;
 }
 
 export interface OrganizationHistory {
@@ -320,6 +338,7 @@ export interface Verification {
   certificate_number: string;
   organization: string | null;
   hai_score: number | null;
+  calibration?: ScoreCalibration | null;
   signed_at: string | null;
   expires_at: string | null;
   reviewer: string | null;

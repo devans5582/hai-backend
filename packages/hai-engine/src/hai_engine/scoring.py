@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from decimal import ROUND_HALF_UP, Decimal
 
 from hai_core.generated.enums import ATTRIBUTES, RANKS
 from hai_engine.rules.context import CriterionState
@@ -38,6 +39,15 @@ class ScoreResult:
     counted: int = 0
     excluded: int = 0
     note: str = ""
+
+
+def calibrate_score(baseline: float | None, multiplier: float) -> float | None:
+    """Calibrate the aggregate only, preserving N/A and the 0-100 score scale."""
+    if baseline is None:
+        return None
+    calibrated = Decimal(str(baseline)) * Decimal(str(multiplier))
+    bounded = min(Decimal("100"), max(Decimal("0"), calibrated))
+    return float(bounded.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
 def criterion_ratio(level: int, methodology: Methodology) -> float:

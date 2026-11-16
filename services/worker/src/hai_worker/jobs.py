@@ -29,6 +29,7 @@ from hai_core.webhooks import deliver, emit
 from hai_engine.decision import DecisionService
 from hai_engine.llm.base import Provider
 from hai_engine.llm.registry import provider_from_settings, second_opinion_from_settings
+from hai_engine.reporting import score_calibration
 from hai_engine.services import classify_links, evaluate_assessment
 from hai_ontology.meta import Manifest
 from hai_pipeline.acquire import AcquisitionService
@@ -214,7 +215,7 @@ async def decide(ctx: WorkerContext, job: Job) -> dict[str, Any]:
             emit(
                 conn,
                 "assessment.completed",
-                _result_payload(aid, decision.result, LifecycleState.COMPLETED_UNVERIFIED.value),
+                _result_payload(assessment, decision.result, LifecycleState.COMPLETED_UNVERIFIED.value),
                 queue=ctx.queue,
             )
     return {
@@ -249,7 +250,7 @@ async def finalize(ctx: WorkerContext, job: Job) -> dict[str, Any]:
             conn,
             "assessment.completed",
             _result_payload(
-                aid,
+                assessment,
                 decision.result,
                 (LifecycleState.COMPLETED if signed else LifecycleState.COMPLETED_UNVERIFIED).value,
             ),
@@ -263,8 +264,8 @@ async def finalize(ctx: WorkerContext, job: Job) -> dict[str, Any]:
                 "score.changed",
                 {
                     "assessment_id": str(aid),
-                    "previous": _result_payload(aid, previous, "")["result"],
-                    "current": _result_payload(aid, decision.result, "")["result"],
+                    "previous": _result_payload(assessment, previous, "")["result"],
+                    "current": _result_payload(assessment, decision.result, "")["result"],
                 },
                 queue=ctx.queue,
             )
@@ -274,15 +275,21 @@ async def finalize(ctx: WorkerContext, job: Job) -> dict[str, Any]:
     }
 
 
-def _result_payload(aid: UUID, result: Any, lifecycle: str) -> dict[str, Any]:
+def _result_payload(assessment: Assessment, result: Any, lifecycle: str) -> dict[str, Any]:
     return {
-        "assessment_id": str(aid),
+        "assessment_id": str(assessment.id),
         "lifecycle_state": lifecycle,
         "result": {
             "hai_score": float(result.hai_score) if result.hai_score is not None else None,
             "confidence_pct": float(result.confidence_pct) if result.confidence_pct is not None else None,
             "outcome_status": str(result.outcome_status.value),
             "result_id": str(result.id),
+            "calibration": score_calibration(result),
+            "version_basis": {
+                "ontology_version": assessment.ontology_version,
+                "methodology_version": assessment.methodology_version,
+                "ruleset_version": result.ruleset_version,
+            },
         },
     }
 

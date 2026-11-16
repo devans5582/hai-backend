@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Icon } from "../components/Icon";
+import { ScoreCalibrationNote } from "../components/ScoreCalibrationNote";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
 import { fmtDate, fmtNum } from "../lib/format";
@@ -63,6 +64,7 @@ export function Verify() {
                 <div><dt>Expires</dt><dd>{q.data.expires_at ? fmtDate(q.data.expires_at) : "n/a"}</dd></div>
                 <div><dt>Methodology</dt><dd>{q.data.methodology_version ?? "n/a"}</dd></div>
               </dl>
+              <ScoreCalibrationNote calibration={q.data.calibration} />
             </div>
           )}
         </QueryState>

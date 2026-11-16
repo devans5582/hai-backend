@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from hai_api.auth import require
 from hai_api.deps import AppState, State, load_assessment
-from hai_api.schemas import AssessmentCreate, AssessmentOut, DecisionOut, Page, ResultOut
+from hai_api.schemas import AssessmentCreate, AssessmentOut, DecisionOut, Page, ResultOut, ScoreCalibrationOut
 from hai_core.assessments import AssessmentRequest, cancel, create_assessment, reassess, request_certification
 from hai_core.auth import Principal, Scope
 from hai_core.db.store import Store
@@ -20,7 +20,7 @@ from hai_core.generated.enums import LABELS
 from hai_core.generated.models import Assessment, CriterionFinding
 from hai_core.visibility import visible_assessment_ids
 from hai_engine.report_pdf import render_report_pdf, report_filename
-from hai_engine.reporting import build_report, coverage_wording
+from hai_engine.reporting import build_report, coverage_wording, score_calibration
 
 router = APIRouter(prefix="/v1/assessments", tags=["assessments"])
 
@@ -146,6 +146,7 @@ def result_out(st: AppState, store: Store, assessment_id: UUID, principal: Princ
     if result is None:
         raise NotFoundError("no result yet; the assessment has not been decided")
     pillars = st.decisions.latest_pillars(store, assessment_id)
+    calibration = score_calibration(result)
     return ResultOut(
         assessment_id=assessment_id,
         result_id=result.id,
@@ -158,6 +159,7 @@ def result_out(st: AppState, store: Store, assessment_id: UUID, principal: Princ
         review_triggers=list(result.review_triggers or []),
         caps_applied=list(result.caps_applied or []),
         score_before_caps=float(result.score_before_caps) if result.score_before_caps is not None else None,
+        calibration=ScoreCalibrationOut.model_validate(calibration) if calibration else None,
         pillars=[
             {
                 "code": _enum(p.pillar_code),

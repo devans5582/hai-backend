@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ExportReportButton } from "../components/ExportReportButton";
 import { Icon } from "../components/Icon";
+import { ScoreCalibrationNote } from "../components/ScoreCalibrationNote";
 import { TraceDrawer } from "../components/TraceDrawer";
 import { Badge, CoverageStrip, PillarBars, QueryState, ScoreDial, Tabs } from "../components/widgets";
 import { api, ApiRequestError, type Assessment } from "../lib/api";
@@ -117,6 +118,7 @@ export function AssessmentDetail() {
                   <h2>Assessment result</h2>
                   <p className="muted small">Human Alignment Index · out of 100</p>
                   <ScoreDial score={r.result?.hai_score ?? null} />
+                  <ScoreCalibrationNote calibration={r.result?.calibration} />
                   {r.result?.hai_score === null && r.score_availability?.message && (
                     <p className="alert info small" role="status">{r.score_availability.message}</p>
                   )}
@@ -142,7 +144,7 @@ export function AssessmentDetail() {
                 </div>
                 <div className="card">
                   <h2>Pillars</h2>
-                  <p className="muted small">Performance across the governance pillars.</p>
+                  <p className="muted small">{r.result?.calibration ? "Pillar scores use the baseline scale before overall score calibration." : "Performance across the governance pillars."}</p>
                   <PillarBars pillars={r.pillars} />
                   {r.pillars.length === 0 && <p className="muted small">Pillar scores will appear when evaluation is complete.</p>}
                   {r.pillars.some((p) => p.status) && (

@@ -25,6 +25,10 @@ decisions:
       criterion ratios (Impact 5.8/15 and Accountability 8.6/20 reproduce only with the weights),
       so the platform now matches the report customers have seen. Set equal_mean to return to the
       spec recommendation. Confidence always uses materiality in aggregation.
+      Since methodology 4.0.0 the overall aggregate receives a draft 4.5x calibration,
+      capped at 100, as requested on 2026-11-16. Pillar scores remain the baseline;
+      reports disclose both the baseline aggregate and multiplier. This calibration
+      does not increase evidence confidence, maturity levels or certification eligibility.
     configured_in: ontology/methodology/methodology.yaml scoring.pillar_aggregation
 
   - id: D3
@@ -37,6 +41,8 @@ decisions:
       early stage 65 points; growth and mature stages 70. threshold_mode is stage_size
       with all twelve stage and size combinations recorded. Size does not change the
       published stage threshold. Confidence, evidence and human review remain separate gates.
+      Methodology 4.0.0 compares these thresholds with the baseline aggregate before
+      the overall-score calibration; the calibrated score cannot grant eligibility.
     configured_in: ontology/methodology/methodology.yaml certification
 
   - id: D4

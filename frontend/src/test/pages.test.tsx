@@ -73,6 +73,24 @@ describe("ScoreDial and CoverageStrip", () => {
 });
 
 describe("AssessmentDetail", () => {
+  it("renders recorded calibration and baseline pillars without recalculating the stored score", async () => {
+    mockFetch((url) => {
+      if (url.endsWith(`/v1/assessments/${ASSESSMENT.id}`)) return { body: ASSESSMENT };
+      if (url.endsWith("/report")) return { body: {
+        ...REPORT,
+        result: { ...REPORT.result, hai_score: 56.3, calibration: { baseline_score: 12.5, multiplier: 4.5, calibrated_score: 56.3, cap: 100, certification_basis: "baseline", pillar_basis: "baseline", threshold: 65 } },
+      } };
+      if (url.endsWith("/connector-runs") || url.includes("/v1/reviews/tasks") || url.endsWith("/history")) return { body: { items: [], total: 0, limit: 50, offset: 0 } };
+      return undefined;
+    });
+    renderWithProviders(<AssessmentDetail />, { route: `/assessments/${ASSESSMENT.id}`, path: "/assessments/:id" });
+    expect(await screen.findByRole("img", { name: "HAI Score: 56.3 out of 100" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Score calibration")).toHaveTextContent("Calibration: 4.5x; baseline 12.5/100; displayed 56.3/100.");
+    expect(screen.getByLabelText("Score calibration")).toHaveTextContent("Certification uses the baseline score (minimum 65.0/100)");
+    expect(screen.getByText("Pillar scores use the baseline scale before overall score calibration.")).toBeInTheDocument();
+    expect(screen.getByText("Confidence too low")).toBeInTheDocument();
+  });
+
   it("explains an unavailable score using the report's stored reason", async () => {
     mockFetch((url) => {
       if (url.endsWith(`/v1/assessments/${ASSESSMENT.id}`)) return { body: ASSESSMENT };
@@ -87,6 +105,7 @@ describe("AssessmentDetail", () => {
     renderWithProviders(<AssessmentDetail />, { route: `/assessments/${ASSESSMENT.id}`, path: "/assessments/:id" });
     expect(await screen.findByText("No criteria could be scored because the evidence sources were unavailable.")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "HAI Score: n/a out of 100" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Score calibration")).not.toBeInTheDocument();
   });
 
   it("shows the outcome status exactly as stored and opens the trace drawer", async () => {
@@ -173,6 +192,18 @@ describe("Reviews", () => {
 });
 
 describe("Verify", () => {
+  it("discloses recorded calibration and the baseline certification threshold", async () => {
+    mockFetch((url) => url.includes("/v1/certifications/HAI-CAL/verify") ? { body: {
+      valid: true, status: "valid", certificate_number: "HAI-CAL", organization: "Acme Corp", hai_score: 100,
+      signed_at: "2026-10-24T12:00:00Z", expires_at: null, reviewer: "rev-1", methodology_version: "4.0.0",
+      calibration: { baseline_score: 81.5, multiplier: 4.5, calibrated_score: 100, cap: 100, certification_basis: "baseline", pillar_basis: "baseline", threshold: 70 },
+    } } : undefined);
+    renderWithProviders(<Verify />, { route: "/verify?number=HAI-CAL", path: "/verify" });
+    const note = await screen.findByLabelText("Score calibration");
+    expect(note).toHaveTextContent("baseline 81.5/100; displayed 100.0/100");
+    expect(note).toHaveTextContent("Certification uses the baseline score (minimum 70.0/100)");
+  });
+
   it("shows a valid certificate and a not-found message", async () => {
     mockFetch((url) => {
       if (url.includes("/v1/certifications/HAI-OK/verify")) return { body: { valid: true, status: "valid", certificate_number: "HAI-OK", organization: "Acme Corp", hai_score: 81.5, signed_at: "2026-10-24T12:00:00Z", expires_at: "2027-10-24T12:00:00Z", reviewer: "rev-1", methodology_version: "1.0.0" } };

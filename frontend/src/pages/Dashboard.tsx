@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { ExportReportButton } from "../components/ExportReportButton";
 import { Icon, type IconName } from "../components/Icon";
 import { FrameworkVisual } from "../components/FrameworkVisual";
+import { ScoreCalibrationLabel } from "../components/ScoreCalibrationNote";
 import { TableDate } from "../components/TableDate";
 import { Badge, QueryState } from "../components/widgets";
 import { api } from "../lib/api";
@@ -132,6 +133,7 @@ export function Dashboard() {
                           {row.result ? (
                             <div className="table-score">
                               <strong>{fmtNum(row.result.hai_score)}</strong>
+                              <ScoreCalibrationLabel calibration={row.result.calibration} />
                               {row.score_delta !== null && <small className={`delta ${row.score_delta >= 0 ? "up" : "down"}`} aria-label={`change from previous version ${row.score_delta >= 0 ? "+" : ""}${row.score_delta}`}>{row.score_delta >= 0 ? "+" : ""}{row.score_delta}</small>}
                             </div>
                           ) : <span className="table-placeholder">n/a</span>}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from typing import Any, Literal, cast
+from uuid import UUID
 
 import pytest
 from fastapi import FastAPI
@@ -14,6 +15,9 @@ from hai_api.deps import AppState
 from hai_api.main import create_app
 from hai_core.auth import Scope, create_api_key, mint_jwt
 from hai_core.db.engine import Database
+from hai_core.db.store import Store
+from hai_core.generated.enums import OutcomeStatus
+from hai_core.generated.models import AssessmentResult
 from hai_core.settings import Settings
 from hai_engine.report_pdf import render_report_pdf
 from hai_ontology.meta import Manifest
@@ -332,3 +336,44 @@ def test_report_pdf_downloads_per_assessment_and_per_organization(
     assert second["id"] != first["id"] and org.content.startswith(b"%PDF-")
     assert client.get("/v1/organizations/00000000-0000-4000-8000-000000000000/report.pdf", headers=h).status_code == 404
     assert client.get(f"/v1/assessments/{first['id']}/report.pdf").status_code == 401
+
+
+@pytest.mark.parametrize("calibrated", [False, True])
+def test_result_and_report_disclose_only_recorded_calibration(
+    client: TestClient, api_key: str, clean_db: Database, manifest: Manifest, calibrated: bool
+) -> None:
+    headers = {"X-API-Key": api_key}
+    assessment = client.post("/v1/assessments", json=BODY, headers=headers).json()
+    calibration = (
+        {
+            "baseline_score": 12.5,
+            "multiplier": 4.5,
+            "calibrated_score": 56.3,
+            "cap": 100,
+            "certification_basis": "baseline",
+            "pillar_basis": "baseline",
+            "threshold": 64,
+        }
+        if calibrated
+        else None
+    )
+    with clean_db.transaction("pytest", "hai_engine") as conn:
+        Store(conn, actor="pytest", manifest=manifest).insert(
+            AssessmentResult(
+                assessment_id=UUID(assessment["id"]),
+                hai_score=56.3 if calibrated else 12.5,
+                confidence_pct=61.2,
+                outcome_status=OutcomeStatus.CONFIDENCE_TOO_LOW,
+                ruleset_version=manifest.ruleset.version,
+                result_sha256="a" * 64,
+                trace={"calibration": calibration} if calibrated else {"rules": []},
+            )
+        )
+    result_response = client.get(f"/v1/assessments/{assessment['id']}/result", headers=headers)
+    report_response = client.get(f"/v1/assessments/{assessment['id']}/report", headers=headers)
+    assert result_response.status_code == report_response.status_code == 200
+    result, report = result_response.json(), report_response.json()
+    assert result["calibration"] == report["result"]["calibration"] == calibration
+    assert result["hai_score"] == report["result"]["hai_score"] == (56.3 if calibrated else 12.5)
+    if calibrated:
+        assert report["scale"]["certification_threshold"] == 64

@@ -34,7 +34,7 @@ class EngineResult:
     applied_rule_codes: list[str] = field(default_factory=list)
 
     def canonical(self, *, methodology_version: str, ruleset_version: str, snapshot_sha256: str) -> dict[str, Any]:
-        return {
+        payload = {
             "criteria": {
                 o.criterion.code: {
                     "level": o.state.level,
@@ -55,6 +55,10 @@ class EngineResult:
             "ruleset_version": ruleset_version,
             "snapshot_sha256": snapshot_sha256,
         }
+        # The uncalibrated default preserves the canonical shape of legacy results.
+        if self.state.calibration_multiplier != 1.0:
+            payload["calibration"] = self.state.calibration_snapshot()
+        return payload
 
     def result_hash(self, *, methodology_version: str, ruleset_version: str, snapshot_sha256: str) -> str:
         payload = self.canonical(

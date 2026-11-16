@@ -5,6 +5,26 @@ methodology are versioned separately with semver. A diff tool classifies each
 change (patch, minor, major) and CI refuses a version that did not move far
 enough.
 
+## Ontology 1.3.0, Methodology 4.0.0, Ruleset 3.0.0 (2026-11-16)
+
+Implement the owner's request to make current scores 4 to 5 times more generous
+using a disclosed draft 4.5x calibration of the overall baseline. ADR 0019.
+
+* Multiply the existing aggregate baseline by 4.5, round half up to one decimal,
+  and cap at 100 before other score caps. Zero stays zero and unavailable scores
+  stay unavailable. Pillar scores, maturity, confidence and effectiveness retain
+  their evidence-derived values.
+* Store the baseline, multiplier, calibrated score, ceiling and certification
+  basis in each new result's trace and hash. The API, console and PDF disclose
+  this calibration and identify pillars as baseline values.
+* Certification still requires the baseline to meet the stage threshold along
+  with the existing confidence, evidence and review gates. A calibrated 100
+  alone cannot qualify an organization.
+* Regenerate artifacts and ship version metadata migration
+  `0007_methodology_4.sql`. Historical results stay unchanged; benchmarks and
+  replay remain isolated by version. This is an explicitly requested draft
+  adjustment, not a numeric rule sourced from the public methodology.
+
 ## Ontology 1.3.0, Methodology 3.0.0, Ruleset 2.0.0 (2026-11-16)
 
 Assessment validation against nine November 10 PDF reports, their preliminary
