@@ -94,7 +94,7 @@ WITH latest_results AS (
     JOIN hai.organizations o ON o.id = a.org_id
     WHERE NOT EXISTS (SELECT 1 FROM hai.assessment_results later WHERE later.supersedes_id = r.id)
       AND a.lifecycle_state IN (CAST(:completed AS hai.lifecycle_state), CAST(:unverified AS hai.lifecycle_state))
-    ORDER BY a.org_id, r.created_at DESC, r.id DESC
+    ORDER BY a.org_id, a.created_at DESC, a.id DESC, r.created_at DESC, r.id DESC
 )
 SELECT industry_code AS industry, stage_band::text, size_band::text,
        count(*) AS organizations,
@@ -131,8 +131,9 @@ def industry_benchmarks(
 ) -> list[dict[str, Any]]:
     """Group the latest completed results by cohort, using exactly the supplied version pins.
 
-    Select the organization's latest result before filtering versions or outcomes;
+    Select the organization's newest completed assessment before filtering versions or outcomes;
     never fall back to its older methodology or superseded result to fill a peer group.
+    Late finalization of an older run cannot replace a newer assessment.
     """
     params = {
         "ontology": ontology_version,

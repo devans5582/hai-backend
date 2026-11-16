@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Icon } from "../components/Icon";
@@ -8,6 +8,7 @@ import { api, ApiRequestError, idempotencyKey } from "../lib/api";
 
 export function NewAssessment() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [form, setForm] = useState({ organization_name: "", website: "", stage: "growth", size: "mid", industry: "", direct_urls: "", certification_requested: false });
   const [localErrors, setLocalErrors] = useState<Record<string, string>>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -29,7 +30,11 @@ export function NewAssessment() {
         },
         key,
       ),
-    onSuccess: (a) => navigate(`/assessments/${a.id}`),
+    onSuccess: (a) => {
+      qc.setQueryData(["assessment", a.id], a);
+      navigate(`/assessments/${a.id}`);
+      void qc.invalidateQueries();
+    },
   });
   const err = create.error instanceof ApiRequestError ? create.error : null;
   const fieldErrors = { ...err?.fieldErrors, ...localErrors };

@@ -313,6 +313,7 @@ export interface OrganizationOverview {
   };
   versions: number;
   latest: { id: string; version: number; lifecycle_state: LifecycleState; lifecycle_label: string; certification_requested: boolean; created_at: string | null; finished_at: string | null; version_basis?: ResultVersionBasis } | null;
+  current?: OrganizationOverview["latest"];
   result: { hai_score: number | null; confidence_pct: number | null; outcome_status: OutcomeStatus; outcome_label: string; calibration?: ScoreCalibration | null; version_basis?: ResultVersionBasis } | null;
   previous: { id: string; created_at: string | null; hai_score: number | null; outcome_status: OutcomeStatus | null; calibration?: ScoreCalibration | null; version_basis?: ResultVersionBasis } | null;
   score_delta: number | null;
@@ -321,6 +322,7 @@ export interface OrganizationOverview {
 export interface HistoryEntry {
   version: number;
   is_latest: boolean;
+  is_current?: boolean;
   assessment: { id: string; lifecycle_state: LifecycleState; lifecycle_label: string; created_at: string | null; finished_at: string | null; requested_by: string; methodology_version: string; ruleset_version: string; model_id: string; parent_assessment_id: string | null; certification_requested: boolean };
   result: { hai_score: number | null; confidence_pct: number | null; effectiveness?: number; outcome_status: OutcomeStatus; outcome_label: string; calibration?: ScoreCalibration | null; version_basis?: ResultVersionBasis } | null;
 }
@@ -328,6 +330,7 @@ export interface HistoryEntry {
 export interface OrganizationHistory {
   organization_id: string;
   latest_id: string | null;
+  current_id?: string | null;
   items: HistoryEntry[];
   total: number;
 }

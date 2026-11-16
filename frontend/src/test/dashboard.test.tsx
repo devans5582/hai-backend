@@ -139,7 +139,7 @@ describe("Dashboard folds assessments into organizations", () => {
     localStorage.setItem("hai.apiKey", "hai_test.fake-key");
     const { calls } = dashboardFetch();
     renderWithProviders(<Dashboard />);
-    expect(await screen.findByRole("link", { name: "View latest assessment for Alpha" })).toHaveAttribute("href", "/assessments/latest-alpha.example");
+    expect(await screen.findByRole("link", { name: "View current assessment for Alpha" })).toHaveAttribute("href", "/assessments/latest-alpha.example");
     const table = screen.getByRole("table");
     expect(within(table).getAllByRole("row")).toHaveLength(3); // header + two organizations, not four runs
     const alpha = screen.getByText("alpha.example · Technology").closest("tr") as HTMLElement;
@@ -155,5 +155,29 @@ describe("Dashboard folds assessments into organizations", () => {
     // the grouped view asks the API for the fold; the console does not group runs itself
     expect(calls.some((c) => c.url.startsWith("/v1/organizations/overview?"))).toBe(true);
     expect(calls.some((c) => c.url.startsWith("/v1/assessments?"))).toBe(false);
+  });
+
+  it("keeps the current result and default export while a newer run is processing", async () => {
+    localStorage.setItem("hai.apiKey", "hai_test.fake-key");
+    const completed = overviewRow("Alpha", "alpha.example", 3, "completed_unverified", "Completed (unverified)", 61.5, 4.5);
+    const row = { ...completed, versions: 4, current: completed.latest, latest: { ...completed.latest, id: "pending-alpha", version: 4, lifecycle_state: "queued", lifecycle_label: "Queued" } };
+    const { calls } = mockFetch((url) => {
+      if (url === "/health") return { body: { status: "ok" } };
+      if (url.startsWith("/v1/organizations/overview?")) return { body: { items: [row], total: 1, limit: 50, offset: 0 } };
+      if (url.startsWith("/v1/reviews/tasks?")) return { body: { items: [], total: 0, limit: 50, offset: 0 } };
+      if (url.endsWith("/report.pdf")) return { status: 409, body: { error: { code: "conflict", message: "report unavailable", details: {} } } };
+      return undefined;
+    });
+    renderWithProviders(<Dashboard />);
+    expect(await screen.findByRole("link", { name: "View current assessment for Alpha" })).toHaveAttribute("href", "/assessments/latest-alpha.example");
+    expect(screen.getByRole("link", { name: "New run: Queued" })).toHaveAttribute("href", "/assessments/pending-alpha");
+    const alpha = screen.getByText("alpha.example · Technology").closest("tr") as HTMLElement;
+    expect(within(alpha).getByText("v3")).toBeInTheDocument();
+    expect(within(alpha).getByText("61.5")).toBeInTheDocument();
+    await userEvent.click(within(alpha).getByRole("button", { name: "Export PDF: report for Alpha" }));
+    expect(calls.some((call) => call.url.endsWith("/v1/organizations/org-alpha.example/report.pdf"))).toBe(true);
+    expect(calls.some((call) => call.url.includes("pending-alpha/report.pdf"))).toBe(false);
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search assessments" }), "latest-alpha.example");
+    expect(screen.getByRole("link", { name: "View current assessment for Alpha" })).toHaveAttribute("href", "/assessments/latest-alpha.example");
   });
 });

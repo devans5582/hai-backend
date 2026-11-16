@@ -11,8 +11,12 @@ def test_legacy_scoring_defaults_to_no_calibration(manifest: Manifest) -> None:
     assert Scoring.model_validate(old_scoring).calibration == ScoringCalibration(multiplier=1.0)
 
 
-def test_explicit_calibration_retains_baseline_certification() -> None:
-    assert ScoringCalibration.model_validate({"multiplier": 4.5, "certification_basis": "baseline"}).multiplier == 4.5
+@pytest.mark.parametrize("multiplier", [4.5, 5.0])
+def test_explicit_calibration_retains_baseline_certification(multiplier: float) -> None:
+    assert (
+        ScoringCalibration.model_validate({"multiplier": multiplier, "certification_basis": "baseline"}).multiplier
+        == multiplier
+    )
 
 
 @pytest.mark.parametrize("multiplier", [0, -1, float("inf"), float("-inf"), float("nan")])
@@ -21,6 +25,7 @@ def test_invalid_calibration_multiplier_is_rejected(multiplier: float) -> None:
         ScoringCalibration.model_validate({"multiplier": multiplier})
 
 
-def test_calibration_cannot_change_certification_basis() -> None:
+@pytest.mark.parametrize("multiplier", [4.5, 5.0])
+def test_calibration_cannot_change_certification_basis(multiplier: float) -> None:
     with pytest.raises(ValidationError):
-        ScoringCalibration.model_validate({"multiplier": 4.5, "certification_basis": "calibrated"})
+        ScoringCalibration.model_validate({"multiplier": multiplier, "certification_basis": "calibrated"})

@@ -125,7 +125,7 @@ async def test_report_lists_only_collected_sources(clean_db: Database, manifest:
     assert r.hai_score is not None and 0 < float(r.hai_score) <= 100
     assert isinstance(r.trace, dict)
     calibration = r.trace["calibration"]
-    assert calibration["multiplier"] == 4.5 and calibration["certification_basis"] == "baseline"
+    assert calibration["multiplier"] == 5.0 and calibration["certification_basis"] == "baseline"
     assert calibration["calibrated_score"] == float(r.hai_score)
     assert calibration["baseline_score"] == decision.engine.state.baseline_score
     assert calibration["threshold"] == 70

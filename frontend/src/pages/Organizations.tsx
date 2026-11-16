@@ -150,12 +150,12 @@ export function OrganizationDetail() {
             </div>
             {history.data?.latest_id && (
               <div className="actions">
-                <ExportReportButton organizationId={id} subject={`${org.data.display_name} (latest version)`} primary />
+                <ExportReportButton organizationId={id} subject={`${org.data.display_name} (current result)`} primary />
               </div>
             )}
           </div>
           <section className="card data-table-card" aria-labelledby="org-assessments">
-            <div className="data-table-heading"><div><h2 id="org-assessments">Assessment history</h2><p className="muted small">One organization, every assessment as a numbered version. The latest version is what the dashboard shows; earlier versions stay readable and are never edited.</p></div>{history.data && <span className="count-tag">{history.data.total} version{history.data.total === 1 ? "" : "s"}</span>}</div>
+            <div className="data-table-heading"><div><h2 id="org-assessments">Assessment history</h2><p className="muted small">Each new result replaces the current report when ready. While a new run is processing, the current result stays available. Earlier runs remain in history.</p></div>{history.data && <span className="count-tag">{history.data.total} version{history.data.total === 1 ? "" : "s"}</span>}</div>
             <QueryState isLoading={history.isLoading} error={history.error}>
               {(history.data?.items.length ?? 0) === 0 ? (
                 <div className="empty-state">
@@ -187,8 +187,8 @@ export function OrganizationDetail() {
                 </thead>
                 <tbody>
                   {(history.data?.items ?? []).map((v) => (
-                    <tr key={v.assessment.id} className={v.is_latest ? "row-latest" : ""}>
-                      <td><Link to={`/assessments/${v.assessment.id}`} className="version-link">v{v.version}{v.is_latest && <Badge tone="red">Latest</Badge>}</Link><div className="small muted mono">{v.assessment.id.slice(0, 8)}</div></td>
+                    <tr key={v.assessment.id} className={v.is_current ? "row-latest" : ""}>
+                      <td><Link to={`/assessments/${v.assessment.id}`} className="version-link">v{v.version}{v.is_current ? <Badge tone="red">Current result</Badge> : v.is_latest && <Badge>Latest run</Badge>}</Link><div className="small muted mono">{v.assessment.id.slice(0, 8)}</div></td>
                       <td><Badge tone={toneForLifecycle(v.assessment.lifecycle_state)}>{v.assessment.lifecycle_label}</Badge></td>
                       <td className="numeric-cell">{v.result ? <div className="table-score"><strong>{fmtNum(v.result.hai_score)}</strong><ScoreCalibrationLabel calibration={v.result.calibration} /></div> : <span className="muted">n/a</span>}</td>
                       <td className="outcome-cell">{v.result ? <Badge tone={toneForOutcome(v.result.outcome_status)}>{v.result.outcome_label}</Badge> : <span className="muted small">No result yet</span>}</td>

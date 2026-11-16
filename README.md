@@ -306,7 +306,7 @@ Follow it through the API:
 | `GET /v1/assessments/{id}/result` | score, confidence, outcome status, pillar scores |
 | `GET /v1/assessments/{id}/report` | the full report with criteria, evidence, sources and connector runs |
 | `GET /v1/assessments/{id}/report.pdf` | the same report as a PDF download (cover, evaluation, pillars, verification, certification, evidence appendix) |
-| `GET /v1/organizations/{org_id}/report.pdf` | the PDF of the organization's latest assessment version |
+| `GET /v1/organizations/{org_id}/report.pdf` | the PDF of the organization's current scored assessment |
 | `GET /v1/assessments/{id}/trace/{criterion}` | rule-by-rule trace down to the quoted evidence |
 | `GET /v1/assessments/{id}/connector-runs` | one row per connector, including blocked and failed runs |
 
@@ -402,6 +402,18 @@ After updating this checkout, run `make up` to rebuild the API, worker and
 console. The console proxy refreshes Docker DNS when the API container is
 recreated. Gateway errors show the HTTP status and a support reference that
 matches `X-Request-Id` in the API logs.
+
+Scores use 5x the original evidence baseline, capped at 100. The multiplier
+is stored with each result; refreshing an old assessment does not rescore
+it. Restart both API and worker after a methodology update. For local
+development, apply `make migrate seed` before restarting `make dev`.
+
+Reassess opens the new run immediately. As soon as it has a result, the new
+assessment replaces the organization's current score and default PDF, even
+when human review is still pending. While a new run is queued, or if it
+fails or is cancelled, the previous available score stays current. History
+keeps earlier assessments and their PDFs for audit; older runs finalized
+later cannot replace a newer scored assessment.
 
 When an assessment result has an N/A score, no criteria entered the score.
 Check the assessment's source runs and the explanation beside the score; blocked or unreachable
@@ -507,11 +519,11 @@ Every setting is an environment variable with the `HAI_` prefix;
 ## Status And Ownership
 
 The platform is feature complete for v1 and green on every gate. The
-methodology version is `4.0.0` with status `draft`: the overall score uses a
-disclosed 4.5x calibration, rounded to one decimal and capped at 100. Reports
-retain the baseline score; certification thresholds use that baseline.
-Criterion definitions,
-level descriptors, some weights and the framework crosswalk are placeholders
+methodology version is `5.0.0` with status `draft`: the overall score uses a
+disclosed 5x calibration of the original baseline, rounded to one decimal and
+capped at 100. Reports retain the baseline score; certification thresholds
+use that baseline. Criterion definitions, level descriptors, some weights
+and the framework crosswalk are placeholders
 until Humaital approves them. Nothing is presented as approved content.
 
 Copyright Humaital. Proprietary. The HAI methodology, its criteria, level

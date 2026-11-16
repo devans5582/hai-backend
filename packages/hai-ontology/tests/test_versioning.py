@@ -142,7 +142,7 @@ def test_methodology_weight_change_needs_methodology_major(manifest: Manifest, c
 
 
 def test_score_calibration_change_needs_methodology_major(manifest: Manifest, copy: Path) -> None:
-    _edit(copy / "methodology" / "methodology.yaml", "multiplier: 4.5", "multiplier: 4.0")
+    _edit(copy / "methodology" / "methodology.yaml", "multiplier: 5.0", "multiplier: 4.5")
     changes = diff(manifest, load_manifest(copy))
     assert required_bump(changes, "methodology") is ChangeLevel.MAJOR
     assert required_bump(changes, "ontology") is ChangeLevel.NONE

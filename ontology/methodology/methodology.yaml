@@ -1,4 +1,4 @@
-# Methodology 4.0.0 (draft overall-score calibration requested on 2026-11-16).
+# Methodology 5.0.0 (draft 5x baseline calibration requested on 2026-11-16).
 # Scoring, confidence, certification, outcome,
 # freshness, review triggers and lexicons. Numbers marked "Phase 6" are imported
 # exactly from legacy/express-api; see docs/porting-from-phase6.md for the lines.
@@ -8,11 +8,11 @@
 # (ADR 0016): materiality-weighted pillar means, the published confidence
 # components, evidence in every pillar before certification, pillar status.
 methodology:
-  version: 4.0.0
+  version: 5.0.0
   status: draft
   effective_from: 2026-11-16
   approved_by: null
-  change_record_uri: docs/adr/0019-overall-score-calibration.md
+  change_record_uri: docs/adr/0020-current-assessment-and-fivefold-calibration.md
   product:
     report_name: HAI Score
     long_name: Human Alignment Index
@@ -37,7 +37,7 @@ methodology:
     # User-requested draft calibration: multiply the aggregate baseline, round half up
     # to one decimal and cap at 100. Pillars and certification retain the baseline.
     calibration:
-      multiplier: 4.5
+      multiplier: 5.0
       certification_basis: baseline
     low_confidence_cap:                          # Confidence gates certification, not the alignment score
       confidence_below: 70

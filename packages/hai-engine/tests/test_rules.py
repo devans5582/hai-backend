@@ -647,21 +647,34 @@ def test_all_level_one_scores_zero(manifest: Manifest) -> None:
 
 
 @pytest.mark.parametrize(
-    ("baseline", "expected"),
+    ("multiplier", "baseline", "expected"),
     [
-        (None, None),
-        (0.0, 0.0),
-        (5.3, 23.9),
-        (7.4, 33.3),
-        (7.7, 34.7),
-        (12.5, 56.3),
-        (20.0, 90.0),
-        (25.0, 100.0),
-        (100.0, 100.0),
+        (4.5, None, None),
+        (4.5, 0.0, 0.0),
+        (4.5, 5.3, 23.9),
+        (4.5, 7.4, 33.3),
+        (4.5, 7.7, 34.7),
+        (4.5, 12.5, 56.3),
+        (4.5, 20.0, 90.0),
+        (4.5, 25.0, 100.0),
+        (4.5, 100.0, 100.0),
+        (5.0, None, None),
+        (5.0, 0.0, 0.0),
+        (5.0, 5.3, 26.5),
+        (5.0, 7.4, 37.0),
+        (5.0, 7.7, 38.5),
+        (5.0, 12.5, 62.5),
+        (5.0, 12.7, 63.5),
+        (5.0, 19.9, 99.5),
+        (5.0, 20.0, 100.0),
+        (5.0, 25.0, 100.0),
+        (5.0, 100.0, 100.0),
     ],
 )
-def test_generous_calibration_is_bounded_and_rounds_once(baseline: float | None, expected: float | None) -> None:
-    assert calibrate_score(baseline, 4.5) == expected
+def test_generous_calibration_is_bounded_and_rounds_once(
+    multiplier: float, baseline: float | None, expected: float | None
+) -> None:
+    assert calibrate_score(baseline, multiplier) == expected
 
 
 def test_unavailable_criteria_are_excluded_not_zeroed(manifest: Manifest) -> None:
@@ -770,8 +783,9 @@ def test_assessment_rules_and_outcome_status(manifest: Manifest, engine: RuleEng
     assert st.threshold_applied == 70
 
 
+@pytest.mark.parametrize("multiplier", [4.5, 5.0])
 def test_calibration_preserves_pillars_confidence_effectiveness_and_legacy_hash_shape(
-    manifest: Manifest, engine: RuleEngine
+    manifest: Manifest, engine: RuleEngine, multiplier: float
 ) -> None:
     outcomes = _full_outcomes(manifest, engine)
     unscaled = manifest.model_copy(
@@ -788,7 +802,7 @@ def test_calibration_preserves_pillars_confidence_effectiveness_and_legacy_hash_
             "methodology": manifest.methodology.model_copy(
                 update={
                     "scoring": manifest.methodology.scoring.model_copy(
-                        update={"calibration": ScoringCalibration(multiplier=4.5)}
+                        update={"calibration": ScoringCalibration(multiplier=multiplier)}
                     )
                 }
             )
@@ -806,7 +820,7 @@ def test_calibration_preserves_pillars_confidence_effectiveness_and_legacy_hash_
     baseline = RuleEngine(unscaled).run_assessment(outcomes, **kwargs)
     uplifted = RuleEngine(calibrated).run_assessment(outcomes, **kwargs)
     assert uplifted.state.baseline_score == baseline.state.hai_score
-    assert uplifted.state.hai_score == calibrate_score(baseline.state.hai_score, 4.5)
+    assert uplifted.state.hai_score == calibrate_score(baseline.state.hai_score, multiplier)
     assert uplifted.state.pillar_scores == baseline.state.pillar_scores
     assert uplifted.state.confidence_pct == baseline.state.confidence_pct
     assert uplifted.state.effectiveness == baseline.state.effectiveness
@@ -819,15 +833,16 @@ def test_calibration_preserves_pillars_confidence_effectiveness_and_legacy_hash_
 
 
 @pytest.mark.parametrize(("level", "eligible"), [(2, False), (4, True)])
+@pytest.mark.parametrize("multiplier", [4.5, 5.0])
 def test_calibrated_score_cannot_grant_certification(
-    manifest: Manifest, engine: RuleEngine, level: int, eligible: bool
+    manifest: Manifest, engine: RuleEngine, level: int, eligible: bool, multiplier: float
 ) -> None:
     calibrated = manifest.model_copy(
         update={
             "methodology": manifest.methodology.model_copy(
                 update={
                     "scoring": manifest.methodology.scoring.model_copy(
-                        update={"calibration": ScoringCalibration(multiplier=4.5)}
+                        update={"calibration": ScoringCalibration(multiplier=multiplier)}
                     )
                 }
             )
@@ -875,7 +890,7 @@ def test_calibration_follows_live_pillar_weight_renormalization(manifest: Manife
     )
     # Trust's 25 baseline points have 20/80 of the live pillar weight, then round once.
     assert result.state.baseline_score == 6.2
-    assert result.state.hai_score == 27.9
+    assert result.state.hai_score == 31.0
     assert result.state.pillar_scores["TRU"][0] == 25.0
     assert result.state.pillar_scores["IMP"][2:4] == (0, 4)
     assert result.state.counted_criteria == 16 and result.state.excluded_criteria == 4

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { CoverageStrip, ScoreDial } from "../components/widgets";
 import { AssessmentDetail } from "../pages/AssessmentDetail";
 import { NewAssessment } from "../pages/NewAssessment";
+import { OrganizationDetail } from "../pages/Organizations";
 import { Reviews } from "../pages/Reviews";
 import { Verify } from "../pages/Verify";
 import { mockFetch, renderWithProviders } from "./render";
@@ -73,6 +74,34 @@ describe("ScoreDial and CoverageStrip", () => {
 });
 
 describe("AssessmentDetail", () => {
+  it("opens the new run after reassessment and clears the previous score, tab and export error", async () => {
+    const next = { ...ASSESSMENT, id: "99999999-9999-4999-8999-999999999999", parent_assessment_id: ASSESSMENT.id, lifecycle_state: "queued", lifecycle_label: "Queued" };
+    const { calls } = mockFetch((url, init) => {
+      if (url.endsWith(`/v1/assessments/${ASSESSMENT.id}/reassess`) && init?.method === "POST") return { status: 202, body: next };
+      if (url.endsWith(`/v1/assessments/${ASSESSMENT.id}`)) return { body: ASSESSMENT };
+      if (url.endsWith(`/v1/assessments/${next.id}`)) return { body: next };
+      if (url.endsWith(`/v1/assessments/${ASSESSMENT.id}/report`)) return { body: REPORT };
+      if (url.endsWith(`/v1/assessments/${next.id}/report`)) return { body: { ...REPORT, assessment: { ...REPORT.assessment, id: next.id, lifecycle_state: "queued" }, result: null, pillars: [], criteria: [] } };
+      if (url.endsWith("/report.pdf")) return { status: 409, body: { error: { code: "conflict", message: url.includes(next.id) ? "new report is not ready" : "previous report download failed", details: {} } } };
+      if (url.endsWith("/connector-runs") || url.includes("/v1/reviews/tasks") || url.endsWith("/history")) return { body: { items: [], total: 0, limit: 50, offset: 0 } };
+      return undefined;
+    });
+    renderWithProviders(<AssessmentDetail />, { route: `/assessments/${ASSESSMENT.id}`, path: "/assessments/:id" });
+    expect(await screen.findByRole("img", { name: "HAI Score: 42.5 out of 100" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Export PDF: report for Acme Corp" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("previous report download failed");
+    await userEvent.click(screen.getByRole("tab", { name: "Criteria" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reassess" }));
+    expect(await screen.findByText("Your assessment is in the queue. Evidence collection will begin when a worker is available.")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("img", { name: "HAI Score: n/a out of 100" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "HAI Score: 42.5 out of 100" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/previous report download failed/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Export PDF: report for Acme Corp" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("new report is not ready");
+    expect(calls.some((call) => call.url.endsWith(`/v1/assessments/${next.id}/report.pdf`))).toBe(true);
+  });
+
   it("renders recorded calibration and baseline pillars without recalculating the stored score", async () => {
     mockFetch((url) => {
       if (url.endsWith(`/v1/assessments/${ASSESSMENT.id}`)) return { body: ASSESSMENT };
@@ -164,6 +193,27 @@ describe("NewAssessment", () => {
     const headers = post?.init?.headers as Record<string, string>;
     expect(headers["Idempotency-Key"]).toBeTruthy();
     expect(JSON.parse(String(post?.init?.body))).toMatchObject({ organization_name: "Acme Corp", website: "nodomain", stage: "growth", size: "mid", industry: "technology" });
+  });
+});
+
+describe("OrganizationDetail", () => {
+  it("distinguishes the current result from a newer pending run in history", async () => {
+    const nextId = "99999999-9999-4999-8999-999999999999";
+    mockFetch((url) => {
+      if (url.endsWith(`/v1/organizations/${ASSESSMENT.org_id}`)) return { body: { id: ASSESSMENT.org_id, display_name: "Acme Corp", legal_name: "Acme Corp", primary_domain: "acme.example", industry_code: "technology", identifiers_verified: false, entity_confidence: null } };
+      if (url.endsWith("/history")) return { body: { organization_id: ASSESSMENT.org_id, latest_id: nextId, current_id: ASSESSMENT.id, total: 2, items: [
+        { version: 2, is_latest: true, is_current: false, assessment: { ...ASSESSMENT, id: nextId, lifecycle_state: "queued", lifecycle_label: "Queued", methodology_version: "1.0.0", ruleset_version: "1.0.0" }, result: null },
+        { version: 1, is_latest: false, is_current: true, assessment: { ...ASSESSMENT, methodology_version: "1.0.0", ruleset_version: "1.0.0" }, result: REPORT.result },
+      ] } };
+      if (url.includes("/evidence")) return { body: { items: [], total: 0, limit: 20, offset: 0 } };
+      return undefined;
+    });
+    renderWithProviders(<OrganizationDetail />, { route: `/organizations/${ASSESSMENT.org_id}`, path: "/organizations/:id" });
+    const current = await screen.findByRole("link", { name: /v1\s*Current result/ });
+    expect(current).toHaveAttribute("href", `/assessments/${ASSESSMENT.id}`);
+    expect(screen.getByRole("link", { name: /v2\s*Latest run/ })).toHaveAttribute("href", `/assessments/${nextId}`);
+    expect(screen.getByRole("button", { name: "Export PDF: report for Acme Corp (current result)" })).toBeInTheDocument();
+    expect(screen.getByText(/Each new result replaces the current report when ready/)).toBeInTheDocument();
   });
 });
 

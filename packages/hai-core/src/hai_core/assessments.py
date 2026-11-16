@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Connection
+from sqlalchemy import Connection, text
 
 from hai_core.auth import Principal
 from hai_core.db.store import Store
@@ -38,6 +38,31 @@ JOB_CHAIN: tuple[str, ...] = (
     "decide",
     "finalize",
 )
+
+
+def current_assessment_id(conn: Connection, org_id: UUID) -> UUID | None:
+    """Newest scored run, ordered by when the run started rather than when it finished.
+
+    A pending or failed rerun never hides an available result. Awaiting-review
+    results are available with their review status; original versions stay readable.
+    """
+    row = conn.execute(
+        text(
+            "SELECT a.id FROM hai.assessments a WHERE a.org_id = :org_id "
+            "AND a.lifecycle_state IN (CAST(:review AS hai.lifecycle_state), "
+            "CAST(:unverified AS hai.lifecycle_state), CAST(:completed AS hai.lifecycle_state)) "
+            "AND EXISTS (SELECT 1 FROM hai.assessment_results r WHERE r.assessment_id = a.id "
+            "AND NOT EXISTS (SELECT 1 FROM hai.assessment_results later WHERE later.supersedes_id = r.id)) "
+            "ORDER BY a.created_at DESC, a.id DESC LIMIT 1"
+        ),
+        {
+            "org_id": org_id,
+            "review": LifecycleState.AWAITING_REVIEW.value,
+            "unverified": LifecycleState.COMPLETED_UNVERIFIED.value,
+            "completed": LifecycleState.COMPLETED.value,
+        },
+    ).first()
+    return UUID(str(row[0])) if row is not None else None
 
 
 @dataclass

@@ -5,6 +5,25 @@ methodology are versioned separately with semver. A diff tool classifies each
 change (patch, minor, major) and CI refuses a version that did not move far
 enough.
 
+## Ontology 1.3.0, Methodology 5.0.0, Ruleset 4.0.0 (2026-11-16)
+
+Increase the draft overall calibration from 4.5x to 5x of the original
+baseline, as clarified by the owner. ADR 0020.
+
+* Keep half-up rounding, the 100-point ceiling and stored baseline disclosure.
+  For the same baseline, 12.7 becomes 63.5. Certification, pillar scores,
+  confidence and evidence requirements retain their baseline basis.
+* New scored runs become the organization's current result and default report,
+  including runs awaiting review. Pending, failed or cancelled runs do not hide
+  an available result. A late finalization of an older assessment cannot
+  replace a newer scored assessment. Earlier records remain in audit history.
+* Reassess navigates to the newly created assessment, so its result and PDF
+  replace the previous run on screen. Benchmarks and operational result views
+  use consistent assessment ordering and compatible methodology versions.
+* Ship metadata migration `0008_methodology_5.sql` and operational view
+  correction `0009_current_assessment_results.sql`. Earlier stored scores
+  remain unchanged; new assessments use the new manifest pins.
+
 ## Ontology 1.3.0, Methodology 4.0.0, Ruleset 3.0.0 (2026-11-16)
 
 Implement the owner's request to make current scores 4 to 5 times more generous

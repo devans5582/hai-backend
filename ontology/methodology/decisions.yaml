@@ -29,6 +29,8 @@ decisions:
       capped at 100, as requested on 2026-11-16. Pillar scores remain the baseline;
       reports disclose both the baseline aggregate and multiplier. This calibration
       does not increase evidence confidence, maturity levels or certification eligibility.
+      Methodology 5.0.0 increases the multiplier to 5.0, as clarified by the owner:
+      five times the original baseline, not five times an already calibrated score.
     configured_in: ontology/methodology/methodology.yaml scoring.pillar_aggregation
 
   - id: D3

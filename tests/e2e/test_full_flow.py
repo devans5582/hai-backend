@@ -136,7 +136,7 @@ async def test_full_assessment_lifecycle(
     assert runs["total"] == 9 and all(r["outcome"] == "succeeded" for r in runs["items"])
     result = client.get(f"/v1/assessments/{aid}/result", headers=partner).json()
     assert result["hai_score"] is not None and 0 < result["hai_score"] <= 100
-    assert result["calibration"]["multiplier"] == 4.5
+    assert result["calibration"]["multiplier"] == 5.0
     assert result["calibration"]["calibrated_score"] == result["hai_score"]
     assert result["calibration"]["certification_basis"] == "baseline"
     assert result["outcome_status"] in ("certification_not_yet_achieved", "confidence_too_low")

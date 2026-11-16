@@ -40,7 +40,7 @@ export function Dashboard() {
 
   const rows = overview.data?.items ?? [];
   const filteredRows = rows.filter((row) => {
-    const text = `${row.organization.display_name} ${row.organization.primary_domain} ${row.latest?.id ?? ""}`.toLowerCase();
+    const text = `${row.organization.display_name} ${row.organization.primary_domain} ${row.latest?.id ?? ""} ${row.current?.id ?? ""}`.toLowerCase();
     return text.includes(needle) && (!row.latest || matches(filter, row.latest.lifecycle_state));
   });
   const items = assessments.data?.items ?? [];
@@ -53,7 +53,7 @@ export function Dashboard() {
   const shown = grouped ? filteredRows.length : filteredRuns.length;
   const pageSize = grouped ? rows.length : items.length;
   const stats: { label: string; value: string | number; detail: string; icon: IconName; color: string; to?: string }[] = [
-    { label: grouped ? "Organizations assessed" : "Assessment runs", value: available ? total : "—", detail: grouped ? "Latest assessment for each organization" : "Every run, including earlier versions", icon: grouped ? "building" : "file", color: "red" },
+    { label: grouped ? "Organizations assessed" : "Assessment runs", value: available ? total : "—", detail: grouped ? "Current result for each organization" : "Every run, including earlier versions", icon: grouped ? "building" : "file", color: "red" },
     { label: "In progress", value: available ? inProgress : "—", detail: grouped ? "Running in the current page" : "In the current 50 runs", icon: "clock", color: "amber" },
     { label: "Awaiting review", value: tasks.data && !tasks.error ? tasks.data.total : "—", detail: tasks.error ? "Review queue unavailable" : "Open tasks in the review queue", icon: "reviews", color: "blue", to: "/reviews" },
     { label: "Platform status", value: health.data ? (health.data.status === "ok" ? "Operational" : health.data.status) : health.error ? "Unavailable" : "Checking", detail: health.data ? "Connected to the HAI API" : health.error ? "Unable to reach the HAI API" : "Checking the HAI API", icon: "activity", color: health.data?.status === "ok" ? "green" : "neutral" },
@@ -73,7 +73,7 @@ export function Dashboard() {
       <div className="stats-grid">{stats.map((stat) => <div className="card stat" key={stat.label}><div className="stat-top"><span>{stat.label}</span><span className={`stat-icon ${stat.color}`}><Icon name={stat.icon} /></span></div><span className={`value ${stat.label === "Platform status" ? "status-value" : ""}`}>{stat.label === "Platform status" && <span className={`status-dot ${health.data?.status === "ok" ? "ok" : ""}`} />}{stat.value}</span><span className="stat-detail">{stat.to ? <Link to={stat.to}>{stat.detail}<Icon name="arrow-right" /></Link> : stat.detail}</span></div>)}</div>
       <div className="dashboard-columns">
         <section className="card assessments-card" aria-labelledby="recent">
-          <div className="card-heading"><div><h2 id="recent">{grouped ? "Organizations" : "Assessment runs"}<span className="count-tag">{available ? total : "—"}</span></h2><p className="muted small">{grouped ? "Latest results at a glance. Open an organization to explore its assessment history." : "All assessment versions, with the most recent first."}</p></div>{available && <span className="live-label"><span className="status-dot" />Auto-updating</span>}</div>
+          <div className="card-heading"><div><h2 id="recent">{grouped ? "Organizations" : "Assessment runs"}<span className="count-tag">{available ? total : "—"}</span></h2><p className="muted small">{grouped ? "Current results at a glance. A new result replaces the previous one when ready." : "All assessment versions, with the most recent first."}</p></div>{available && <span className="live-label"><span className="status-dot" />Auto-updating</span>}</div>
           <div className="assessment-toolbar">
             <div className="assessment-controls">
               <div className="search-input">
@@ -94,7 +94,7 @@ export function Dashboard() {
             {shown === 0 ? <div className="empty-state"><span className="empty-icon"><Icon name={pageSize ? "search" : "file"} /></span><h3>{emptyTitle}</h3><p>{emptyBody}</p>{pageSize ? <button type="button" onClick={() => { setSearch(""); setFilter("all"); }}>Clear filters</button> : canStart ? <Link className="btn primary" to="/assessments/new"><Icon name="plus" />New assessment</Link> : null}</div> : grouped ? (
               <div className="table-wrap assessment-table-wrap" role="region" aria-label="Organization assessments" tabIndex={0}>
                 <table className="data-table overview-table">
-                  <caption className="sr-only">Latest assessment by organization</caption>
+                  <caption className="sr-only">Current assessment by organization</caption>
                   <colgroup>
                     <col className="organization-column" />
                     <col className="version-column" />
@@ -116,7 +116,9 @@ export function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRows.map((row) => (
+                    {filteredRows.map((row) => {
+                      const displayed = row.current ?? row.latest;
+                      return (
                       <tr key={row.organization.id}>
                         <td>
                           <Link className="assessment-name" to={`/organizations/${row.organization.id}`}>
@@ -127,8 +129,8 @@ export function Dashboard() {
                             </span>
                           </Link>
                         </td>
-                        <td>{row.latest ? <span className="version-pill" title={`${row.versions} assessment${row.versions === 1 ? "" : "s"} of this organization`}>v{row.latest.version}<small>of {row.versions}</small></span> : <span className="table-placeholder">Not assessed</span>}</td>
-                        <td className="status-cell">{row.latest ? <Badge tone={toneForLifecycle(row.latest.lifecycle_state)}>{row.latest.lifecycle_label}</Badge> : <span className="table-placeholder">—</span>}</td>
+                        <td>{displayed ? <span className="version-pill" title={`${row.versions} assessment${row.versions === 1 ? "" : "s"} of this organization`}>v{displayed.version}<small>of {row.versions}</small></span> : <span className="table-placeholder">Not assessed</span>}</td>
+                        <td className="status-cell">{displayed ? <><Badge tone={toneForLifecycle(displayed.lifecycle_state)}>{displayed.lifecycle_label}</Badge>{row.latest && row.latest.id !== displayed.id && <Link className="small muted" to={`/assessments/${row.latest.id}`}>New run: {row.latest.lifecycle_label}</Link>}</> : <span className="table-placeholder">—</span>}</td>
                         <td className="numeric-cell">
                           {row.result ? (
                             <div className="table-score">
@@ -139,10 +141,11 @@ export function Dashboard() {
                           ) : <span className="table-placeholder">n/a</span>}
                         </td>
                         <td className="outcome-cell">{row.result ? <Badge tone={toneForOutcome(row.result.outcome_status)}>{row.result.outcome_label}</Badge> : <span className="table-placeholder">{row.latest ? "No result yet" : "—"}</span>}</td>
-                        <td><TableDate value={row.latest?.created_at} /></td>
-                        <td className="action-cell">{row.latest && <span className="row-actions"><ExportReportButton assessmentId={row.latest.id} subject={row.organization.display_name} compact /><Link className="icon-button table-row-action" to={`/assessments/${row.latest.id}`} aria-label={`View latest assessment for ${row.organization.display_name}`}><Icon name="arrow-right" /></Link></span>}</td>
+                        <td><TableDate value={displayed?.created_at} /></td>
+                        <td className="action-cell">{displayed && <span className="row-actions"><ExportReportButton organizationId={row.organization.id} subject={row.organization.display_name} compact /><Link className="icon-button table-row-action" to={`/assessments/${displayed.id}`} aria-label={`View current assessment for ${row.organization.display_name}`}><Icon name="arrow-right" /></Link></span>}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

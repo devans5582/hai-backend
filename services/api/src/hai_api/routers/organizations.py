@@ -12,9 +12,10 @@ from hai_api.auth import require
 from hai_api.deps import State
 from hai_api.routers.assessments import assessment_out, report_pdf_response
 from hai_api.schemas import MonitoringCreate, OrganizationOut, Page
+from hai_core.assessments import current_assessment_id
 from hai_core.auth import Principal, Scope
 from hai_core.errors import NotFoundError, ValidationFailedError
-from hai_core.generated.enums import LABELS
+from hai_core.generated.enums import LABELS, LifecycleState
 from hai_core.generated.models import Assessment, Organization
 from hai_core.monitoring import list_subscriptions, register_upload, subscribe
 from hai_core.visibility import require_visible_organization, restriction, visible_organization_ids
@@ -98,27 +99,47 @@ runs AS (
            count(*) OVER (PARTITION BY a.org_id) AS versions
     FROM hai.assessments a WHERE a.org_id IN (SELECT id FROM visible)
 ),
-latest AS (SELECT DISTINCT ON (org_id) * FROM runs ORDER BY org_id, created_at DESC, id DESC),
-previous AS (SELECT DISTINCT ON (r.org_id) r.* FROM runs r JOIN latest l ON l.org_id = r.org_id AND r.id <> l.id ORDER BY r.org_id, r.created_at DESC, r.id DESC),
 results AS (
     SELECT DISTINCT ON (res.assessment_id) res.assessment_id, res.hai_score, res.confidence_pct, res.outcome_status::text,
            res.trace
     FROM hai.assessment_results res
     WHERE NOT EXISTS (SELECT 1 FROM hai.assessment_results later WHERE later.supersedes_id = res.id)
-    ORDER BY res.assessment_id, res.created_at DESC
+    ORDER BY res.assessment_id, res.created_at DESC, res.id DESC
+),
+latest AS (SELECT DISTINCT ON (org_id) * FROM runs ORDER BY org_id, created_at DESC, id DESC),
+current_run AS (
+    SELECT DISTINCT ON (r.org_id) r.* FROM runs r JOIN results res ON res.assessment_id = r.id
+    WHERE r.lifecycle_state IN (:review, :unverified, :completed)
+    ORDER BY r.org_id, r.created_at DESC, r.id DESC
+),
+previous AS (
+    SELECT DISTINCT ON (r.org_id) r.* FROM runs r
+    JOIN latest l ON l.org_id = r.org_id
+    LEFT JOIN current_run c ON c.org_id = r.org_id
+    LEFT JOIN results res ON res.assessment_id = r.id
+    WHERE (c.id IS NOT NULL AND (r.created_at, r.id) < (c.created_at, c.id)
+           AND res.assessment_id IS NOT NULL AND r.lifecycle_state IN (:review, :unverified, :completed))
+       OR (c.id IS NULL AND r.id <> l.id)
+    ORDER BY r.org_id, r.created_at DESC, r.id DESC
 )
 SELECT o.id AS org_id, o.display_name, o.legal_name, o.primary_domain, o.industry_code, o.stage_band::text, o.size_band::text,
        o.identifiers_verified, o.created_at AS org_created_at,
        l.id AS latest_id, l.lifecycle_state, l.created_at AS latest_created_at, l.finished_at AS latest_finished_at,
        l.version, l.versions, l.certification_requested, l.ontology_version, l.methodology_version, l.ruleset_version,
-       lr.hai_score, lr.confidence_pct, lr.outcome_status, lr.trace,
+       c.id AS current_id, c.version AS current_version, c.lifecycle_state AS current_lifecycle_state,
+       c.created_at AS current_created_at, c.finished_at AS current_finished_at,
+       c.certification_requested AS current_certification_requested,
+       c.ontology_version AS current_ontology_version, c.methodology_version AS current_methodology_version,
+       c.ruleset_version AS current_ruleset_version,
+       cr.hai_score, cr.confidence_pct, cr.outcome_status, cr.trace,
        p.id AS previous_id, p.created_at AS previous_created_at, pr.hai_score AS previous_score, pr.outcome_status AS previous_outcome,
        p.ontology_version AS previous_ontology_version, p.methodology_version AS previous_methodology_version,
        p.ruleset_version AS previous_ruleset_version, pr.trace AS previous_trace
 FROM hai.organizations o
 JOIN visible v ON v.id = o.id
 LEFT JOIN latest l ON l.org_id = o.id
-LEFT JOIN results lr ON lr.assessment_id = l.id
+LEFT JOIN current_run c ON c.org_id = o.id
+LEFT JOIN results cr ON cr.assessment_id = c.id
 LEFT JOIN previous p ON p.org_id = o.id
 LEFT JOIN results pr ON pr.assessment_id = p.id
 WHERE (NOT CAST(:assessed_only AS boolean) OR l.id IS NOT NULL)
@@ -159,7 +180,7 @@ def _version_basis(row: Any, prefix: str = "") -> dict[str, str] | None:
     return {key: str(row[prefix + key]) for key in keys}
 
 
-def _result_summary(row: Any) -> dict[str, Any] | None:
+def _result_summary(row: Any, version_prefix: str = "") -> dict[str, Any] | None:
     if row["outcome_status"] is None:
         return None
     return {
@@ -168,7 +189,7 @@ def _result_summary(row: Any) -> dict[str, Any] | None:
         "outcome_status": row["outcome_status"],
         "outcome_label": LABELS["outcome_status"][row["outcome_status"]],
         "calibration": score_calibration_from_trace(row["trace"]),
-        "version_basis": _version_basis(row),
+        "version_basis": _version_basis(row, version_prefix),
     }
 
 
@@ -183,7 +204,7 @@ def _history_result(row: Any) -> dict[str, Any] | None:
 
 @router.get(
     "/organizations/overview",
-    summary="One row per organization: the latest assessment version, its result, the version count and the previous score",
+    summary="One row per organization: current result, latest run, version count and previous available score",
 )
 def organizations_overview(
     st: State,
@@ -200,6 +221,9 @@ def organizations_overview(
         "assessed_only": assessed_only,
         "l": limit,
         "off": offset,
+        "review": LifecycleState.AWAITING_REVIEW.value,
+        "unverified": LifecycleState.COMPLETED_UNVERIFIED.value,
+        "completed": LifecycleState.COMPLETED.value,
     }
     with st.read(principal) as (conn, _):
         rows = conn.execute(text(OVERVIEW_SQL.format(restriction=clause)), params).mappings().all()
@@ -220,6 +244,20 @@ def organizations_overview(
             if r["latest_id"]
             else None
         )
+        current = (
+            {
+                "id": str(r["current_id"]),
+                "version": int(r["current_version"]),
+                "lifecycle_state": r["current_lifecycle_state"],
+                "lifecycle_label": LABELS["lifecycle_state"][r["current_lifecycle_state"]],
+                "certification_requested": bool(r["current_certification_requested"]),
+                "created_at": r["current_created_at"].isoformat() if r["current_created_at"] else None,
+                "finished_at": r["current_finished_at"].isoformat() if r["current_finished_at"] else None,
+                "version_basis": _version_basis(r, "current_"),
+            }
+            if r["current_id"]
+            else None
+        )
         previous = (
             {
                 "id": str(r["previous_id"]),
@@ -234,7 +272,7 @@ def organizations_overview(
         )
         score = float(r["hai_score"]) if r["hai_score"] is not None else None
         prev_score = previous["hai_score"] if previous else None
-        comparable = bool(latest and previous and latest["version_basis"] == previous["version_basis"])
+        comparable = bool(current and previous and current["version_basis"] == previous["version_basis"])
         items.append(
             {
                 "organization": {
@@ -252,7 +290,8 @@ def organizations_overview(
                 },
                 "versions": int(r["versions"]) if r["versions"] is not None else 0,
                 "latest": latest,
-                "result": _result_summary(r),
+                "current": current,
+                "result": _result_summary(r, "current_"),
                 "previous": previous,
                 "score_delta": round(score - prev_score, 1)
                 if comparable and score is not None and prev_score is not None
@@ -269,10 +308,12 @@ def organization_history(org_id: UUID, st: State, principal: Reader) -> dict[str
     with st.read(principal) as (conn, store):
         require_visible_organization(store, principal, org_id)
         rows = conn.execute(text(HISTORY_SQL), {"o": org_id}).mappings().all()
+        current_id = current_assessment_id(conn, org_id)
     items = [
         {
             "version": int(r["version"]),
             "is_latest": i == 0,
+            "is_current": r["id"] == current_id,
             "assessment": {
                 "id": str(r["id"]),
                 "lifecycle_state": r["lifecycle_state"],
@@ -294,6 +335,7 @@ def organization_history(org_id: UUID, st: State, principal: Reader) -> dict[str
     return {
         "organization_id": str(org_id),
         "latest_id": str(rows[0]["id"]) if rows else None,
+        "current_id": str(current_id) if current_id else None,
         "items": items,
         "total": len(items),
         "limit": len(items) or 1,
@@ -303,17 +345,22 @@ def organization_history(org_id: UUID, st: State, principal: Reader) -> dict[str
 
 @router.get(
     "/organizations/{org_id}/report.pdf",
-    summary="The PDF report of the organization's latest assessment version",
+    summary="The PDF report of the organization's current result, or latest run before any result exists",
     response_class=Response,
     responses={200: {"content": {"application/pdf": {}}}},
 )
 def organization_report_pdf(org_id: UUID, st: State, principal: Reader) -> Response:
     with st.read(principal) as (conn, store):
         require_visible_organization(store, principal, org_id)
-        latest = store.find(Assessment, where={"org_id": org_id}, order_by="created_at", descending=True, limit=1)
-        if not latest:
+        selected_id = current_assessment_id(conn, org_id)
+        if selected_id is None:
+            selected_id = conn.execute(
+                text("SELECT id FROM hai.assessments WHERE org_id = :o ORDER BY created_at DESC, id DESC LIMIT 1"),
+                {"o": org_id},
+            ).scalar_one_or_none()
+        if selected_id is None:
             raise NotFoundError(f"organization {org_id} has no assessment yet")
-        report = build_report(conn, store, st.manifest, latest[0].id)
+        report = build_report(conn, store, st.manifest, UUID(str(selected_id)))
     return report_pdf_response(st, report)
 
 

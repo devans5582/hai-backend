@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ExportReportButton } from "../components/ExportReportButton";
 import { Icon } from "../components/Icon";
 import { ScoreCalibrationNote } from "../components/ScoreCalibrationNote";
@@ -22,6 +22,11 @@ const PROCESSING_HELP: Partial<Record<Assessment["lifecycle_state"], string>> = 
 
 export function AssessmentDetail() {
   const { id = "" } = useParams();
+  return <AssessmentDetailContent key={id} id={id} />;
+}
+
+function AssessmentDetailContent({ id }: { id: string }) {
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const { reviewer } = useAuth();
   const [tab, setTab] = useState<Tab>("overview");
@@ -30,11 +35,15 @@ export function AssessmentDetail() {
   const report = useQuery({ queryKey: ["report", id, assessment.data?.lifecycle_state], queryFn: () => api.getReport(id), enabled: !!assessment.data });
   const runs = useQuery({ queryKey: ["runs", id, assessment.data?.lifecycle_state], queryFn: () => api.getConnectorRuns(id), enabled: !!assessment.data });
   const tasks = useQuery({ queryKey: ["tasks", id], queryFn: () => api.listTasks({ status: "all", assessment_id: id }), enabled: !!assessment.data });
-  const history = useQuery({ queryKey: ["org-history", assessment.data?.org_id], queryFn: () => api.organizationHistory(assessment.data!.org_id), enabled: !!assessment.data });
+  const history = useQuery({ queryKey: ["org-history", assessment.data?.org_id, assessment.data?.lifecycle_state], queryFn: () => api.organizationHistory(assessment.data!.org_id), enabled: !!assessment.data });
   const version = history.data?.items.find((v) => v.assessment.id === id) ?? null;
   const invalidate = () => qc.invalidateQueries();
   const cancel = useMutation({ mutationFn: () => api.cancelAssessment(id), onSuccess: invalidate });
-  const reassess = useMutation({ mutationFn: () => api.reassess(id), onSuccess: invalidate });
+  const reassess = useMutation({ mutationFn: () => api.reassess(id), onSuccess: (next) => {
+    qc.setQueryData(["assessment", next.id], next);
+    navigate(`/assessments/${next.id}`);
+    void invalidate();
+  } });
   const requestCert = useMutation({ mutationFn: () => api.requestCertification(id), onSuccess: invalidate });
   const a = assessment.data;
   const r = report.data;
@@ -89,6 +98,11 @@ export function AssessmentDetail() {
           {version && !version.is_latest && history.data?.latest_id && (
             <div className="alert info" role="status">
               This is version {version.version}; a newer assessment of this organization exists. <Link to={`/assessments/${history.data.latest_id}`}>Open the latest version</Link>.
+            </div>
+          )}
+          {history.data?.current_id && history.data.current_id !== id && (
+            <div className="alert info" role="status">
+              This organization's current result is from another run. <Link to={`/assessments/${history.data.current_id}`}>Open the current result</Link>.
             </div>
           )}
           {a.failure_reason && (
