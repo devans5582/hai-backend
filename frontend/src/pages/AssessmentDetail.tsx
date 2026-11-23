@@ -203,7 +203,7 @@ function AssessmentDetailContent({ id }: { id: string }) {
                 <div className="card" style={{ gridColumn: "1 / -1" }}>
                   <h2>Coverage</h2>
                   <p className="muted small">Select a criterion to explore its evidence and the rules behind its result. Each tile shows the stored coverage state and level.</p>
-                  <CoverageStrip cells={r.criteria.map((c) => ({ code: c.code, name: c.name, coverage_state: c.coverage_state, level: c.level }))} onSelect={setTraceCode} />
+                  <CoverageStrip cells={r.criteria.map((c) => ({ code: c.code, name: c.name, coverage_state: c.coverage_state, level: c.level, level_label: c.level_label }))} onSelect={setTraceCode} />
                   <p className="muted small" style={{ marginTop: "0.5rem" }}>
                     {Object.entries(r.coverage_summary)
                       .filter(([, n]) => n > 0)
@@ -266,7 +266,7 @@ function AssessmentDetailContent({ id }: { id: string }) {
                           {c.name} {c.review_required && <Badge tone="warn">Review</Badge>}
                           <div className="small muted">{c.coverage_wording}</div>
                         </td>
-                        <td>{c.level ?? "n/a"}</td>
+                        <td>{c.level_label ?? c.level ?? "n/a"}</td>
                         <td>{label("coverage_state", c.coverage_state)}</td>
                         <td>{c.confidence === null ? "n/a" : fmtNum(c.confidence)}</td>
                         <td>{c.evidence.filter((e) => e.admissibility === "admissible").length} admissible</td>

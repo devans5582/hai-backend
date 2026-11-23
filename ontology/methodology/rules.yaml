@@ -1,10 +1,10 @@
-# Ruleset 5.0.0. Rules are data; implementations are pure Python functions in
+# Ruleset 6.0.0. Rules are data; implementations are pure Python functions in
 # hai_engine.rules.builtin registered under the same code. The validator refuses
 # an expression_ref that does not resolve to a function registered under the code.
 # Criterion-scope rules run in run_order for every criterion; assessment-scope
 # rules run once afterwards. Every run is recorded in the decision trace (IC-14).
 ruleset:
-  version: 5.0.0
+  version: 6.0.0
   rules:
     # --------------------------------------------------------------- criterion
     - code: GATE-APPLICABILITY
@@ -84,6 +84,20 @@ ruleset:
       run_order: 80
       expression_ref: hai_engine.rules.builtin:adj_incidents
       description: Apply each substantiated incident's severity effect once, on its most material criterion only (IC-10).
+      parameters: {}
+    - code: ADJ-AI-SPECIFIC
+      kind: adjustment
+      scope: criterion
+      run_order: 85
+      expression_ref: hai_engine.rules.builtin:adj_ai_specific
+      description: "Add scoring.ai_specific.level_progress of a level when the level is the one the evidence ladder set and the rung behind it is carried by enough separate passages about AI being governed, built or used (decision D18). General corporate governance earns the level; AI-specific evidence earns the part above it."
+      parameters: {}
+    - code: ADJ-STAGE-EXPECTATIONS
+      kind: adjustment
+      scope: criterion
+      run_order: 86
+      expression_ref: hai_engine.rules.builtin:adj_stage_expectations
+      description: "Add scoring.stage_expectations.level_progress for the organization's stage band to every criterion that has admissible supporting evidence (decision D17). Formal controls are not expected of an early-stage organization; a whole level of accumulated credit raises the level."
       parameters: {}
     - code: CONF-EVIDENCE
       kind: confidence

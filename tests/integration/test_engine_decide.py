@@ -133,6 +133,23 @@ async def test_report_lists_only_collected_sources(clean_db: Database, manifest:
     assert calibration["threshold"] == 70
     assert decision.engine.state.baseline_score == float(r.hai_score)
     assert len(decision.decisions) == 20 and len(decision.pillar_scores) == 6
+    # methodology 7.0.0: the classifier's AI flag is stored on the link, frozen in the snapshot and
+    # read back by the engine; the part of a level a decision earned is stored with it.
+    with clean_db.connect() as conn:
+        flagged = conn.execute(text("SELECT count(*) FROM hai.evidence_links WHERE ai_specific")).scalar_one()
+        stored_progress = {
+            str(code): float(progress)
+            for code, progress in conn.execute(
+                text(
+                    "SELECT criterion_code::text, level_progress FROM hai.criterion_decisions WHERE assessment_id = :a"
+                ),
+                {"a": assessment_id},
+            )
+        }
+    assert flagged > 0
+    frozen = sum(link.ai_specific for outcome in decision.engine.criteria for link in outcome.context.links)
+    assert frozen > 0
+    assert stored_progress == {o.criterion.code: round(o.state.level_progress, 2) for o in decision.engine.criteria}
     by_code = {str(d.criterion_code.value): d for d in decision.decisions}
     assert (
         by_code["SAF-01"].level is not None and by_code["SAF-01"].level >= 3

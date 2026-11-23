@@ -50,9 +50,11 @@ def calibrate_score(baseline: float | None, multiplier: float) -> float | None:
     return float(bounded.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
 
 
-def criterion_ratio(level: int, methodology: Methodology) -> float:
+def criterion_ratio(level: int, methodology: Methodology, progress: float = 0.0) -> float:
+    """The share of the scale a level earns; ``progress`` is the part of the next level earned."""
     lo, hi = methodology.scoring.level_min, methodology.scoring.level_max
-    return (max(lo, min(hi, level)) - lo) / (hi - lo)
+    reached = max(lo, min(hi, level)) + max(0.0, min(progress, 1.0))
+    return (min(float(hi), reached) - lo) / (hi - lo)
 
 
 def maturity_status_for(ranks: list[int]) -> str | None:
@@ -110,7 +112,7 @@ def aggregate(
                 excluded += 1
                 continue
             w = crit.weight * (crit.materiality_weight if weighted else 1.0)
-            ratio_sum += criterion_ratio(state.level, methodology) * w
+            ratio_sum += criterion_ratio(state.level, methodology, state.level_progress) * w
             weight_sum += w
             conf_sum += state.confidence * crit.materiality_weight
             conf_w += crit.materiality_weight

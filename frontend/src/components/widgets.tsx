@@ -51,6 +51,7 @@ export interface CoverageCell {
   name: string;
   coverage_state: CoverageState | null;
   level: number | null;
+  level_label?: string | null;
 }
 
 export function CoverageStrip({ cells, onSelect }: { cells: CoverageCell[]; onSelect?: (code: string) => void }) {
@@ -59,11 +60,11 @@ export function CoverageStrip({ cells, onSelect }: { cells: CoverageCell[]; onSe
       <div className="strip coverage-grid" role="list" aria-label="Coverage by criterion">
         {cells.map((c) => {
           const state = c.coverage_state ?? "missing";
-          const text = `${c.code} ${c.name}: ${LABELS["coverage_state"]?.[state] ?? state}${c.level !== null ? `, level ${c.level}` : ""}`;
+          const text = `${c.code} ${c.name}: ${LABELS["coverage_state"]?.[state] ?? state}${c.level !== null ? `, level ${c.level_label ?? c.level}` : ""}`;
           return (
             <button key={c.code} type="button" className={`cell coverage-cell cov-${state}`} role="listitem" title={text} aria-label={text} onClick={() => onSelect?.(c.code)}>
               <span className="coverage-code" aria-hidden="true">{c.code}</span>
-              <span className="coverage-level" aria-hidden="true">{c.level === null ? "—" : `L${c.level}`}</span>
+              <span className="coverage-level" aria-hidden="true">{c.level === null ? "—" : `L${c.level_label ?? c.level}`}</span>
             </button>
           );
         })}

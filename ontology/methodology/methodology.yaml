@@ -1,4 +1,4 @@
-# Methodology 6.0.0 (draft evidence calibration of 2026-11-22, ADR 0021).
+# Methodology 7.0.0 (draft calibration of 2026-11-23 against Humaital's published v3.0 text, ADR 0022).
 # Scoring, confidence, certification, outcome,
 # freshness, review triggers and lexicons. Numbers marked "Phase 6" are imported
 # exactly from legacy/express-api; see docs/porting-from-phase6.md for the lines.
@@ -11,12 +11,18 @@
 # evidence-derived aggregate. What changed instead is what the pipeline can find
 # and recognise as evidence (broader retrieval vocabulary, guards on the control
 # and execution rungs, AI context for the upper rungs, corroboration).
+# 7.0.0 adds two part-level credits read from Humaital's published HAI Methodology v3.0
+# (humaital.com/rating-scoring): stage-appropriate expectations for an early-stage
+# organization and evidence that is specifically about AI. It also counts the
+# organization's own name as an accountable owner, requires the AI reference to stand
+# beside the evidence it qualifies, and keeps research findings and financial results
+# out of the execution rung.
 methodology:
-  version: 6.0.0
+  version: 7.0.0
   status: draft
-  effective_from: 2026-11-22
+  effective_from: 2026-11-23
   approved_by: null
-  change_record_uri: docs/adr/0021-evidence-calibration-against-expected-ranges.md
+  change_record_uri: docs/adr/0022-stage-expectations-and-ai-specific-evidence.md
   product:
     report_name: HAI Score
     long_name: Human Alignment Index
@@ -25,7 +31,7 @@ methodology:
   scoring:
     level_min: 1
     level_max: 5
-    criterion_ratio: "(level - 1) / 4"         # Phase 6 report-generator.js:1250
+    criterion_ratio: "(level - 1 + level_progress) / 4"   # Phase 6 report-generator.js:1250; level_progress since 7.0.0
     pillar_aggregation: materiality_weighted     # D2: equal_mean | materiality_weighted. HAI Report: pillar scores are materiality-weighted means
     # Pillar weights by stage band. mode fixed uses pillars.yaml for everyone; mode stage_profile
     # uses the matching profile and falls back to pillars.yaml. The mature profile is read from the
@@ -48,6 +54,23 @@ methodology:
     # passages carry it. One sentence can match a lexicon by accident.
     corroboration:
       min_passages: { specified_control: 2, documented_execution: 2 }
+    # 7.0.0 (draft, decision D17): stage-appropriate expectations. HAI Methodology v3.0, "Stage-Adjusted
+    # Scoring": an early-stage organization is evaluated on "foundational purpose clarity, basic safety
+    # practices, and stated accountability ownership. Formal controls infrastructure is not expected but
+    # early design decisions are weighted heavily." It is credited half a level on every criterion it
+    # gives admissible evidence for. Growth and mature organizations are expected to document and
+    # operate controls: no credit.
+    stage_expectations:
+      content_status: draft
+      level_progress: { early: 0.5 }
+    # 7.0.0 (draft, decision D18): the published evidence tiers describe "an organization's position on
+    # responsible AI". Ordinary corporate governance still earns the level; a rung carried by two
+    # separate passages about AI being governed, built or used earns half of the next level.
+    ai_specific:
+      content_status: draft
+      level_progress: 0.5
+      rungs: [stated_commitment, specified_control]
+      min_passages: 2
     low_confidence_cap:                          # Confidence gates certification, not the alignment score
       confidence_below: 70
       cap: 100
@@ -226,14 +249,21 @@ methodology:
       terms: ["in (q[1-4]|january|february|march|april|may|june|july|august|september|october|november|december) 20\\d\\d",
               "as of (q[1-4] )?20\\d\\d", "on \\d{1,2} (january|february|march|april|may|june|july|august|september|october|november|december) 20\\d\\d",
               "(january|february|march|april|may|june|july|august|september|october|november|december) \\d{1,2},? 20\\d\\d",
-              "20\\d\\d-\\d\\d-\\d\\d", "fy ?20\\d\\d", "during 20\\d\\d", "since 20\\d\\d"]
+              "20\\d\\d-\\d\\d-\\d\\d", "fy ?20\\d\\d", "during 20\\d\\d", "since 20\\d\\d",
+              # 7.0.0 (draft): the plain year and fiscal-year forms reports use.
+              "in 20\\d\\d", "throughout 20\\d\\d", "fy ?\\d\\d", "fiscal (year )?20\\d\\d", "fiscal \\d\\d"]
       # 6.0.0 (draft): a counted result is a record too ("14 model reviews were completed").
       # A single-digit percentage is usually a threshold ("a 2% disparate impact threshold"), not a count.
       quantity_terms: ["\\d{2,}(\\.\\d+)?\\s?(%|percent)", "\\d{2,}[\\d,]*", "(two|three|four|five|six|seven|eight|nine|ten|dozens|hundreds|thousands|millions) (of )?\\w+"]
       result_terms: ["completed", "conducted", "performed", "reviewed", "audited", "tested", "resolved",
                       "reported", "measured", "confirmed", "found", "identified", "remediated", "achieved",
                       "published", "assessed", "evaluated", "trained", "certified", "investigated", "implemented",
-                      "established", "adopted", "updated"]
+                      "established", "adopted", "updated",
+                      # 7.0.0 (draft): verbs of a governance activity having been carried out.
+                      "delivered", "consulted", "engaged", "red teamed", "red-teamed", "blocked", "removed",
+                      "detected", "mitigated", "issued", "convened", "piloted",
+                      "released", "analyzed", "analysed", "verified", "validated", "monitored",
+                      "addressed", "disclosed", "handled", "responded"]
     independent_verification:
       terms: ["independent audit*", "independently audited", "third-party audit*", "external audit*",
               "certified to", "certification awarded", "attestation", "soc 2", "iso 42001", "iso 27001",
@@ -300,6 +330,10 @@ methodology:
       # 6.0.0 (draft): evidence at this rung or above must be about AI. General corporate
       # governance earns stated commitment and specified control only.
       required_from_rung: documented_execution
+      # 7.0.0 (draft): a practice phrase inside the quote must stand this close to the commitment,
+      # control or result it is taken to describe. A bullet list that mentions AI once and reports
+      # training hours three bullets later is not a record of AI practice.
+      max_gap_chars: 200
       # Phrases that show a passage is about AI being governed, built or used, not a passing mention.
       practice_terms: ["responsible ai", "responsible use of ai", "responsible artificial intelligence",
                         "responsible use of artificial intelligence", "ai governance", "ai principle*",
@@ -331,6 +365,13 @@ methodology:
       execution_max_gap_chars: 160             # the date stands beside the result
       execution_voice_terms: ["we", "our", "us"]
       reported_speech_terms: ["said", "says", "according to", "told"]
+      # 7.0.0 (draft): research about others and financial reporting do not earn the execution rung.
+      research_terms: ["surveyed", "survey of", "respondents", "our research", "our analysis", "our study",
+                       "the study", "a study", "new study", "researchers", "research team", "the report finds",
+                       "(\\d+%|percent) of (companies|organizations|organisations|executives|respondents|leaders|firms|businesses|consumers|employees|workers|ceos|boards)"]
+      financial_terms: ["\\$ ?\\d", "bookings", "revenue*", "operating margin", "earnings per share", "basis points",
+                        "free cash flow", "net income", "stock award*", "paid seats", "shareholder value",
+                        "stockholder value", "incentive compensation", "long-term incentive*"]
       # Risk-factor language says what could go wrong. It is recorded and never counted as support.
       caution_terms: ["adversely affect*", "adverse effect*", "material adverse", "materially and adversely",
                        "could harm", "may harm", "could result in", "may result in", "could be subject to",

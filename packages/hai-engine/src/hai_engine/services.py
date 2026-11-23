@@ -67,6 +67,7 @@ def classify_links(conn: Connection, store: Store, manifest: Manifest, assessmen
                 "maturity_rung": result.maturity_rung,
                 "execution_level": result.execution_level,
                 "evidence_class": result.evidence_class,
+                "ai_specific": result.ai_specific,
             },
             reason="classification: " + "; ".join(result.reasons),
         )

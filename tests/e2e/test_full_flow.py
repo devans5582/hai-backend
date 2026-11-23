@@ -136,7 +136,7 @@ async def test_full_assessment_lifecycle(
     assert runs["total"] == 9 and all(r["outcome"] == "succeeded" for r in runs["items"])
     result = client.get(f"/v1/assessments/{aid}/result", headers=partner).json()
     assert result["hai_score"] is not None and 0 < result["hai_score"] <= 100
-    assert result["calibration"] is None  # methodology 6.0.0 applies no multiplier
+    assert result["calibration"] is None  # no multiplier since methodology 6.0.0
     assert result["outcome_status"] in ("certification_not_yet_achieved", "confidence_too_low")
     assert any(t.startswith("incident:") for t in result["review_triggers"])
 
@@ -187,6 +187,14 @@ async def test_full_assessment_lifecycle(
     )
     decisions = client.get(f"/v1/assessments/{aid}/decisions", headers=partner).json()
     assert decisions["total"] == 20 and all(d["applied_rule_codes"] for d in decisions["items"])
+    # methodology 7.0.0: the part of a level is stored with the decision and printed by the API
+    for d in decisions["items"]:
+        assert 0 <= d["level_progress"] < 1
+        if d["level"] is not None:
+            assert float(d["level_label"]) == d["level"] + d["level_progress"]
+            assert ("ADJ-AI-SPECIFIC" in d["applied_rule_codes"]) and (
+                "ADJ-STAGE-EXPECTATIONS" in d["applied_rule_codes"]
+            )
     findings = client.get(f"/v1/assessments/{aid}/findings", headers=partner).json()
     assert findings["total"] == 20 and all(f["validation_status"] == "accepted" for f in findings["items"])
 

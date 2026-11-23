@@ -20,7 +20,7 @@ from hai_core.generated.enums import LABELS
 from hai_core.generated.models import Assessment, CriterionFinding
 from hai_core.visibility import visible_assessment_ids
 from hai_engine.report_pdf import render_report_pdf, report_filename
-from hai_engine.reporting import build_report, coverage_wording, score_calibration
+from hai_engine.reporting import build_report, coverage_wording, level_label, score_calibration
 
 router = APIRouter(prefix="/v1/assessments", tags=["assessments"])
 
@@ -241,6 +241,8 @@ def get_decisions(assessment_id: UUID, st: State, principal: Reader) -> Page[Dec
                 criterion_name=crit.name,
                 pillar=crit.pillar,
                 level=d.level,
+                level_progress=float(d.level_progress or 0),
+                level_label=level_label(d.level, d.level_progress),
                 coverage_state=_enum(d.coverage_state),
                 coverage_wording=coverage_wording(_enum(d.coverage_state)),
                 confidence=float(d.confidence),
@@ -350,6 +352,8 @@ def _trace_for(
                 "criterion_name": st.manifest.criterion(code).name,
                 "decision_id": str(d.id),
                 "level": d.level,
+                "level_progress": float(d.level_progress or 0),
+                "level_label": level_label(d.level, d.level_progress),
                 "coverage_state": _enum(d.coverage_state),
                 "confidence": float(d.confidence),
                 "applied_rule_codes": list(d.applied_rule_codes),

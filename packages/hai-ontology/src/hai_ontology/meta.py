@@ -410,6 +410,41 @@ class Corroboration(Strict):
         return max(1, int(self.min_passages.get(rung, 1)))
 
 
+class StageExpectations(Strict):
+    """Stage-appropriate expectations: the part of a level a stage band is credited on every criterion
+    that has admissible supporting evidence.
+
+    HAI Methodology v3.0 expects formal controls of growing and mature organizations and not of an
+    early-stage one, whose foundations are "weighted heavily". Half a level for the early band reads
+    an early-stage organization's stated commitment about AI as the level a mature organization
+    earns with a specified control. A band that is not listed earns nothing more.
+    """
+
+    level_progress: dict[str, float] = Field(default_factory=dict)
+    content_status: str = "draft"
+
+    def credit(self, stage_band: str | None) -> float:
+        return min(1.0, max(0.0, float(self.level_progress.get(stage_band or "", 0.0))))
+
+
+class AiSpecificCredit(Strict):
+    """Part of a level earned when the evidence that set the level is specifically about AI.
+
+    The ladder credits ordinary corporate governance up to a specified control. A criterion whose
+    rung is carried by ``min_passages`` separate passages about AI being governed, built or used
+    earns ``level_progress`` of the way to the next level. Rungs outside ``rungs`` earn nothing more:
+    from documented execution upwards the evidence must be about AI to hold the rung at all.
+    """
+
+    level_progress: float = Field(default=0.0, ge=0, lt=1, allow_inf_nan=False)
+    rungs: list[str] = Field(default_factory=list)
+    min_passages: int = Field(default=1, ge=1)
+    content_status: str = "draft"
+
+    def applies_to(self, rung: str) -> bool:
+        return self.level_progress > 0 and rung in self.rungs
+
+
 class Scoring(Strict):
     level_min: int
     level_max: int
@@ -418,6 +453,8 @@ class Scoring(Strict):
     pillar_weight_profiles: PillarWeightProfiles = PillarWeightProfiles()
     calibration: ScoringCalibration = Field(default_factory=ScoringCalibration)
     corroboration: Corroboration = Field(default_factory=Corroboration)
+    stage_expectations: StageExpectations = Field(default_factory=StageExpectations)
+    ai_specific: AiSpecificCredit = Field(default_factory=AiSpecificCredit)
     score_scale: float
     score_cap: float
     low_confidence_cap: LowConfidenceCap
@@ -590,11 +627,16 @@ class AiContextLexicon(Strict):
     ``required_from_rung`` names the lowest maturity rung that needs a practice term in the quote, its
     section heading or the document title. General corporate governance then earns credit below that
     rung only. ``None`` keeps the earlier behaviour: any AI term, Safety pillar only.
+    ``max_gap_chars`` is how far a practice term in the quote may stand from the words that earned
+    the rung (the commitment, the owner and procedure, the result): a long passage that mentions AI
+    in one sentence and reports an unrelated result in another is not evidence about AI. ``None``
+    accepts a practice term anywhere in the quote.
     """
 
     terms: list[str] = Field(default_factory=list)
     practice_terms: list[str] = Field(default_factory=list)
     required_from_rung: str | None = None
+    max_gap_chars: int | None = Field(default=None, ge=0)
 
 
 class EvidenceQuality(Strict):
@@ -623,6 +665,10 @@ class EvidenceQuality(Strict):
     execution_max_gap_chars: int | None = None
     execution_voice_terms: list[str] = Field(default_factory=list)
     reported_speech_terms: list[str] = Field(default_factory=list)
+    # Findings about other organizations (a survey, a study) and financial results are not records
+    # of the organization's own governance operating; neither earns the execution rung.
+    research_terms: list[str] = Field(default_factory=list)
+    financial_terms: list[str] = Field(default_factory=list)
 
 
 class ControlLexicon(Strict):

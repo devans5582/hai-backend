@@ -13,7 +13,7 @@
 
 ontology:
   name: hai
-  version: 1.3.0
+  version: 1.4.0
   title: HAI Ontology
   description: Domain model for the Human Alignment Index (HAI Score) from source document to certification decision.
   spec: docs/spec/HAI_Ontology_v1_Specification.docx
@@ -342,6 +342,7 @@ entities:
       - { name: independence, type: enum, vocabulary: independence, required: true, description: "Who stands behind the statement. Recomputed from relations." }
       - { name: source_tier, type: enum, vocabulary: source_tier, required: true, description: "Potential authority of the publisher type. Never sets maturity." }
       - { name: focus_area, type: enum, vocabulary: focus_area, description: "The one focus area the quote speaks to, when it does. Reporting only; never changes a weight." }
+      - { name: ai_specific, type: bool, required: true, default: false, description: "The quote is about AI being governed, built or used, not corporate governance in general. Set by the classifier from the quote." }
       - { name: proposer, type: text, required: true, description: "Who proposed the link, heuristic or provider:model." }
       - { name: relevance, type: numeric, min: 0, max: 1, description: "Proposer's relevance estimate." }
       - { name: valid_from, type: date, description: "When the evidence was true." }
@@ -525,6 +526,7 @@ entities:
       - { name: assessment_id, type: ref, ref: Assessment, required: true, description: "The assessment." }
       - { name: criterion_code, type: enum, vocabulary: criterion_code, required: true, description: "The criterion." }
       - { name: level, type: int, min: 1, max: 5, description: "Decided level. Null when the criterion is excluded." }
+      - { name: level_progress, type: numeric, required: true, default: 0, min: 0, max: 1, description: "Part of the next level earned above the decided level (AI-specific evidence, stage expectations). Added to the level in the criterion ratio." }
       - { name: coverage_state, type: enum, vocabulary: coverage_state, required: true, description: "Observed, missing, unavailable and so on." }
       - { name: confidence, type: numeric, required: true, min: 0, max: 100, description: "Criterion confidence." }
       - { name: applied_rule_codes, type: array, items: text, required: true, description: "Rules that ran, in order." }

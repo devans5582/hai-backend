@@ -367,6 +367,27 @@ Reviewed on 2026-11-09 against the published HAI Report (Rubric v2); ADR 0016.
   that sum to 45.8; the platform reports the aggregate the pillars actually
   produce and shows the cap separately in `caps_applied`.
 
+### Part Levels (Methodology 7.0.0)
+
+ADR 0022. A criterion decision carries a level and `level_progress`, the part
+of the next level it earned; the criterion ratio is
+`(level - 1 + level_progress) / 4`.
+
+* General corporate governance earns its level on the ladder (decision D14).
+  When the rung that set the level is carried by two separate passages about
+  AI being governed, built or used, ADJ-AI-SPECIFIC adds half a level
+  (decision D18). The classifier sets `evidence_links.ai_specific` when an AI
+  practice phrase stands beside the words that earned the rung; the snapshot
+  freezes the flag and the rule reads only the snapshot.
+* ADJ-STAGE-EXPECTATIONS adds half a level for the early stage band on every
+  criterion with admissible supporting evidence (decision D17), following the
+  stage-adjusted scoring Humaital publishes. Two half levels raise the level.
+* Both rules run after the caps and the incident adjustments and write their
+  reasoning to the decision trace. The API and the report return
+  `level_label` ("3.5"); the console prints it and computes nothing.
+* The same sentence repeated on several pages is one passage for
+  corroboration.
+
 ## Versioning And Reproducibility
 
 Each assessment pins five versions. Replay loads the snapshot and the manifest

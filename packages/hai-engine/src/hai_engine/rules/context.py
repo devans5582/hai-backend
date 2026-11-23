@@ -41,6 +41,8 @@ class FrozenLink:
     target_type: str = "organization"
     target_id: str | None = None
     focus_area: str | None = None
+    # Methodology 7.0.0: the quote is about AI being governed, built or used (set by the classifier).
+    ai_specific: bool = False
 
     @property
     def admissible(self) -> bool:
@@ -65,6 +67,11 @@ class FrozenLink:
     @property
     def execution_bonus(self) -> float:
         return float(ATTRIBUTES["execution_level"][self.execution_level]["bonus"])
+
+    @property
+    def passage_key(self) -> str:
+        """Identifies the passage by its words: the same sentence repeated on several pages is one passage."""
+        return " ".join(self.quote.lower().split()) or self.span_id
 
     @property
     def source_key(self) -> str:
@@ -264,10 +271,15 @@ class CriterionContext:
         names = {rank: name for name, rank in RANKS["maturity_rung"].items()}
         # A rung that is not corroborated still counts towards every rung below it.
         for rank in range(max(link.rung_rank for link in support), 0, -1):
-            passages = {link.span_id for link in support if link.rung_rank >= rank}
+            passages = {link.passage_key for link in support if link.rung_rank >= rank}
             if len(passages) >= rule.required(names.get(rank, "")):
                 return rank
         return 0
+
+    @property
+    def stage_credit(self) -> float:
+        """The part of a level the organization's stage band is credited (stage-appropriate expectations)."""
+        return self.methodology.scoring.stage_expectations.credit(str(self.inputs.get("stage_band") or ""))
 
     @property
     def ladder_level(self) -> int:
@@ -275,6 +287,25 @@ class CriterionContext:
         if not self.admissible_support:
             return self.methodology.scoring.missing_level
         return self.criterion.level_for_rung(self.best_rung_rank, RANKS["maturity_rung"])
+
+    @property
+    def ai_specific_passages(self) -> int:
+        """Separate AI-specific passages that carry the rung the ladder credits."""
+        rank = self.best_rung_rank
+        if rank <= 0:
+            return 0
+        return len(
+            {link.passage_key for link in self.admissible_support if link.ai_specific and link.rung_rank >= rank}
+        )
+
+    @property
+    def ai_specific_progress(self) -> float:
+        """Part of a level earned because the credited rung is carried by AI-specific passages."""
+        rule = self.methodology.scoring.ai_specific
+        names = {rank: name for name, rank in RANKS["maturity_rung"].items()}
+        if not rule.applies_to(names.get(self.best_rung_rank, "")):
+            return 0.0
+        return rule.level_progress if self.ai_specific_passages >= rule.min_passages else 0.0
 
     def runs(self, codes: list[str]) -> list[ConnectorSummary]:
         return [r for r in self.connector_runs if r.code in codes]
@@ -294,6 +325,9 @@ class TraceEntry:
 @dataclass
 class CriterionState:
     level: int | None = None
+    # Part of a level earned above ``level`` (0 to below 1); added to it in the criterion ratio.
+    # A whole level of accumulated credit raises ``level`` itself (rules.builtin._add_progress).
+    level_progress: float = 0.0
     coverage_state: str | None = None
     confidence: float = 0.0
     excluded: bool = False
@@ -306,6 +340,7 @@ class CriterionState:
     def snapshot(self) -> dict[str, Any]:
         return {
             "level": self.level,
+            "level_progress": self.level_progress,
             "coverage_state": self.coverage_state,
             "confidence": round(self.confidence, 2),
             "excluded": self.excluded,

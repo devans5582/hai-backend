@@ -509,3 +509,57 @@ def test_a_counted_result_is_a_record_and_a_threshold_is_not(manifest: Manifest)
         "impact threshold."
     )
     assert _classify(manifest, threshold).maturity_rung is MaturityRung.SPECIFIED_CONTROL
+
+
+# ---------------------------------------------- methodology 7.0.0 (ADR 0022)
+def test_the_organization_named_in_the_third_person_is_an_owner(manifest: Manifest) -> None:
+    """Many sites say "Acme has established" where others say "we have established"."""
+    quote = "Acme reviews every AI system against its risk assessment procedure before the system is released."
+    unnamed = _classify(manifest, quote, "SAF-01")
+    assert unnamed.maturity_rung is not MaturityRung.SPECIFIED_CONTROL
+    named = _classify(manifest, quote, "SAF-01", organization_names=("Acme",))
+    assert named.maturity_rung is MaturityRung.SPECIFIED_CONTROL
+    assert named.ai_specific
+
+
+def test_ai_specific_needs_the_ai_reference_beside_the_evidence(manifest: Manifest) -> None:
+    beside = "Our AI Governance Committee reviews every AI system against a risk assessment procedure before release."
+    assert _classify(manifest, beside, "SAF-01").ai_specific
+    general = "Our Audit Committee reviews enterprise risk against a risk assessment procedure every quarter."
+    plain = _classify(manifest, general, "SAF-01")
+    assert plain.maturity_rung is MaturityRung.SPECIFIED_CONTROL
+    assert not plain.ai_specific
+    limit = manifest.methodology.lexicons.ai_context.max_gap_chars
+    assert limit is not None
+    filler = " ".join(["The programme covers stores, warehouses and offices in every region."] * 6)
+    assert len(filler) > limit
+    far = f"Associates may use AI tools at work. {filler} {general}"
+    assert not _classify(manifest, far, "SAF-01").ai_specific
+
+
+def test_an_ai_mention_far_from_the_result_is_not_ai_execution(manifest: Manifest) -> None:
+    """A bullet list that mentions AI once and reports training hours later is not a record of AI practice."""
+    filler = " ".join(["The programme covers stores, warehouses and offices in every region."] * 6)
+    far = f"Our AI Champions teach AI tools to associates. {filler} In 2025, we completed 730,800 hours of training."
+    assert _classify(manifest, far, "SAF-01").maturity_rung is not MaturityRung.DOCUMENTED_EXECUTION
+    near = "In 2025, we completed 120 AI system risk assessments before release and remediated every finding."
+    assert _classify(manifest, near, "SAF-01").maturity_rung is MaturityRung.DOCUMENTED_EXECUTION
+
+
+def test_research_about_others_and_financial_results_are_not_execution(manifest: Manifest) -> None:
+    heading = {"section_heading": "Responsible AI"}
+    survey = (
+        "Our research shows that 55% of companies we surveyed have established responsible AI principles "
+        "and completed an AI risk assessment in 2026."
+    )
+    assert _classify(manifest, survey, "SAF-01", **heading).maturity_rung is not MaturityRung.DOCUMENTED_EXECUTION
+    bookings = (
+        "In fiscal 2026 we delivered $5.9 billion in generative AI bookings and completed 129 AI risk "
+        "assessment engagements."
+    )
+    assert _classify(manifest, bookings, "SAF-01", **heading).maturity_rung is not MaturityRung.DOCUMENTED_EXECUTION
+
+
+def test_plain_year_and_delivery_verbs_are_records(manifest: Manifest) -> None:
+    quote = "In 2025, we delivered AI safety training on AI risk assessment to 20,000 engineers."
+    assert _classify(manifest, quote, "SAF-01").maturity_rung is MaturityRung.DOCUMENTED_EXECUTION

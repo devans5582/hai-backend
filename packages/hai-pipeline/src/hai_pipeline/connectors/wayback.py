@@ -165,8 +165,9 @@ class WaybackConnector:
                 result.notes.append(str(exc))
                 break
             if page is None:
-                if depth <= 1:
-                    budget.refund()  # a guessed entry point that was never archived
+                # A page the archive never captured costs time, not the page budget: a blocked
+                # site's links are followed blind, and many of them were never archived.
+                budget.refund()
                 continue
             match = _CAPTURE.search(page.final_url)
             ts = match.group(1) if match else stamp + "000000"

@@ -8,7 +8,6 @@ independently verified rung needs an independent or regulator publisher
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, replace
 
 from hai_core.generated.enums import (
@@ -21,7 +20,7 @@ from hai_core.generated.enums import (
     Polarity,
     PublisherType,
 )
-from hai_core.signals import ExecutionSignal, LanguageSignals, SignalMatcher
+from hai_core.signals import ExecutionSignal, LanguageSignals, SignalMatcher, name_terms, with_named_owner
 from hai_ontology.meta import CriterionDef, Methodology
 from hai_ontology.terms import compile_term, find_terms
 
@@ -47,6 +46,8 @@ class Classification:
     execution_level: ExecutionLevel
     evidence_class: EvidenceClass
     reasons: tuple[str, ...]
+    # The supporting quote is about AI being governed, built or used, not corporate governance in general.
+    ai_specific: bool = False
 
 
 class LinkClassifier:
@@ -68,7 +69,7 @@ class LinkClassifier:
         pol = Polarity(polarity)
         ptype = PublisherType(publisher_type)
         indep = Independence(independence)
-        signals = self.matcher.language(quote)
+        signals = with_named_owner(self.matcher.language(quote), quote, organization_names)
         execution = self.matcher.execution(quote)
         reasons: list[str] = []
         if execution.level in (ExecutionLevel.PARTIAL.value, ExecutionLevel.VERIFIED.value):
@@ -84,7 +85,27 @@ class LinkClassifier:
         rung = self._require_substance(rung, signals, criterion, quote, reasons, organization_names)
         rung = self._require_ai_context(rung, signals, criterion, quote, section_heading, document_title, reasons)
         evidence_class = self._evidence_class(ptype, indep, signals, quote, rung)
-        return Classification(rung, ExecutionLevel(execution.level), evidence_class, tuple(reasons))
+        ai_specific = rung is not MaturityRung.NONE and self._quote_about_ai(quote, signals, rung)
+        return Classification(rung, ExecutionLevel(execution.level), evidence_class, tuple(reasons), ai_specific)
+
+    def _quote_about_ai(self, quote: str, signals: LanguageSignals, rung: MaturityRung) -> bool:
+        """The quote itself is about AI: a practice phrase stands beside the words that earned the rung."""
+        if not self.matcher.ai_practice(quote):
+            return False
+        limit = self.matcher.lex.ai_context.max_gap_chars
+        if limit is None:
+            return True
+        anchors: tuple[str, ...]
+        if rung is MaturityRung.DOCUMENTED_EXECUTION:
+            anchors = signals.execution_results or (*signals.execution_dates, *signals.execution_quantities)
+        elif rung is MaturityRung.SPECIFIED_CONTROL:
+            anchors = (*signals.owner, *signals.procedure, *signals.threshold)
+        else:
+            anchors = (*signals.commitment, *signals.verification)
+        if not anchors:
+            return True
+        gap = self.matcher.ai_practice_gap(quote, anchors)
+        return gap is not None and gap <= limit
 
     def _require_substance(
         self,
@@ -128,12 +149,18 @@ class LinkClassifier:
         # documented execution
         # The organization's voice: first person, its own name, or one of its accountable bodies
         # as the actor ("the AI Governance Committee completed 14 reviews").
-        voice = [*quality.execution_voice_terms, *(re.escape(n) for n in organization_names if len(n) > 1)]
+        voice = [*quality.execution_voice_terms, *name_terms(organization_names)]
         if quality.execution_voice_terms and not (find_terms(quote, voice) or signals.owner):
             reasons.append("results are not stated in the organization's own voice")
             return control
         if find_terms(quote, quality.reported_speech_terms):
             reasons.append("a quotation of another party is not the organization's own record")
+            return control
+        if find_terms(quote, quality.research_terms):
+            reasons.append("a finding about other organizations is not the organization's own record")
+            return control
+        if find_terms(quote, quality.financial_terms):
+            reasons.append("a financial result is not a record of governance operating")
             return control
         if quality.execution_max_gap_chars is not None and signals.has_documented_execution:
             gap = self.matcher.execution_gap(quote, signals)
@@ -187,11 +214,13 @@ class LinkClassifier:
         if not gated:
             return rung
         context = " ".join(part for part in (quote, section_heading, document_title) if part)
-        about_ai = (
-            self.matcher.ai_context(context)
-            if lexicon.required_from_rung is None
-            else self.matcher.ai_practice(context)
-        )
+        if lexicon.required_from_rung is None:
+            about_ai = bool(self.matcher.ai_context(context))
+        else:
+            # The heading or the title can place a whole passage in AI; a phrase inside the quote
+            # must stand beside the result or the control it is taken to describe.
+            around = " ".join(part for part in (section_heading, document_title) if part)
+            about_ai = bool(self.matcher.ai_practice(around)) or self._quote_about_ai(quote, signals, rung)
         if about_ai:
             return rung
         reasons.append("general operational or financial evidence does not establish AI execution")

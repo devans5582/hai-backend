@@ -123,6 +123,7 @@ def frozen_links(snapshot: EvidenceSnapshot, overlay: ReviewOverlay) -> list[Fro
                 target_type=str(st.get("target_type") or "organization"),  # hai-codes: ok - target_type value
                 target_id=str(st["target_id"]) if st.get("target_id") else None,
                 focus_area=st.get("focus_area"),
+                ai_specific=bool(st.get("ai_specific", False)),
             )
         )
     return out
@@ -466,6 +467,7 @@ class DecisionService:
                 assessment_id=assessment.id,
                 criterion_code=code,
                 level=outcome.state.level,
+                level_progress=round(outcome.state.level_progress, 2),
                 coverage_state=CoverageState(outcome.state.coverage_state or CoverageState.MISSING.value),
                 confidence=round(outcome.state.confidence, 1),
                 applied_rule_codes=list(outcome.applied_rule_codes),

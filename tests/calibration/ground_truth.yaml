@@ -6,10 +6,12 @@
 # every organization through the real job chain and compares the stored result
 # with its range.
 #
-# All 22 were read while the 6.0.0 lexicons and retrieval were written (ADR
-# 0021), so agreement on this set overstates agreement on a new organization.
-# Add organizations with `holdout: true` and do not tune against them; the
-# harness reports them like the rest.
+# All 22 were read while the 6.0.0 lexicons and retrieval (ADR 0021) and the
+# 7.0.0 part-level credits (ADR 0022) were written, so agreement on this set
+# overstates agreement on a new organization. `peer_check.yaml` holds
+# organizations outside the sheet, compared with the ranges of their industry
+# peers. Add organizations with `holdout: true` and do not tune against them;
+# the harness reports them like the rest.
 version: 1
 recorded: 2026-11-22
 organizations:

@@ -404,9 +404,10 @@ recreated. Gateway errors show the HTTP status and a support reference that
 matches `X-Request-Id` in the API logs.
 
 Since methodology 6.0.0 the score is the evidence-derived aggregate; no
-multiplier is applied (ADR 0021). A result made under 4.0.0 or 5.0.0 keeps
-its stored multiplier and is not rescored by refreshing it: reassess the
-organization. Restart both API and worker after a methodology update. For
+multiplier is applied (ADR 0021). Methodology 7.0.0 adds half a level for
+evidence that is specifically about AI and half a level for the early stage
+band (ADR 0022). A result made under an earlier methodology is not rescored
+by refreshing it: reassess the organization. Restart both API and worker after a methodology update. For
 local development, apply `make migrate seed` before restarting `make dev`.
 
 An assessment whose sources could mostly not be read publishes no overall
@@ -512,46 +513,57 @@ after a lexicon or scoring change replays the same evidence in a few minutes.
 Delete the cache to collect again. To add an organization, add a row; mark it
 `holdout: true` if it must not be used for tuning.
 
-Result of the run of 2026-11-22 (heuristic provider, crawled that day). The 5.0.0
-column is the same organizations re-run under the previous methodology on the same
-day; it differs from the owner's sheet by a few points where a crawl differed.
+Result of the run of 2026-11-23 under methodology 7.0.0 (heuristic provider,
+evidence collected on 22 and 23 November). "Sheet" is the score the owner
+recorded under methodology 5.0.0; the 6.0.0 column is the run of 22 November.
 
-| Organization | 5.0.0 Rerun | Expected | 6.0.0 | Against Range | Documents | Website | Criteria At Level 4 |
-|---|---:|---|---:|---|---:|---|---:|
-| Humaital | 63.5 | 65 to 75 | 40.0 | -25.0 | 20 | succeeded | 0 |
-| Accenture | 12.5 | 55 to 70 | 54.0 | -1.0 | 36 | succeeded | 3 |
-| PWC | N/A | 55 to 70 | 47.7 | -7.3 | 26 | blocked | 0 |
-| Pfizer | 51.5 | 50 to 70 | 50.0 | in range | 35 | succeeded | 0 |
-| Roche | 30 | 50 to 70 | 50.0 | in range | 41 | succeeded | 0 |
-| Costco | 38.5 | 35 to 55 | 47.7 | in range | 23 | succeeded | 0 |
-| Walmart | 19.5 | 40 to 60 | 51.3 | in range | 30 | succeeded | 1 |
-| Home Depot | 18.5 | 35 to 55 | 52.9 | in range | 21 | succeeded | 2 |
-| Microsoft | 100 | 65 to 80 | 55.1 | -9.9 | 44 | succeeded | 4 |
-| Meta | 7.5 | 50 to 70 | 50.0 | in range | 47 | succeeded | 0 |
-| Fidelity | 25.5 | 50 to 70 | 42.6 | -7.4 | 34 | succeeded | 0 |
-| Goldman Sachs | N/A | 55 to 75 | 50.0 | -5.0 | 35 | blocked | 0 |
-| MIT | 5.5 | 45 to 65 | 46.0 | in range | 40 | succeeded | 2 |
-| Harvard | 0 | 40 to 60 | 39.1 | -0.9 | 29 | succeeded | 0 |
-| Foxconn | 0 | 25 to 45 | 46.1 | +1.1 | 29 | succeeded | 0 |
-| Siemens | 17.5 | 50 to 70 | 47.4 | -2.6 | 34 | succeeded | 1 |
-| AA | N/A | 35 to 55 | 50.0 | in range | 10 | succeeded | 0 |
-| Delta | N/A | 35 to 55 | 50.0 | in range | 38 | succeeded | 0 |
-| Hilton | N/A | 35 to 55 | 50.0 | in range | 29 | succeeded | 0 |
-| Marriott | N/A | 40 to 60 | 50.0 | in range | 21 | blocked | 0 |
-| Chevron | 100 | 45 to 60 | 50.0 | in range | 13 | blocked | 0 |
-| Shell | N/A | 40 to 60 | 50.0 | in range | 2 | succeeded | 0 |
+| Organization | Sheet | Expected | 6.0.0 | 7.0.0 | Against Range | Documents | Website | Criteria Above Level 3 |
+|---|---:|---|---:|---:|---|---:|---|---:|
+| Humaital | 63.5 | 65 to 75 | 40.0 | 68.4 | in range | 20 | succeeded | 18 |
+| Accenture | 12.5 | 55 to 70 | 54.0 | 61.5 | in range | 36 | succeeded | 16 |
+| PWC | N/A | 55 to 70 | 47.7 | 57.7 | in range | 34 | blocked | 13 |
+| Pfizer | 51.5 | 50 to 70 | 50.0 | 50.0 | in range | 35 | succeeded | 0 |
+| Roche | 30 | 50 to 70 | 50.0 | 55.7 | in range | 41 | succeeded | 9 |
+| Costco | 38.5 | 35 to 55 | 47.7 | 47.7 | in range | 23 | succeeded | 0 |
+| Walmart | 51.5 | 40 to 60 | 51.3 | 59.0 | in range | 30 | succeeded | 12 |
+| Home Depot | 12.5 | 35 to 55 | 52.9 | 60.8 | +5.8 | 21 | succeeded | 16 |
+| Microsoft | 100 | 65 to 80 | 55.1 | 67.1 | in range | 44 | succeeded | 20 |
+| Meta | 19.5 | 50 to 70 | 50.0 | 61.8 | in range | 47 | succeeded | 19 |
+| Fidelity | 25.5 | 50 to 70 | 42.6 | 47.7 | -2.3 | 34 | succeeded | 0 |
+| Goldman Sachs | N/A | 55 to 75 | 50.0 | 56.8 | in range | 42 | blocked | 11 |
+| MIT | 5.5 | 45 to 65 | 46.0 | 50.4 | in range | 40 | succeeded | 4 |
+| Harvard | 0 | 40 to 60 | 39.1 | 47.1 | in range | 29 | succeeded | 2 |
+| Foxconn | 0 | 25 to 45 | 46.1 | 46.1 | +1.1 | 29 | succeeded | 0 |
+| Siemens | 17.5 | 50 to 70 | 47.4 | 54.6 | in range | 34 | succeeded | 9 |
+| AA | N/A | 35 to 55 | 50.0 | 51.2 | in range | 22 | succeeded | 2 |
+| Delta | N/A | 35 to 55 | 50.0 | 54.7 | in range | 38 | succeeded | 8 |
+| Hilton | N/A | 35 to 55 | 50.0 | 50.0 | in range | 29 | succeeded | 0 |
+| Marriott | N/A | 40 to 60 | 50.0 | 54.4 | in range | 21 | blocked | 7 |
+| Chevron | 100 | 45 to 60 | 50.0 | 50.7 | in range | 15 | blocked | 1 |
+| Shell | N/A | 40 to 60 | 50.0 | 50.0 | in range | 2 | succeeded | 0 |
 
-13 of 22 are inside their range and 4 more are within 3 points. Under 5.0.0, 2 were
-inside, 7 had no score and 2 showed 100. A run takes about two minutes for one
-organization (the slowest took four and a half).
+19 of 22 are inside their range and 2 more are within 3 points. A run takes
+one to two minutes for one organization.
 
-Read the table with three limits in mind (ADR 0021 has the detail). The
-default provider reads evidence with lexicons, so a score of about 50 means
-"the public record describes controls for every criterion", and most large
-organizations reach it. Scores above that need records of AI practice, which
-few organizations publish in a form lexicons can recognise. And the set was
-used to write the 6.0.0 vocabulary, so agreement on it overstates agreement
-on a new organization.
+`tests/calibration/peer_check.yaml` holds 17 organizations that are not in the
+sheet, each compared with the span of the sheet's ranges for its industry.
+That is an analogy, not ground truth. 14 of the 17 land inside; of the nine
+that were first run after 7.0.0 was finished, eight do.
+
+```bash
+make calibrate CALIBRATE_ARGS="--ground-truth tests/calibration/peer_check.yaml"
+```
+
+Read the table with these limits in mind (ADRs 0021 and 0022 have the
+detail). The default provider reads evidence with lexicons. An organization
+with ordinary governance and no public AI governance lands near 50; evidence
+that is specifically about AI lifts it towards 62, and records of AI practice
+above that. Organizations whose sites refuse the crawler are scored from
+archived copies and filings and tend to land low. The expected ranges
+separate sectors; the evidence does not, so a retailer that publishes an AI
+governance structure scores like a bank that does. And the 22 were used to
+choose the rules, so agreement on them overstates agreement on a new
+organization.
 
 ## Configuration
 
@@ -584,10 +596,10 @@ Every setting is an environment variable with the `HAI_` prefix;
 ## Status And Ownership
 
 The platform is feature complete for v1 and green on every gate. The
-methodology version is `6.0.0` with status `draft`: the overall score is the
-evidence-derived aggregate with no multiplier, and the evidence path was
-calibrated against the ranges Humaital expects for 22 organizations (ADR
-0021, `make calibrate`). Criterion definitions, level descriptors, some
+methodology version is `7.0.0` with status `draft`: the overall score is the
+evidence-derived aggregate with no multiplier, and the evidence path and the
+part-level credits were calibrated against the ranges Humaital expects for
+22 organizations (ADRs 0021 and 0022, `make calibrate`). Criterion definitions, level descriptors, some
 weights, the retrieval vocabulary and the framework crosswalk are
 placeholders until Humaital approves them. Nothing is presented as approved
 content.

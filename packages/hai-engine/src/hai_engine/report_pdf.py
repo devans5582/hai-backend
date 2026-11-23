@@ -732,7 +732,7 @@ def _criterion_block(pdf: ReportPDF, c: dict[str, Any], level_max: int) -> None:
     level = c.get("level")
     best = c.get("best_rung")
     pdf.font(9.5, BLUE if level else MUTED, "B")
-    pdf.cell(30, 6, f"L{level} / {level_max}" if level is not None else "Not levelled")
+    pdf.cell(30, 6, f"L{c.get('level_label') or level} / {level_max}" if level is not None else "Not levelled")
     pdf.font(9, pdf.rung_tone(best), "B")
     confidence = f"Confidence {_pct(c.get('confidence'))}" if c.get("confidence") is not None else ""
     pdf.cell(0, 6, confidence, align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)

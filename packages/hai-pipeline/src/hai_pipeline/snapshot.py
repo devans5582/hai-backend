@@ -31,7 +31,8 @@ def _canonical(data: Any) -> str:
 LINK_QUERY = """
 SELECT l.id AS link_id, l.span_id, l.target_type::text, l.target_id, l.criterion_code::text, l.polarity::text,
        l.admissibility::text, l.admissibility_reason, l.maturity_rung::text, l.execution_level::text,
-       l.evidence_class::text, l.independence::text, l.source_tier::text, l.focus_area::text, l.relevance, l.proposer,
+       l.evidence_class::text, l.independence::text, l.source_tier::text, l.focus_area::text, l.ai_specific,
+       l.relevance, l.proposer,
        s.quote, s.char_start, s.char_end, s.section_heading,
        d.id AS document_id, d.cluster_id, d.canonical_url, d.published_at, d.title AS document_title,
        d.valid_to AS certificate_valid_until, d.text_sha256,
@@ -110,6 +111,7 @@ def build_snapshot(
             "independence": r["independence"],
             "source_tier": r["source_tier"],
             "focus_area": r["focus_area"],
+            "ai_specific": bool(r["ai_specific"]),
             "relevance": float(r["relevance"]) if r["relevance"] is not None else None,
             "proposer": r["proposer"],
             "quote": r["quote"],

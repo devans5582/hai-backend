@@ -1,0 +1,30 @@
+# Organizations that are NOT in the owner's sheet. The ranges are NOT ground truth: each is the
+# span of the sheet's ranges for the same industry (noted per row). The file answers one question:
+# does a new organization land where its peers were expected to?
+#
+#   make calibrate CALIBRATE_ARGS="--ground-truth tests/calibration/peer_check.yaml"
+#
+# The first eight were first run under methodology 6.0.0 (ADR 0021) and were scored again while
+# 7.0.0 was written, though no rule, term or threshold was chosen from their text. The last nine
+# were first run after 7.0.0 was finished (ADR 0022) and are the cleaner check.
+version: 1
+recorded: 2026-11-23
+organizations:
+  - { key: ibm, name: IBM, website: ibm.com, industry: Technology, stage: mature, size: enterprise, low: 50, high: 80, holdout: true }               # Microsoft 65-80, Meta 50-70
+  - { key: jpmorgan, name: JPMorgan Chase, website: jpmorganchase.com, industry: Financial Services, stage: mature, size: enterprise, low: 50, high: 75, holdout: true }  # Fidelity 50-70, Goldman 55-75
+  - { key: target, name: Target, website: target.com, industry: Retail, stage: mature, size: enterprise, low: 35, high: 60, holdout: true }          # Costco, Home Depot 35-55, Walmart 40-60
+  - { key: united, name: United Airlines, website: united.com, industry: Travel, stage: mature, size: enterprise, low: 35, high: 55, holdout: true }  # AA, Delta 35-55
+  - { key: stanford, name: Stanford University, website: stanford.edu, industry: Education, stage: mature, size: enterprise, low: 40, high: 65, holdout: true }  # MIT 45-65, Harvard 40-60
+  - { key: bp, name: BP, website: bp.com, industry: Energy, stage: mature, size: enterprise, low: 40, high: 60, holdout: true }                    # Shell 40-60, Chevron 45-60
+  - { key: jnj, name: Johnson & Johnson, website: jnj.com, industry: Healthcare, stage: mature, size: enterprise, low: 50, high: 70, holdout: true }  # Pfizer, Roche 50-70
+  - { key: deloitte, name: Deloitte, website: deloitte.com, industry: Professional Services, stage: mature, size: enterprise, low: 55, high: 70, holdout: true }  # Accenture, PwC 55-70
+  # First run after methodology 7.0.0 was finished.
+  - { key: salesforce, name: Salesforce, website: salesforce.com, industry: Technology, stage: mature, size: enterprise, low: 50, high: 80, holdout: true }
+  - { key: bankofamerica, name: Bank of America, website: bankofamerica.com, industry: Financial Services, stage: mature, size: enterprise, low: 50, high: 75, holdout: true }
+  - { key: novartis, name: Novartis, website: novartis.com, industry: Healthcare, stage: mature, size: enterprise, low: 50, high: 70, holdout: true }
+  - { key: lowes, name: "Lowe's", website: lowes.com, industry: Retail, stage: mature, size: enterprise, low: 35, high: 60, holdout: true }
+  - { key: southwest, name: Southwest Airlines, website: southwest.com, industry: Travel, stage: mature, size: enterprise, low: 35, high: 55, holdout: true }
+  - { key: hyatt, name: Hyatt, website: hyatt.com, industry: Hospitality, stage: mature, size: enterprise, low: 35, high: 60, holdout: true }
+  - { key: exxonmobil, name: ExxonMobil, website: exxonmobil.com, industry: Energy, stage: mature, size: enterprise, low: 40, high: 60, holdout: true }
+  - { key: yale, name: Yale University, website: yale.edu, industry: Education, stage: mature, size: enterprise, low: 40, high: 65, holdout: true }
+  - { key: kpmg, name: KPMG, website: kpmg.com, industry: Professional Services, stage: mature, size: enterprise, low: 55, high: 70, holdout: true }

@@ -143,6 +143,61 @@ def cap_maturity(ctx: CriterionContext, state: CriterionState, params: dict[str,
     return f"level {state.level} is within the ladder cap {cap}"
 
 
+def _add_progress(ctx: CriterionContext, state: CriterionState, amount: float) -> str:
+    """Add part of a level; a whole level of accumulated credit raises the level itself."""
+    assert state.level is not None
+    top = ctx.methodology.scoring.level_max
+    total = round(state.level_progress + amount, 4)
+    if total >= 1.0 and state.level < top:
+        state.level += 1
+        total = round(total - 1.0, 4)
+    state.level_progress = 0.0 if state.level >= top else min(total, 0.9999)
+    return f"level {state.level}" + (f" and {state.level_progress:g} of the next" if state.level_progress else "")
+
+
+@criterion_rule("ADJ-AI-SPECIFIC")
+def adj_ai_specific(ctx: CriterionContext, state: CriterionState, params: dict[str, Any]) -> str:
+    """Credit part of the next level when the rung that set the level is carried by AI-specific passages."""
+    del params
+    state.level_progress = 0.0
+    if state.excluded or state.level is None:
+        return "excluded; no AI-specific credit"
+    rule = ctx.methodology.scoring.ai_specific
+    if rule.level_progress <= 0:
+        return "the methodology gives no AI-specific credit"
+    if state.level != ctx.ladder_level:
+        return f"level {state.level} is not the level the evidence ladder set; no AI-specific credit"
+    if state.level >= ctx.methodology.scoring.level_max:
+        return "already at the highest level"
+    rung = _rung_name(ctx.best_rung_rank)
+    if not rule.applies_to(rung):
+        return f"AI-specific credit does not apply at the rung {rung}"
+    passages = ctx.ai_specific_passages
+    if passages < rule.min_passages:
+        return f"{passages} AI-specific passage(s) carry the rung {rung}; {rule.min_passages} needed"
+    state.adjustments.append("ADJ-AI-SPECIFIC")
+    reached = _add_progress(ctx, state, rule.level_progress)
+    return f"{passages} AI-specific passages carry the rung {rung}: {rule.level_progress:g} of a level added; {reached}"
+
+
+@criterion_rule("ADJ-STAGE-EXPECTATIONS")
+def adj_stage_expectations(ctx: CriterionContext, state: CriterionState, params: dict[str, Any]) -> str:
+    """Credit part of a level to a stage band of which formal controls are not yet expected."""
+    del params
+    if state.excluded or state.level is None:
+        return "excluded; no stage credit"
+    credit = ctx.stage_credit
+    if credit <= 0:
+        return "no stage credit for this stage band"
+    if not ctx.admissible_support or state.level <= ctx.methodology.scoring.missing_level:
+        return "no admissible supporting evidence; no stage credit"
+    if state.level >= ctx.methodology.scoring.level_max:
+        return "already at the highest level"
+    state.adjustments.append("ADJ-STAGE-EXPECTATIONS")
+    reached = _add_progress(ctx, state, credit)
+    return f"stage band {ctx.inputs.get('stage_band')}: {credit:g} of a level added; {reached}"
+
+
 @criterion_rule("CAP-FAILED-EXECUTION")
 def cap_failed_execution(ctx: CriterionContext, state: CriterionState, params: dict[str, Any]) -> str:
     del ctx

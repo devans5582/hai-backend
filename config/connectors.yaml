@@ -361,8 +361,8 @@ connectors:
     # failed or served an empty shell), crawl the archive's recent captures in its place.
     # Link ranking is shared with the WEBSITE connector through the anchors below.
     fallback_below_documents: 3
-    fallback_pages: 40
-    fallback_time_seconds: 180
+    fallback_pages: 45
+    fallback_time_seconds: 240
     max_discovery_depth: 3
     max_discovered_links: 30
     max_pages_per_section: 6

@@ -8,6 +8,7 @@ change, not a code change. Terms match whole words only.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 
 from hai_ontology.meta import CriterionDef, Methodology, NegativeRule
@@ -66,6 +67,29 @@ class LanguageSignals:
         return bool(self.verification)
 
 
+_NAME_SYNTAX = re.compile(r"[\\()|\[\]{}+?^$*]")
+
+
+def name_terms(names: tuple[str, ...]) -> tuple[str, ...]:
+    """Organization names usable as whole-word lexicon terms; initials and odd syntax are left out."""
+    out: list[str] = []
+    for name in names:
+        cleaned = " ".join(str(name).split())
+        if len(cleaned) > 1 and not _NAME_SYNTAX.search(cleaned) and cleaned not in out:
+            out.append(cleaned)
+    return tuple(out)
+
+
+def with_named_owner(signals: LanguageSignals, text: str, names: tuple[str, ...]) -> LanguageSignals:
+    """Count the organization's own name as an accountable owner.
+
+    Many organizations write about themselves in the third person ("Siemens has established",
+    "the University requires"); the statement is no less theirs than one that says "we".
+    """
+    found = tuple(find_terms(text, list(name_terms(names)))) if names else ()
+    return replace(signals, owner=(*signals.owner, *found)) if found else signals
+
+
 class SignalMatcher:
     def __init__(self, methodology: Methodology) -> None:
         self.md = methodology
@@ -116,6 +140,12 @@ class SignalMatcher:
         """Phrases showing the passage is about AI being governed, built or used by someone."""
         terms = self.lex.ai_context.practice_terms or self.lex.ai_context.terms
         return tuple(find_terms(text, terms))
+
+    def ai_practice_gap(self, text: str, anchors: tuple[str, ...]) -> int | None:
+        """Characters between an AI practice phrase and the nearest of ``anchors`` (zero when they
+        overlap); None when the passage holds no practice phrase or none of the anchors."""
+        terms = self.lex.ai_context.practice_terms or self.lex.ai_context.terms
+        return _gap(text, tuple(find_terms(text, terms)), anchors, overlap_is_zero=True)
 
     def control_gap(self, text: str, signals: LanguageSignals) -> int | None:
         """Characters between an accountable owner and the nearest procedure or threshold; None when
@@ -214,14 +244,19 @@ class SignalMatcher:
         )
 
 
-def _gap(text: str, first: tuple[str, ...], second: tuple[str, ...]) -> int | None:
-    """The smallest distance between a match of ``first`` and a non-overlapping match of ``second``."""
+def _gap(text: str, first: tuple[str, ...], second: tuple[str, ...], *, overlap_is_zero: bool = False) -> int | None:
+    """The smallest distance between a match of ``first`` and a non-overlapping match of ``second``.
+
+    With ``overlap_is_zero`` an overlapping pair counts as adjacent instead of being skipped.
+    """
     a = [m.span() for term in first for m in compile_term(term).finditer(text)]
     b = [m.span() for term in second for m in compile_term(term).finditer(text)]
     best: int | None = None
     for a_start, a_end in a:
         for b_start, b_end in b:
             if a_start < b_end and b_start < a_end:
+                if overlap_is_zero:
+                    return 0
                 continue  # one phrase ("internal audit") cannot be both the owner and the procedure
             gap = b_start - a_end if b_start >= a_end else a_start - b_end
             if best is None or gap < best:

@@ -75,7 +75,7 @@ export function TraceDrawer({ assessmentId, criterionCode, onClose }: { assessme
           {c && (
             <div className="stack">
               <div className="row">
-                <Badge tone="red">Level {c.level ?? "n/a"}</Badge>
+                <Badge tone="red">Level {c.level_label ?? c.level ?? "n/a"}</Badge>
                 <Badge>{label("coverage_state", c.coverage_state)}</Badge>
                 <Badge>Confidence {c.confidence.toFixed(1)}</Badge>
               </div>

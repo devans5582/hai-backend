@@ -541,6 +541,12 @@ def test_locale_section_and_dated_path_helpers() -> None:
     assert section_of("https://x.example/about/history/timeline") == "x.example/about"
     assert section_of("https://x.example/en-us/about/ethics") == "x.example/about"
     assert section_of("https://x.example/governance") is None  # a top-level page is in no section
+    # A country and language prefix names an edition of the site, not a section of it.
+    assert section_of("https://x.example/us/en/about/ethics.html") == "x.example/about"
+    assert section_of("https://x.example/global/en/company/governance.html") == "x.example/company"
+    assert section_of("https://x.example/en/global/corporate/sustainability") == "x.example/corporate"
+    assert section_of("https://x.example/us/en/responsible-ai.html") is None
+    assert section_of("https://x.example/ai/principles/overview") == "x.example/ai"  # two letters, not an edition
 
 
 async def test_one_section_cannot_take_the_page_budget() -> None:

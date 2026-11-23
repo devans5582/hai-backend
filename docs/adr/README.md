@@ -23,3 +23,4 @@ One file per decision. Status is accepted unless noted.
 * [0019](./0019-overall-score-calibration.md) Overall Score Calibration (superseded by 0021)
 * [0020](./0020-current-assessment-and-fivefold-calibration.md) Current Assessments And Fivefold Calibration (multiplier superseded by 0021)
 * [0021](./0021-evidence-calibration-against-expected-ranges.md) Evidence Calibration Against Expected Ranges
+* [0022](./0022-stage-expectations-and-ai-specific-evidence.md) Stage Expectations And AI-Specific Evidence

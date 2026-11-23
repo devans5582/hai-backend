@@ -166,6 +166,19 @@ def test_unknown_methodology_references(copy: Path) -> None:
     assert "E_ENUM_VALUE" in _codes(copy)
 
 
+def test_part_level_settings_name_known_rungs_and_stage_bands(copy: Path) -> None:
+    methodology = copy / "methodology" / "methodology.yaml"
+    _edit(methodology, "rungs: [stated_commitment, specified_control]", "rungs: [stated_commitment, proven]")
+    assert "E_ENUM_VALUE" in _codes(copy)
+
+
+def test_stage_expectations_name_a_known_stage_band(copy: Path) -> None:
+    _edit(
+        copy / "methodology" / "methodology.yaml", "level_progress: { early: 0.5 }", "level_progress: { seedling: 0.5 }"
+    )
+    assert "E_ENUM_VALUE" in _codes(copy)
+
+
 def test_bad_lexicon_regex(copy: Path) -> None:
     _edit(
         copy / "methodology" / "methodology.yaml",

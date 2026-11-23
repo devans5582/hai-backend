@@ -59,6 +59,13 @@ def coverage_wording(state: str) -> str:
     return str(ATTRIBUTES["coverage_state"][state]["report_wording"])
 
 
+def level_label(level: int | None, progress: float | None) -> str | None:
+    """The decided level with the part of the next level it earned, as printed ("3", "3.5")."""
+    if level is None:
+        return None
+    return f"{level + float(progress or 0):.2f}".rstrip("0").rstrip(".")
+
+
 def score_calibration(result: AssessmentResult | None) -> dict[str, Any] | None:
     """Return only calibration recorded with this result, never the current methodology's settings."""
     return score_calibration_from_trace(result.trace if result else None)
@@ -327,6 +334,8 @@ def build_report(conn: Connection, store: Store, manifest: Manifest, assessment_
             "definition": criterion.definition,
             "content_status": criterion.content_status,
             "level": d.level if d else None,
+            "level_progress": float(d.level_progress or 0) if d else 0.0,
+            "level_label": level_label(d.level, d.level_progress) if d else None,
             "level_descriptor": next((lv.descriptor for lv in criterion.levels if d and lv.level == d.level), None),
             "coverage_state": coverage,
             "coverage_wording": coverage_wording(coverage) if coverage else None,

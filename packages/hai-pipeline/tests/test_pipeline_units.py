@@ -442,3 +442,37 @@ def test_a_long_document_keeps_its_strongest_passages_per_criterion(manifest: Ma
     assert len(by_polarity["contradicts"]) == len([p for p in proposals if p.polarity == "contradicts"])
     assert [k.span_index for k in kept] == sorted(k.span_index for k in kept)  # original order
     assert bounded_proposals(proposals, max_supporting=0, max_neutral=0) == proposals
+
+
+def test_a_long_document_keeps_its_passages_about_ai_first(manifest: Manifest) -> None:
+    """The methodology credits AI-specific evidence above general governance, so the bound must not drop it."""
+    from hai_pipeline.proposals import bounded_proposals
+
+    general = "We are committed to managing risk across the business and to reporting on it every year."
+    about_ai = "We are committed to managing AI risk and to a risk assessment of every AI system we deploy."
+    spans = [general] * 30 + [about_ai] * 2
+    proposals = heuristic_proposals(
+        spans, [manifest.criterion("SAF-01")], manifest.methodology, publisher_type="org_disclosure", source_tier="T3"
+    )
+    assert [p.ai_specific for p in proposals].count(True) == 2
+    kept = bounded_proposals(proposals, max_supporting=6, max_neutral=0)
+    assert len([k for k in kept if k.polarity == "supports"]) == 6
+    assert {30, 31} <= {k.span_index for k in kept}
+
+
+def test_the_organizations_name_is_an_owner_in_proposals(manifest: Manifest) -> None:
+    quote = "Acme reviews every AI system against its risk assessment procedure before the system is released."
+    criteria = [manifest.criterion("SAF-01")]
+    unnamed = heuristic_proposals(
+        [quote], criteria, manifest.methodology, publisher_type="org_disclosure", source_tier="T3"
+    )
+    named = heuristic_proposals(
+        [quote],
+        criteria,
+        manifest.methodology,
+        publisher_type="org_disclosure",
+        source_tier="T3",
+        organization_names=("Acme",),
+    )
+    assert not any(p.signals.has_specified_control for p in unnamed)
+    assert named and all(p.signals.has_specified_control and p.polarity == "supports" for p in named)

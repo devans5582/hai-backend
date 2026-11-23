@@ -52,6 +52,7 @@ RANK_OTHER = 7  # a link that matches no keyword: read only while a small site h
 
 _LOCALE = re.compile(r"^/([a-z]{2})[-_]([a-z]{2})(?=/|$)", re.IGNORECASE)
 _LANGUAGE_ONLY = re.compile(r"^/(de|fr|es|it|pt|ja|jp|zh|ko|kr|nl|ru|pl|tr|sv|ar|cn|tw|br|mx)(?=/|$)", re.IGNORECASE)
+_EDITIONS = frozenset({"global", "gx", "intl", "international", "worldwide", "home"})
 _LOC = re.compile(r"<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]\s]+)", re.IGNORECASE)
 _ENGLISH_ANCHOR = re.compile(r"^(english|en|eng|english \(us\)|global \(english\)|global)$", re.IGNORECASE)
 _PATH_YEAR = re.compile(r"(?<=/)((?:19|20)\d\d)(?=[/-])")
@@ -119,12 +120,28 @@ def section_of(url: str) -> str | None:
     per-section page cap applies to. A top-level page belongs to no section and is never capped,
     so a small site with flat URLs is not cut off after a handful of pages."""
     parts = urlsplit(url)
-    segments = [s for s in parts.path.split("/") if s]
-    if segments and (_LOCALE.match("/" + segments[0]) or segments[0].lower() == "en"):
-        segments = segments[1:]
+    segments = _without_edition([s for s in parts.path.split("/") if s])
     if len(segments) < 2:
         return None
     return f"{parts.netloc.lower()}/{segments[0].lower()}"
+
+
+def _without_edition(segments: list[str]) -> list[str]:
+    """Drop the country and language prefix of a path (``/en-us``, ``/en``, ``/us/en``, ``/global/en``,
+    ``/en/global``): it names an edition of the site, not a section of it. Without this every
+    page of a country-structured site falls into one section and the cap starves the crawl."""
+    lowered = [s.lower() for s in segments]
+    if not lowered:
+        return segments
+    if _LOCALE.match("/" + lowered[0]):
+        skip = 1
+    elif lowered[0] == "en":
+        skip = 2 if len(lowered) > 1 and lowered[1] in _EDITIONS else 1
+    elif len(lowered) > 1 and lowered[1] == "en" and (len(lowered[0]) == 2 or lowered[0] in _EDITIONS):
+        skip = 2
+    else:
+        skip = 0
+    return segments[skip:]
 
 
 def english_alternate(page: FetchResult) -> str | None:

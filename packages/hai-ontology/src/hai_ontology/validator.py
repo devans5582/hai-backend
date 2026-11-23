@@ -391,6 +391,14 @@ class _Validator:
             self.err("E_ENUM_VALUE", "effectiveness_min_rung unknown", "methodology.scoring")
         if not (md.scoring.level_min == 1 and md.scoring.level_max == 5):
             self.err("E_RANGE", "levels must run 1 to 5", "methodology.scoring")
+        for rung in [*md.scoring.ai_specific.rungs, *md.scoring.corroboration.min_passages]:
+            if rung not in rungs:
+                self.err("E_ENUM_VALUE", f"maturity rung {rung!r} unknown", "methodology.scoring")
+        for stage, credit in md.scoring.stage_expectations.level_progress.items():
+            if stage not in stages:
+                self.err("E_ENUM_VALUE", f"stage expectation for unknown stage band {stage}", "methodology.scoring")
+            if not 0 <= credit < 1:
+                self.err("E_RANGE", f"stage expectation for {stage} must be a part of a level", "methodology.scoring")
         pillar_codes = {p.code for p in self.m.pillars}
         stages = self.m.vocabularies["stage_band"].codes
         for stage, weights in md.scoring.pillar_weight_profiles.profiles.items():

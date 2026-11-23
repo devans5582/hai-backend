@@ -246,7 +246,8 @@ class Bench:
             ).first()
             decisions = conn.execute(
                 text(
-                    "SELECT criterion_code::text, level, coverage_state::text, confidence FROM hai.criterion_decisions "
+                    "SELECT criterion_code::text, level, coverage_state::text, confidence, level_progress "
+                    "FROM hai.criterion_decisions "
                     "WHERE assessment_id = :a ORDER BY criterion_code"
                 ),
                 {"a": aid},
@@ -292,7 +293,14 @@ class Bench:
             "outcome": r[3] if r else None,
             "gate_reasons": list(r[5] or []) if r else [],
             "decisions": [
-                {"code": d[0], "level": d[1], "coverage": d[2], "confidence": float(d[3])} for d in decisions
+                {
+                    "code": d[0],
+                    "level": d[1],
+                    "level_progress": float(d[4] or 0),
+                    "coverage": d[2],
+                    "confidence": float(d[3]),
+                }
+                for d in decisions
             ],
             "pillars": [
                 {
@@ -336,7 +344,8 @@ def verdict(row: dict[str, Any]) -> str:
 
 def summary_line(row: dict[str, Any]) -> str:
     observed = [d for d in row["decisions"] if d["coverage"] not in ("missing", "unavailable", "not_applicable")]
-    levels = "".join(str(d["level"] or "-") for d in row["decisions"])
+    # One character per criterion; "+" marks part of the next level (AI-specific evidence, stage).
+    levels = "".join(str(d["level"] or "-") + ("+" if d.get("level_progress") else "") for d in row["decisions"])
     web = next((r for r in row["runs"] if r["code"] == "WEBSITE"), None)
     score = "N/A" if row["score"] is None else f"{row['score']:5.1f}"
     return (

@@ -15,6 +15,7 @@ from hai_engine.rules import builtin as rules
 from hai_engine.rules.context import (
     ConnectorSummary,
     CriterionContext,
+    CriterionOutcome,
     CriterionState,
     FrozenFinding,
     FrozenIncident,
@@ -27,6 +28,7 @@ from hai_ontology.validator import validate
 from hai_pipeline.proposals import heuristic_proposals
 
 AS_OF = datetime(2026, 10, 24, tzinfo=UTC)
+MATURE: dict[str, Any] = {"stage_band": "mature", "size_band": "enterprise", "direct_urls": 0}
 
 
 def link(
@@ -43,10 +45,13 @@ def link(
     cluster: str | None = None,
     published: date | None = date(2026, 3, 1),
     evidence_class: str = "core_governance",
+    ai_specific: bool = False,
+    quote: str | None = None,
 ) -> FrozenLink:
+    span_id = str(uuid4())
     return FrozenLink(
         link_id=str(uuid4()),
-        span_id=str(uuid4()),
+        span_id=span_id,
         criterion_code=code,
         polarity=polarity,
         admissibility=admissibility,
@@ -61,9 +66,11 @@ def link(
         document_id=str(uuid4()),
         published_at=published,
         certificate_valid_until=None,
-        quote="A long enough quote describing the evidence for this criterion.",
+        # Each passage has its own words: the same sentence on two pages is one passage.
+        quote=quote or f"A long enough quote describing the evidence for this criterion ({span_id}).",
         canonical_url=None,
         document_title=None,
+        ai_specific=ai_specific,
     )
 
 
@@ -1452,6 +1459,118 @@ def test_the_same_passage_linked_twice_is_one_passage(manifest: Manifest) -> Non
     twin = replace(first, link_id=str(uuid4()))  # same span, a second link row
     c = ctx(manifest, links=[first, twin], methodology=manifest.methodology)
     assert c.ladder_level == 2
+
+
+def test_the_same_words_on_two_pages_are_one_passage(manifest: Manifest) -> None:
+    """A teaser repeated across a site is one statement, however many pages carry it."""
+    words = "The AI Governance Committee reviews every high-risk model before release."
+    repeated = [link("SAF-01", "specified_control", quote=words), link("SAF-01", "specified_control", quote=words)]
+    assert ctx(manifest, links=repeated, methodology=manifest.methodology).ladder_level == 2
+    distinct = [*repeated, link("SAF-01", "specified_control")]
+    assert ctx(manifest, links=distinct, methodology=manifest.methodology).ladder_level == 3
+
+
+# ------------------------------------------------- part-level credits (7.0.0)
+def _decide(engine: RuleEngine, context: CriterionContext) -> CriterionOutcome:
+    return engine.run_criterion(context)
+
+
+def test_ai_specific_passages_earn_half_of_the_next_level(manifest: Manifest, engine: RuleEngine) -> None:
+    live = manifest.methodology
+    rule = live.scoring.ai_specific
+    assert rule.level_progress == 0.5 and rule.min_passages == 2
+    general = [link("SAF-01", "specified_control"), link("SAF-01", "specified_control")]
+    outcome = _decide(engine, ctx(manifest, links=general, methodology=live, inputs=MATURE))
+    assert (outcome.state.level, outcome.state.level_progress) == (3, 0.0)
+
+    about_ai = [link("SAF-01", "specified_control", ai_specific=True) for _ in range(2)]
+    outcome = _decide(engine, ctx(manifest, links=about_ai, methodology=live, inputs=MATURE))
+    assert (outcome.state.level, outcome.state.level_progress) == (3, 0.5)
+    assert "ADJ-AI-SPECIFIC" in outcome.state.adjustments
+    assert criterion_ratio(3, live, 0.5) == pytest.approx(0.625)
+
+    one_only = [link("SAF-01", "specified_control", ai_specific=True), link("SAF-01", "specified_control")]
+    outcome = _decide(engine, ctx(manifest, links=one_only, methodology=live, inputs=MATURE))
+    assert (outcome.state.level, outcome.state.level_progress) == (3, 0.0)
+
+
+def test_ai_specific_credit_needs_the_passages_at_the_credited_rung(manifest: Manifest, engine: RuleEngine) -> None:
+    """Two AI commitments do not qualify a level that two general controls set."""
+    links = [
+        link("SAF-01", "specified_control"),
+        link("SAF-01", "specified_control"),
+        link("SAF-01", "stated_commitment", ai_specific=True),
+        link("SAF-01", "stated_commitment", ai_specific=True),
+    ]
+    outcome = _decide(engine, ctx(manifest, links=links, methodology=manifest.methodology, inputs=MATURE))
+    assert (outcome.state.level, outcome.state.level_progress) == (3, 0.0)
+
+
+def test_documented_execution_earns_no_ai_specific_credit(manifest: Manifest, engine: RuleEngine) -> None:
+    """From documented execution upwards the evidence must be about AI to hold the rung at all."""
+    links = [link("SAF-01", "documented_execution", ai_specific=True) for _ in range(2)]
+    outcome = _decide(engine, ctx(manifest, links=links, methodology=manifest.methodology, inputs=MATURE))
+    assert (outcome.state.level, outcome.state.level_progress) == (4, 0.0)
+
+
+def test_early_stage_is_credited_half_a_level(manifest: Manifest, engine: RuleEngine) -> None:
+    live = manifest.methodology
+    assert live.scoring.stage_expectations.credit("early") == 0.5
+    assert live.scoring.stage_expectations.credit("mature") == 0.0
+    early = {"stage_band": "early", "size_band": "small", "direct_urls": 0}
+    commitment = [link("PUR-01", "stated_commitment")]
+    outcome = _decide(engine, ctx(manifest, "PUR-01", links=commitment, methodology=live, inputs=early))
+    assert (outcome.state.level, outcome.state.level_progress) == (2, 0.5)
+    assert "ADJ-STAGE-EXPECTATIONS" in outcome.state.adjustments
+    mature = _decide(engine, ctx(manifest, "PUR-01", links=commitment, methodology=live, inputs=MATURE))
+    assert (mature.state.level, mature.state.level_progress) == (2, 0.0)
+    nothing = _decide(engine, ctx(manifest, "PUR-01", links=[], methodology=live, inputs=early))
+    assert (nothing.state.level, nothing.state.level_progress) == (1, 0.0)
+
+
+def test_two_half_levels_make_the_next_level(manifest: Manifest, engine: RuleEngine) -> None:
+    """An early-stage organization's commitments about AI reach what a mature one earns with a control."""
+    live = manifest.methodology
+    early = {"stage_band": "early", "size_band": "small", "direct_urls": 0}
+    links = [link("PUR-01", "stated_commitment", ai_specific=True) for _ in range(2)]
+    outcome = _decide(engine, ctx(manifest, "PUR-01", links=links, methodology=live, inputs=early))
+    assert (outcome.state.level, outcome.state.level_progress) == (3, 0.0)
+    controls = [link("PUR-01", "specified_control", ai_specific=True) for _ in range(2)]
+    outcome = _decide(engine, ctx(manifest, "PUR-01", links=controls, methodology=live, inputs=early))
+    assert (outcome.state.level, outcome.state.level_progress) == (4, 0.0)
+
+
+def test_part_levels_reach_the_score(manifest: Manifest, engine: RuleEngine) -> None:
+    """Every criterion at a general control scores 50; with AI-specific controls, 62.5."""
+    live = manifest.methodology
+
+    def score(ai: bool) -> float | None:
+        outcomes = [
+            engine.run_criterion(
+                ctx(
+                    manifest,
+                    c.code,
+                    links=[link(c.code, "specified_control", ai_specific=ai) for _ in range(2)],
+                    methodology=live,
+                    inputs=MATURE,
+                )
+            )
+            for c in manifest.criteria
+        ]
+        result = engine.run_assessment(
+            outcomes,
+            stage_band="mature",
+            size_band="enterprise",
+            certification_requested=False,
+            signed_certification=False,
+            connector_runs=runs(WEBSITE="succeeded"),
+            incidents=(),
+            as_of=AS_OF,
+        )
+        return result.state.hai_score
+
+    assert score(False) == 50.0
+    assert score(True) == 62.5
 
 
 def test_no_overall_score_without_coverage(manifest: Manifest, engine: RuleEngine) -> None:

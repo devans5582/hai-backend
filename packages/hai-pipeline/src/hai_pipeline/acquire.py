@@ -299,6 +299,10 @@ class AcquisitionService:
                 # context itself, only its AI passages may be proposed at all.
                 require_ai_context=sd.connector_code == "EDGAR"
                 and self.manifest.methodology.lexicons.ai_context.required_from_rung is None,
+                # An organization writing about itself by name is as much the owner as "we".
+                organization_names=tuple(
+                    dict.fromkeys(str(n) for n in (org.display_name, org.legal_name, *(org.aliases or [])) if n)
+                ),
             )
             proposals = bounded_proposals(
                 proposals,

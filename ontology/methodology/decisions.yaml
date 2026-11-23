@@ -214,3 +214,48 @@ decisions:
       scores, coverage states and connector outcomes are still stored and shown. Before 6.0.0 the
       remaining weights were renormalised and the score was published with outcome access_limited.
     configured_in: ontology/methodology/methodology.yaml outcome
+
+  - id: D17
+    title: Stage-appropriate expectations
+    needed_by: Methodology 7.0 sign-off
+    status: open
+    recommendation: Humaital to confirm the credit per stage band, and whether the growth band earns any.
+    current: >-
+      HAI Methodology v3.0 ("Stage-Adjusted Scoring") says an early-stage organization is evaluated
+      on "foundational purpose clarity, basic safety practices, and stated accountability ownership",
+      that "formal controls infrastructure is not expected" and that "early design decisions are
+      weighted heavily". scoring.stage_expectations credits the early band half a level on every
+      criterion that has admissible supporting evidence (ADJ-STAGE-EXPECTATIONS). Growth and mature
+      organizations earn nothing more. The half level is a draft: the published text gives the
+      principle, not the number. An early-stage organization whose stated commitments are about AI
+      then reaches the level a mature organization earns with a specified control.
+    configured_in: ontology/methodology/methodology.yaml scoring.stage_expectations
+
+  - id: D18
+    title: Evidence that is specifically about AI
+    needed_by: Methodology 7.0 sign-off
+    status: open
+    recommendation: Humaital to confirm that AI-specific evidence earns more than general corporate governance, and by how much.
+    current: >-
+      The published evidence tiers describe "an organization's position on responsible AI". Decision
+      D14 lets ordinary corporate governance earn up to a specified control, which put almost every
+      large organization at level 3 on every criterion. scoring.ai_specific adds half of the next
+      level when the rung that set the level is carried by two separate passages about AI being
+      governed, built or used (ADJ-AI-SPECIFIC). A passage is AI-specific when a practice phrase
+      stands within lexicons.ai_context.max_gap_chars of the words that earned its rung. Half a level
+      and two passages are drafts chosen against the 2026-11-22 calibration set.
+    configured_in: ontology/methodology/methodology.yaml scoring.ai_specific, lexicons.ai_context
+
+  - id: D19
+    title: Whose statement and what kind of record
+    needed_by: Methodology 7.0 sign-off
+    status: open
+    recommendation: Keep while evidence is read by lexicons.
+    current: >-
+      The organization's own name counts as an accountable owner, so a site written in the third
+      person ("Siemens has established", "the University requires") is read like one that says "we".
+      The same sentence repeated on several pages is one passage for corroboration. Findings about
+      other organizations (lexicons.evidence_quality.research_terms) and financial results
+      (financial_terms) do not earn the execution rung. Within a long document, passages about AI
+      are kept first when the number of stored links is bounded.
+    configured_in: ontology/methodology/methodology.yaml lexicons.evidence_quality; config/connectors.yaml defaults

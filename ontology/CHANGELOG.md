@@ -5,6 +5,34 @@ methodology are versioned separately with semver. A diff tool classifies each
 change (patch, minor, major) and CI refuses a version that did not move far
 enough.
 
+## Ontology 1.4.0, Methodology 7.0.0, Ruleset 6.0.0 (2026-11-23)
+
+Stage expectations and AI-specific evidence, read from Humaital's published
+HAI Methodology v3.0. ADR 0022. Draft: the numbers are not canonical.
+
+* Ontology 1.4.0 (additive): `EvidenceLink.ai_specific` and
+  `CriterionDecision.level_progress`. Migration `0011`.
+* `scoring.stage_expectations.level_progress: { early: 0.5 }`: an early-stage
+  organization is credited half a level on every criterion it gives admissible
+  evidence for (rule ADJ-STAGE-EXPECTATIONS, decision D17).
+* `scoring.ai_specific`: half of the next level when the rung that set the
+  level is carried by two separate passages about AI being governed, built or
+  used (rule ADJ-AI-SPECIFIC, decision D18). The criterion ratio is
+  `(level - 1 + level_progress) / 4`.
+* `lexicons.ai_context.max_gap_chars: 200`: the AI reference must stand beside
+  the commitment, control or result it qualifies.
+* The organization's own name counts as an accountable owner. The same
+  sentence on several pages is one passage. `evidence_quality.research_terms`
+  and `financial_terms` keep findings about others and financial results out
+  of the execution rung (decision D19).
+* `lexicons.execution_dates`: plain year and fiscal-year forms; result verbs
+  for governance activity carried out.
+* Ruleset 6.0.0: ADJ-AI-SPECIFIC and ADJ-STAGE-EXPECTATIONS run after the caps
+  and incident adjustments; corroboration counts distinct passage text.
+* Not changed: the ladder, corroboration counts, pillar and materiality
+  weights, the missing level, confidence, certification thresholds. No
+  multiplier.
+
 ## Ontology 1.3.0, Methodology 6.0.0, Ruleset 5.0.0 (2026-11-22)
 
 Evidence calibration against the ranges Humaital expects for 22 organizations.

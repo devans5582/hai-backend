@@ -104,6 +104,8 @@ class DecisionOut(BaseModel):
     criterion_name: str
     pillar: str
     level: int | None
+    level_progress: float = 0.0
+    level_label: str | None = None
     coverage_state: str
     coverage_wording: str
     confidence: float

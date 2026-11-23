@@ -102,6 +102,8 @@ export interface Decision {
   criterion_name: string;
   pillar: PillarCode;
   level: number | null;
+  level_progress?: number;
+  level_label?: string | null;
   coverage_state: CoverageState;
   coverage_wording: string;
   confidence: number;
@@ -150,6 +152,8 @@ export interface CriterionTrace {
   criterion_name: string;
   decision_id: string;
   level: number | null;
+  level_progress?: number;
+  level_label?: string | null;
   coverage_state: CoverageState;
   confidence: number;
   applied_rule_codes: string[];
@@ -188,6 +192,8 @@ export interface ReportCriterion {
   definition: string;
   content_status: string;
   level: number | null;
+  level_progress?: number;
+  level_label?: string | null;
   level_descriptor: string | null;
   coverage_state: CoverageState | null;
   coverage_wording: string | null;
