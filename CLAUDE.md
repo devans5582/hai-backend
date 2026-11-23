@@ -60,6 +60,7 @@ make test-enforced      Postgres-backed tests with SET LOCAL ROLE enforced
 make test               all three
 make check              fmt check, lint, typecheck, ontology gate, all tests
 make calibrate          run tests/calibration/ground_truth.yaml through the real pipeline (ONLY=key,key)
+make engine-guide       render docs/hai-core-engine-and-ontology.pdf from the current manifest
 make frontend-check     typecheck, lint, vitest, build
 make dev                api, worker and frontend with hot reload
 make up / down / logs / reset / smoke    docker compose
