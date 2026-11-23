@@ -397,6 +397,19 @@ class ScoringCalibration(Strict):
     certification_basis: Literal["baseline"] = "baseline"
 
 
+class Corroboration(Strict):
+    """How many separate passages must carry a rung before the ladder credits it.
+
+    One sentence can match a lexicon by accident; the same accident in a second passage is far less
+    likely. A rung that is absent from ``min_passages`` needs one passage, as before.
+    """
+
+    min_passages: dict[str, int] = Field(default_factory=dict)
+
+    def required(self, rung: str) -> int:
+        return max(1, int(self.min_passages.get(rung, 1)))
+
+
 class Scoring(Strict):
     level_min: int
     level_max: int
@@ -404,6 +417,7 @@ class Scoring(Strict):
     pillar_aggregation: Literal["equal_mean", "materiality_weighted"]
     pillar_weight_profiles: PillarWeightProfiles = PillarWeightProfiles()
     calibration: ScoringCalibration = Field(default_factory=ScoringCalibration)
+    corroboration: Corroboration = Field(default_factory=Corroboration)
     score_scale: float
     score_cap: float
     low_confidence_cap: LowConfidenceCap
@@ -516,6 +530,9 @@ class Outcome(Strict):
     insufficient_min_observed_criteria: int
     governance_baseline_min_admissible_links: int
     content_status: str
+    # 6.0.0: when the assessment is access limited or rests on too few criteria, publish no overall
+    # score. One assessable criterion out of twenty does not describe an organization.
+    withhold_score_without_coverage: bool = False
 
 
 class DecayCurve(Strict):
@@ -564,6 +581,50 @@ class TermList(Strict):
     terms: list[str]
 
 
+class AiContextLexicon(Strict):
+    """AI terminology, and the rung from which evidence must be about the organization's AI practice.
+
+    ``terms`` is any mention of AI; it scopes adverse events. ``practice_terms`` are phrases that show
+    a passage is about AI being governed, built or used ("responsible AI", "AI systems", "model
+    cards"), as opposed to a passing mention such as a director's degree or a product name.
+    ``required_from_rung`` names the lowest maturity rung that needs a practice term in the quote, its
+    section heading or the document title. General corporate governance then earns credit below that
+    rung only. ``None`` keeps the earlier behaviour: any AI term, Safety pillar only.
+    """
+
+    terms: list[str] = Field(default_factory=list)
+    practice_terms: list[str] = Field(default_factory=list)
+    required_from_rung: str | None = None
+
+
+class EvidenceQuality(Strict):
+    """What a quoted passage must look like before it earns a control or execution rung.
+
+    Keyword evidence is only as good as its guards. Every default leaves a guard off, so a manifest
+    that omits this block behaves as before.
+
+    * ``min_words_for_control`` and ``min_prose_share`` keep tables of contents, name lists and table
+      rows out: a control is described in a sentence.
+    * ``caution_terms`` mark risk-factor language, which describes what could go wrong and is neither
+      a commitment nor a control.
+    * ``hint_in_quote_from_rung`` requires the criterion's own vocabulary in the quoted text, not only
+      in the heading above it.
+    * ``control_max_gap_chars`` requires the accountable owner and the procedure to stand together.
+    * ``execution_max_gap_chars`` requires the date and the result to stand together, and
+      ``execution_voice_terms`` requires the organization's own voice; ``reported_speech_terms``
+      mark a quotation of someone else.
+    """
+
+    min_words_for_control: int = 6
+    min_prose_share: float = 0.0
+    caution_terms: list[str] = Field(default_factory=list)
+    hint_in_quote_from_rung: str | None = None
+    control_max_gap_chars: int | None = None
+    execution_max_gap_chars: int | None = None
+    execution_voice_terms: list[str] = Field(default_factory=list)
+    reported_speech_terms: list[str] = Field(default_factory=list)
+
+
 class ControlLexicon(Strict):
     owner_terms: list[str]
     threshold_terms: list[str]
@@ -571,8 +632,15 @@ class ControlLexicon(Strict):
 
 
 class ExecutionDates(Strict):
+    """A record that something was done: a result beside a date, or beside a quantity.
+
+    ``quantity_terms`` (6.0.0) lets "14 model reviews were completed" count as a record even when
+    the sentence carries no date. Empty keeps the earlier dated-only behaviour.
+    """
+
     terms: list[str]
     result_terms: list[str]
+    quantity_terms: list[str] = Field(default_factory=list)
 
 
 class ExecutionCategory(Strict):
@@ -629,7 +697,8 @@ class Lexicons(Strict):
     injection: TermList
     irrelevance: Irrelevance
     focus_areas: dict[str, TermList] = {}
-    ai_context: TermList = Field(default_factory=lambda: TermList(terms=[]))
+    ai_context: AiContextLexicon = Field(default_factory=AiContextLexicon)
+    evidence_quality: EvidenceQuality = Field(default_factory=EvidenceQuality)
 
 
 class EvidenceStrengthLabel(Strict):

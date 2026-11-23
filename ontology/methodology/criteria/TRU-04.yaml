@@ -46,6 +46,28 @@ criterion:
     - "user autonomy"
     - "consent"
     - "no manipulation"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "opt out"
+    - "opt-out"
+    - "your choices"
+    - "your choice"
+    - "choice*"
+    - "deceptive"
+    - "mislead*"
+    - "unfair"
+    - "coerc*"
+    - "responsible marketing"
+    - "fair dealing"
+    - "undue influence"
+    - "conflict* of interest"
+    - "bribe*"
+    - "do not sell"
+    - "unsubscribe"
+    - "voluntary"
+    - "exploit*"
+    - "pressure"
+    - "informed decision*"
+    - "preferences"
   indicators:
     - code: T4_R1
       kind: legacy_r

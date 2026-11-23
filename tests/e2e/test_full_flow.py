@@ -136,9 +136,7 @@ async def test_full_assessment_lifecycle(
     assert runs["total"] == 9 and all(r["outcome"] == "succeeded" for r in runs["items"])
     result = client.get(f"/v1/assessments/{aid}/result", headers=partner).json()
     assert result["hai_score"] is not None and 0 < result["hai_score"] <= 100
-    assert result["calibration"]["multiplier"] == 5.0
-    assert result["calibration"]["calibrated_score"] == result["hai_score"]
-    assert result["calibration"]["certification_basis"] == "baseline"
+    assert result["calibration"] is None  # methodology 6.0.0 applies no multiplier
     assert result["outcome_status"] in ("certification_not_yet_achieved", "confidence_too_low")
     assert any(t.startswith("incident:") for t in result["review_triggers"])
 
@@ -315,7 +313,9 @@ async def test_blocked_sources_are_unavailable_not_missing(
     assert result["outcome_status"] in ("access_limited", "insufficient_evidence")
     report = client.get(f"/v1/assessments/{aid}/report", headers=partner).json()
     assert report["coverage_summary"]["unavailable"] >= 10
-    assert report["score_availability"]["code"] == "available"
+    # one or two assessable criteria do not describe an organization: no overall score (ADR 0021)
+    assert result["hai_score"] is None
+    assert report["score_availability"]["code"] == "sources_unavailable"
 
 
 async def test_ten_consecutive_assessments_and_downloads_keep_their_results(

@@ -53,6 +53,22 @@ criterion:
     - "harm prevention"
     - "safety protocol"
     - "content filter"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "protect*"
+    - "safety"
+    - "safe"
+    - "privacy"
+    - "security"
+    - "secure"
+    - "encrypt*"
+    - "fraud"
+    - "consumer protection"
+    - "data protection"
+    - "authentication"
+    - "harm"
+    - "abuse"
+    - "scam*"
+    - "safeguard*"
   indicators:
     - code: S2_R1
       kind: legacy_r

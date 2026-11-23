@@ -92,3 +92,19 @@ def test_validate_record_codes(manifest: Manifest) -> None:
     assert "E_UNKNOWN_FIELD" in errs
     errs = {e.code for e in validate_record(manifest, span, {**ok, "char_start": "one"})}
     assert "E_TYPE" in errs
+
+
+def test_the_literal_prefilter_never_changes_a_match() -> None:
+    """find_terms skips a term whose literal anchor is absent; the result must equal a plain scan."""
+    from hai_ontology.terms import _anchor, compile_term, find_terms
+
+    terms = ["chief * officer", "discriminat*", "opt-out", "\\d+\\s?%", "review* (each|every) release", "AI", "sued"]
+    texts = [
+        "Our Chief AI Officer reviews every release against a 2% threshold.",
+        "Customers may opt-out at any time; discrimination is prohibited.",
+        "The company pursued growth and was not sued.",
+        "PAID leave and airfare are unrelated to ai.",
+    ]
+    for text in texts:
+        assert find_terms(text, terms) == [t for t in terms if compile_term(t).search(text)]
+    assert _anchor("chief * officer") == "officer" and _anchor("\\d+\\s?%") is None

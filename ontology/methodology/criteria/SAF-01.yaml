@@ -52,6 +52,20 @@ criterion:
     - "risk framework"
     - "hazard"
     - "failure mode"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "risk*"
+    - "mitigat*"
+    - "enterprise risk"
+    - "controls"
+    - "cybersecurity"
+    - "threat*"
+    - "vulnerabilit*"
+    - "business continuity"
+    - "due diligence"
+    - "safeguard*"
+    - "prevent*"
+    - "resilien*"
+    - "contingency"
   indicators:
     - code: S1_R1
       kind: legacy_r

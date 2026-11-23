@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from hai_core.generated.enums import EvidenceClass, ExecutionLevel, MaturityRung
-from hai_engine.classification import LinkClassifier
+from hai_engine.classification import Classification, LinkClassifier
 from hai_engine.evaluation import Evaluator
 from hai_engine.llm.base import ProviderError, ProviderResponse
 from hai_engine.llm.heuristic import HeuristicProvider, propose_from_ladder
@@ -16,6 +16,7 @@ from hai_engine.llm.prompts import PromptBundle, build_messages
 from hai_engine.packs import EvidencePack, build_all_packs, build_pack
 from hai_engine.validation import FindingValidator
 from hai_ontology.meta import CriterionDef, Manifest
+from hai_pipeline.proposals import heuristic_proposals
 
 
 # --------------------------------------------------------------- classification
@@ -157,7 +158,9 @@ def test_financial_operations_do_not_establish_ai_safety_execution(manifest: Man
         section_heading="Financial risk management",
         document_title="Risk management",
     )
-    assert result.maturity_rung in (MaturityRung.NONE, MaturityRung.STATED_COMMITMENT)
+    # Decision D14: general governance can document a control. It never proves AI execution.
+    assert result.maturity_rung in (MaturityRung.STATED_COMMITMENT, MaturityRung.SPECIFIED_CONTROL)
+    assert "general operational or financial evidence does not establish AI execution" in result.reasons
 
 
 def test_operational_metrics_under_ai_heading_keep_their_context(manifest: Manifest) -> None:
@@ -393,3 +396,116 @@ async def test_provider_errors_are_recorded_and_second_opinion_disagreement(
     assert ev.accepted is not None and ev.accepted.attempt == 2 and not ev.fell_back
     assert ev.attempts[0].errors == ["provider error: boom"]
     assert ev.disagreement_levels == 2
+
+
+# ------------------------------------------------------------- evidence guards (methodology 6.0.0, ADR 0021)
+
+
+def _classify(manifest: Manifest, quote: str, code: str | None = None, **kw: object) -> Classification:
+    return LinkClassifier(manifest.methodology).classify(
+        quote,
+        polarity="supports",
+        publisher_type="org_disclosure",
+        independence="self",
+        criterion=manifest.criterion(code) if code else None,
+        **kw,  # type: ignore[arg-type]
+    )
+
+
+def test_general_governance_documents_a_control_on_any_pillar_but_never_ai_execution(manifest: Manifest) -> None:
+    quote = (
+        "In 2025 the Audit Committee reviewed 14 ethics investigations and reported the results of each "
+        "to the Board of Directors."
+    )
+    general = _classify(manifest, quote, "ACC-02", document_title="Proxy statement")
+    assert general.maturity_rung is MaturityRung.SPECIFIED_CONTROL
+    about_ai = _classify(manifest, quote, "ACC-02", section_heading="Responsible AI governance")
+    assert about_ai.maturity_rung is MaturityRung.DOCUMENTED_EXECUTION
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        # a passing mention of AI is not the organization's AI practice
+        "Ms. Mayer holds a degree in artificial intelligence and in 2025 completed 12 board assignments "
+        "reviewed by the committee.",
+        # a product name
+        "In 2025 the committee reviewed and completed the sale of 40 Dazzle AI glasses to investors.",
+    ],
+)
+def test_a_passing_mention_of_ai_does_not_open_the_execution_rung(manifest: Manifest, quote: str) -> None:
+    assert _classify(manifest, quote).maturity_rung is not MaturityRung.DOCUMENTED_EXECUTION
+
+
+def test_risk_factor_language_is_not_evidence(manifest: Manifest) -> None:
+    quote = (
+        "Our use of AI systems could adversely affect our business, and the Board reviews these risks; "
+        "we may not be able to comply with new laws."
+    )
+    result = _classify(manifest, quote, "SAF-01")
+    assert result.maturity_rung is MaturityRung.NONE
+    proposals = heuristic_proposals(
+        [quote], [manifest.criterion("SAF-01")], manifest.methodology, publisher_type="org_disclosure", source_tier="T3"
+    )
+    assert [p.polarity for p in proposals] == ["neutral"]
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "KATHY N. WALLER  Executive Director of the Atlanta Committee for Progress; former CFO  67  2015  2  "
+        "Audit Risk",
+        "Security Ownership Of Certain Beneficial Owners And Management Risk Committee Review 54",
+    ],
+)
+def test_table_rows_and_contents_lines_are_not_controls(manifest: Manifest, quote: str) -> None:
+    assert _classify(manifest, quote, "SAF-01").maturity_rung is not MaturityRung.SPECIFIED_CONTROL
+
+
+def test_owner_and_procedure_must_be_one_statement(manifest: Manifest) -> None:
+    together = "The Risk Committee reviews enterprise risk assessments each quarter and reports to the full Board."
+    assert _classify(manifest, together, "SAF-01").maturity_rung is MaturityRung.SPECIFIED_CONTROL
+    apart = (
+        "The Risk Committee met four times this year in person and by video conference, and its members "
+        "are listed in the table that follows this paragraph together with their other board memberships; "
+        "separately, suppliers are expected to manage risk and may be subject to audits."
+    )
+    assert _classify(manifest, apart, "SAF-01").maturity_rung is not MaturityRung.SPECIFIED_CONTROL
+
+
+def test_the_organization_speaking_for_itself_can_document_a_control(manifest: Manifest) -> None:
+    quote = "We review every supplier risk assessment before a contract is signed and escalate open findings."
+    assert _classify(manifest, quote, "SAF-01").maturity_rung is MaturityRung.SPECIFIED_CONTROL
+
+
+def test_a_control_must_speak_to_the_criterion_in_the_quote_itself(manifest: Manifest) -> None:
+    quote = "The Compensation Committee reviews and approves the annual bonus plan for executive officers."
+    under_heading = _classify(manifest, quote, "SAF-01", section_heading="Risk management")
+    assert under_heading.maturity_rung is MaturityRung.STATED_COMMITMENT
+    assert "does not speak to the criterion" in under_heading.reasons[-1]
+
+
+def test_execution_needs_the_organizations_voice_and_no_reported_speech(manifest: Manifest) -> None:
+    heading = {"section_heading": "Responsible AI"}
+    own = "We completed 14 AI model reviews in 2026 and published the results for every AI system."
+    assert _classify(manifest, own, **heading).maturity_rung is MaturityRung.DOCUMENTED_EXECUTION
+    by_name = "In 2026 Acme completed 14 AI model reviews and published the results for every AI system."
+    named = _classify(manifest, by_name, organization_names=("Acme",), **heading)
+    assert named.maturity_rung is MaturityRung.DOCUMENTED_EXECUTION
+    customer = (
+        "Apollo Hospitals tracked 40 patient safety metrics after the AI system was deployed in 2026 "
+        "and reported gains."
+    )
+    assert _classify(manifest, customer, **heading).maturity_rung is not MaturityRung.DOCUMENTED_EXECUTION
+    quoted = "We completed 14 AI model reviews in 2026, said the chief executive of a partner company."
+    assert _classify(manifest, quoted, **heading).maturity_rung is not MaturityRung.DOCUMENTED_EXECUTION
+
+
+def test_a_counted_result_is_a_record_and_a_threshold_is_not(manifest: Manifest) -> None:
+    counted = "We red team our AI models before release and completed 120 red team exercises across our AI systems."
+    assert _classify(manifest, counted).maturity_rung is MaturityRung.DOCUMENTED_EXECUTION
+    threshold = (
+        "Our Chief AI Officer owns AI risk management; every release is reviewed against a 2% disparate "
+        "impact threshold."
+    )
+    assert _classify(manifest, threshold).maturity_rung is MaturityRung.SPECIFIED_CONTROL

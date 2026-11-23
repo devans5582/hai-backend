@@ -171,3 +171,46 @@ decisions:
       the Phase 6 model for comparison. A website-only organization with policy-level quotes
       lands near 40, which is what the published report shows for that profile.
     configured_in: ontology/methodology/methodology.yaml confidence.model, confidence.components
+
+  - id: D14
+    title: What general corporate governance can earn
+    needed_by: Methodology 6.0 sign-off
+    status: open
+    recommendation: Confirm that general governance earns stated commitment and specified control, and that operational evidence and independent verification must be about AI.
+    current: >-
+      lexicons.ai_context.required_from_rung is documented_execution. A code of conduct, a board
+      committee charter or a privacy programme is admitted as evidence for the criterion it speaks
+      to and can lift it to level 2 or 3. Levels 4 and 5 need a passage about the organization's AI
+      practice (lexicons.ai_context.practice_terms in the quote, its section heading or the document
+      title). Before 6.0.0 the check covered the Safety pillar only. The expected ranges Humaital
+      supplied on 2026-11-22 place organizations with ordinary governance and little AI disclosure
+      at 35 to 55, which is what this rule produces; it is still a draft reading of the published
+      evidence forms, not canonical text.
+    configured_in: ontology/methodology/methodology.yaml lexicons.ai_context
+
+  - id: D15
+    title: Guards and corroboration on keyword evidence
+    needed_by: Methodology 6.0 sign-off
+    status: open
+    recommendation: Keep the guards while evidence is read by lexicons; revisit when a model reads the evidence packs.
+    current: >-
+      lexicons.evidence_quality holds the guards a quoted passage must pass before it earns a control
+      or execution rung: running prose of at least eight words, the criterion's own vocabulary in
+      the quote, the accountable owner beside the procedure, the date or quantity beside the result,
+      the organization's own voice, no quotation of another party, and no risk-factor language.
+      scoring.corroboration requires two separate passages before the ladder credits a control or
+      execution rung. The thresholds (100 and 160 characters, 0.6 prose share, two passages) are
+      drafts chosen to remove the false positives seen in the 2026-11-22 calibration set.
+    configured_in: ontology/methodology/methodology.yaml lexicons.evidence_quality, scoring.corroboration
+
+  - id: D16
+    title: No overall score without coverage
+    needed_by: Methodology 6.0 sign-off
+    status: open
+    recommendation: Keep. A score from one or two assessable criteria is not a rating of the organization.
+    current: >-
+      outcome.withhold_score_without_coverage is true. When half or more of the criteria are
+      unavailable, or fewer than four are counted, the overall score is not published (N/A). Pillar
+      scores, coverage states and connector outcomes are still stored and shown. Before 6.0.0 the
+      remaining weights were renormalised and the score was published with outcome access_limited.
+    configured_in: ontology/methodology/methodology.yaml outcome

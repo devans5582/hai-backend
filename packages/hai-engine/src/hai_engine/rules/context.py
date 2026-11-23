@@ -253,7 +253,21 @@ class CriterionContext:
 
     @property
     def best_rung_rank(self) -> int:
-        return max((link.rung_rank for link in self.admissible_support), default=0)
+        """The highest rung carried by as many separate passages as the methodology requires.
+
+        Without a corroboration rule every rung needs one passage and this is the best single link.
+        """
+        support = self.admissible_support
+        if not support:
+            return 0
+        rule = self.methodology.scoring.corroboration
+        names = {rank: name for name, rank in RANKS["maturity_rung"].items()}
+        # A rung that is not corroborated still counts towards every rung below it.
+        for rank in range(max(link.rung_rank for link in support), 0, -1):
+            passages = {link.span_id for link in support if link.rung_rank >= rank}
+            if len(passages) >= rule.required(names.get(rank, "")):
+                return rank
+        return 0
 
     @property
     def ladder_level(self) -> int:

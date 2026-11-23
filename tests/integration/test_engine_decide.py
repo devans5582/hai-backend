@@ -125,12 +125,13 @@ async def test_report_lists_only_collected_sources(clean_db: Database, manifest:
     assert r.hai_score is not None and 0 < float(r.hai_score) <= 100
     assert isinstance(r.trace, dict)
     calibration = r.trace["calibration"]
-    assert calibration["multiplier"] == 5.0 and calibration["certification_basis"] == "baseline"
+    # methodology 6.0.0: the displayed score is the evidence-derived aggregate
+    assert calibration["multiplier"] == 1.0 and calibration["certification_basis"] == "baseline"
+    assert calibration["baseline_score"] == float(r.hai_score)
     assert calibration["calibrated_score"] == float(r.hai_score)
     assert calibration["baseline_score"] == decision.engine.state.baseline_score
     assert calibration["threshold"] == 70
-    assert decision.engine.state.baseline_score is not None
-    assert decision.engine.state.baseline_score < float(r.hai_score)
+    assert decision.engine.state.baseline_score == float(r.hai_score)
     assert len(decision.decisions) == 20 and len(decision.pillar_scores) == 6
     by_code = {str(d.criterion_code.value): d for d in decision.decisions}
     assert (
@@ -264,10 +265,11 @@ async def test_review_finalize_and_certification(clean_db: Database, manifest: M
         assert isinstance(eligible.trace, dict)
         eligible = eligible.model_copy(
             update={
+                "hai_score": 100.0,
                 "trace": {
                     **eligible.trace,
                     "calibration": {**eligible.trace["calibration"], "baseline_score": 100.0},
-                }
+                },
             }
         )
         cert = certs.sign(
@@ -282,7 +284,7 @@ async def test_review_finalize_and_certification(clean_db: Database, manifest: M
         assert cert.certificate_number and cert.expires_at is not None
         verified = certs.verify(store, cert.certificate_number, now=NOW)
         assert verified.valid and verified.status == "valid" and verified.organization == ORG_NAME
-        assert verified.calibration == result.trace["calibration"]
+        assert verified.calibration is None  # no multiplier under methodology 6.0.0: nothing to disclose
         assert certs.verify(store, cert.certificate_number, now=datetime(2028, 1, 1, tzinfo=UTC)).status == "expired"
         assert certs.verify(store, "HAI-0000-NOPE").status == "not_found"
         revoked = certs.revoke(store, current=cert, principal=reviewer, reason="appeal upheld", now=NOW)

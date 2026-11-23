@@ -53,6 +53,26 @@ criterion:
     - "data protection"
     - "training data"
     - "data privacy"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "personal information"
+    - "personal data"
+    - "information we collect"
+    - "data we collect"
+    - "how we use * information"
+    - "how we use * data"
+    - "data collection"
+    - "data sharing"
+    - "share * information"
+    - "privacy notice"
+    - "privacy statement"
+    - "privacy rights"
+    - "ccpa"
+    - "data security"
+    - "data governance"
+    - "cookies"
+    - "third parties"
+    - "retention"
+    - "hipaa"
   indicators:
     - code: TR2_R1
       kind: legacy_r

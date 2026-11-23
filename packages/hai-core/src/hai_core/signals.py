@@ -8,10 +8,12 @@ change, not a code change. Terms match whole words only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from hai_ontology.meta import CriterionDef, Methodology, NegativeRule
 from hai_ontology.terms import compile_term, find_terms
+
+_CACHE_SIZE = 20_000
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,7 @@ class LanguageSignals:
     procedure: tuple[str, ...] = ()
     execution_dates: tuple[str, ...] = ()
     execution_results: tuple[str, ...] = ()
+    execution_quantities: tuple[str, ...] = ()
     verification: tuple[str, ...] = ()
     injection: tuple[str, ...] = ()
     hints: dict[str, tuple[str, ...]] = field(default_factory=dict)
@@ -56,7 +59,7 @@ class LanguageSignals:
 
     @property
     def has_documented_execution(self) -> bool:
-        return bool(self.execution_dates) and bool(self.execution_results)
+        return bool(self.execution_dates or self.execution_quantities) and bool(self.execution_results)
 
     @property
     def has_verification(self) -> bool:
@@ -67,25 +70,40 @@ class SignalMatcher:
     def __init__(self, methodology: Methodology) -> None:
         self.md = methodology
         self.lex = methodology.lexicons
+        # A span is classified once per criterion it is linked to; its language does not change.
+        self._language: dict[str, LanguageSignals] = {}
+        self._execution: dict[str, ExecutionSignal] = {}
 
     # ----------------------------------------------------------- basic terms
     def language(self, text: str, criteria: list[CriterionDef] | None = None) -> LanguageSignals:
-        hints: dict[str, tuple[str, ...]] = {}
-        for c in criteria or []:
+        cached = self._language.get(text)
+        if cached is None:
+            cached = LanguageSignals(
+                commitment=tuple(find_terms(text, self.lex.commitment.terms)),
+                owner=tuple(find_terms(text, self.lex.control.owner_terms)),
+                threshold=tuple(find_terms(text, self.lex.control.threshold_terms)),
+                procedure=tuple(find_terms(text, self.lex.control.procedure_terms)),
+                execution_dates=tuple(find_terms(text, self.lex.execution_dates.terms)),
+                execution_results=tuple(find_terms(text, self.lex.execution_dates.result_terms)),
+                execution_quantities=tuple(find_terms(text, self.lex.execution_dates.quantity_terms)),
+                verification=tuple(find_terms(text, self.lex.independent_verification.terms)),
+                injection=tuple(find_terms(text, self.lex.injection.terms)),
+            )
+            if len(self._language) >= _CACHE_SIZE:
+                self._language.clear()
+            self._language[text] = cached
+        if not criteria:
+            return cached
+        return replace(cached, hints=self.hints(text, criteria))
+
+    def hints(self, text: str, criteria: list[CriterionDef]) -> dict[str, tuple[str, ...]]:
+        """The retrieval hints each criterion matches in ``text``; criteria without a match are absent."""
+        out: dict[str, tuple[str, ...]] = {}
+        for c in criteria:
             found = tuple(find_terms(text, c.retrieval_hints))
             if found:
-                hints[c.code] = found
-        return LanguageSignals(
-            commitment=tuple(find_terms(text, self.lex.commitment.terms)),
-            owner=tuple(find_terms(text, self.lex.control.owner_terms)),
-            threshold=tuple(find_terms(text, self.lex.control.threshold_terms)),
-            procedure=tuple(find_terms(text, self.lex.control.procedure_terms)),
-            execution_dates=tuple(find_terms(text, self.lex.execution_dates.terms)),
-            execution_results=tuple(find_terms(text, self.lex.execution_dates.result_terms)),
-            verification=tuple(find_terms(text, self.lex.independent_verification.terms)),
-            injection=tuple(find_terms(text, self.lex.injection.terms)),
-            hints=hints,
-        )
+                out[c.code] = found
+        return out
 
     def injection_terms(self, text: str) -> list[str]:
         return find_terms(text, self.lex.injection.terms)
@@ -93,6 +111,24 @@ class SignalMatcher:
     def ai_context(self, text: str) -> tuple[str, ...]:
         """Configured AI terminology, for checking the scope of adverse evidence."""
         return tuple(find_terms(text, self.lex.ai_context.terms))
+
+    def ai_practice(self, text: str) -> tuple[str, ...]:
+        """Phrases showing the passage is about AI being governed, built or used by someone."""
+        terms = self.lex.ai_context.practice_terms or self.lex.ai_context.terms
+        return tuple(find_terms(text, terms))
+
+    def control_gap(self, text: str, signals: LanguageSignals) -> int | None:
+        """Characters between an accountable owner and the nearest procedure or threshold; None when
+        the passage does not hold both as separate phrases."""
+        return _gap(text, signals.owner, (*signals.procedure, *signals.threshold))
+
+    def execution_gap(self, text: str, signals: LanguageSignals) -> int | None:
+        """Characters between an execution date or quantity and the nearest result term."""
+        return _gap(text, (*signals.execution_dates, *signals.execution_quantities), signals.execution_results)
+
+    def caution(self, text: str) -> tuple[str, ...]:
+        """Risk-factor language: what could go wrong, not what the organization does."""
+        return tuple(find_terms(text, self.lex.evidence_quality.caution_terms))
 
     # ------------------------------------------------------------ focus areas
     def focus_areas(self, text: str) -> tuple[str, ...]:
@@ -114,6 +150,9 @@ class SignalMatcher:
     # -------------------------------------------------------------- execution
     def execution(self, text: str) -> ExecutionSignal:
         """Per-span proof of execution (Phase 6 FIX-12 thresholds, legacy proof-of-execution.js:132-149)."""
+        cached = self._execution.get(text)
+        if cached is not None:
+            return cached
         categories: list[str] = []
         matched: list[str] = []
         total = 0.0
@@ -132,7 +171,11 @@ class SignalMatcher:
             level = "partial"
         else:
             level = "asserted"
-        return ExecutionSignal(level, tuple(categories), round(total, 2), tuple(matched))
+        signal = ExecutionSignal(level, tuple(categories), round(total, 2), tuple(matched))
+        if len(self._execution) >= _CACHE_SIZE:
+            self._execution.clear()
+        self._execution[text] = signal
+        return signal
 
     # --------------------------------------------------------------- negative
     def negative(self, text: str, publisher_type: str, source_tier: str) -> NegativeMatch | None:
@@ -169,3 +212,18 @@ class SignalMatcher:
             publisher_type=publisher_type,
             via_default=True,
         )
+
+
+def _gap(text: str, first: tuple[str, ...], second: tuple[str, ...]) -> int | None:
+    """The smallest distance between a match of ``first`` and a non-overlapping match of ``second``."""
+    a = [m.span() for term in first for m in compile_term(term).finditer(text)]
+    b = [m.span() for term in second for m in compile_term(term).finditer(text)]
+    best: int | None = None
+    for a_start, a_end in a:
+        for b_start, b_end in b:
+            if a_start < b_end and b_start < a_end:
+                continue  # one phrase ("internal audit") cannot be both the owner and the procedure
+            gap = b_start - a_end if b_start >= a_end else a_start - b_end
+            if best is None or gap < best:
+                best = gap
+    return best

@@ -1,0 +1,37 @@
+# Calibration set: the score range Humaital expects for each organization.
+#
+# Source: the owner's "Metrics Score vs Ground Truth" sheet of 2026-11-22. The
+# ranges are expert expectations used to validate the pipeline; they are never
+# read by the pipeline, the rules engine or the report. `make calibrate` runs
+# every organization through the real job chain and compares the stored result
+# with its range.
+#
+# All 22 were read while the 6.0.0 lexicons and retrieval were written (ADR
+# 0021), so agreement on this set overstates agreement on a new organization.
+# Add organizations with `holdout: true` and do not tune against them; the
+# harness reports them like the rest.
+version: 1
+recorded: 2026-11-22
+organizations:
+  - { key: humaital, name: Humaital, website: humaital.com, industry: Professional Services, stage: early, size: small, low: 65, high: 75 }
+  - { key: accenture, name: Accenture, website: accenture.com, industry: Professional Services, stage: mature, size: enterprise, low: 55, high: 70 }
+  - { key: pwc, name: PWC, website: pwc.com, industry: Professional Services, stage: mature, size: enterprise, low: 55, high: 70 }
+  - { key: pfizer, name: Pfizer, website: pfizer.com, industry: Healthcare, stage: mature, size: enterprise, low: 50, high: 70 }
+  - { key: roche, name: Roche, website: roche.com, industry: Healthcare, stage: mature, size: enterprise, low: 50, high: 70 }
+  - { key: costco, name: Costco, website: costco.com, industry: Retail, stage: mature, size: enterprise, low: 35, high: 55 }
+  - { key: walmart, name: Walmart, website: walmart.com, industry: Retail, stage: mature, size: enterprise, low: 40, high: 60 }
+  - { key: homedepot, name: Home Depot, website: homedepot.com, industry: Retail, stage: mature, size: enterprise, low: 35, high: 55 }
+  - { key: microsoft, name: Microsoft, website: microsoft.com, industry: Technology, stage: mature, size: enterprise, low: 65, high: 80 }
+  - { key: meta, name: Meta, website: meta.com, industry: Technology, stage: mature, size: enterprise, low: 50, high: 70 }
+  - { key: fidelity, name: Fidelity, website: fidelity.com, industry: Financial Services, stage: mature, size: enterprise, low: 50, high: 70 }
+  - { key: goldmansachs, name: Goldman Sachs, website: goldmansachs.com, industry: Financial Services, stage: mature, size: enterprise, low: 55, high: 75 }
+  - { key: mit, name: MIT, website: mit.edu, industry: Education, stage: mature, size: enterprise, low: 45, high: 65 }
+  - { key: harvard, name: Harvard, website: harvard.edu, industry: Education, stage: mature, size: enterprise, low: 40, high: 60 }
+  - { key: foxconn, name: Foxconn, website: foxconn.com, industry: Manufacturing, stage: mature, size: enterprise, low: 25, high: 45 }
+  - { key: siemens, name: Siemens, website: siemens.com, industry: Manufacturing, stage: mature, size: enterprise, low: 50, high: 70 }
+  - { key: aa, name: AA, website: aa.com, industry: Travel, stage: mature, size: enterprise, low: 35, high: 55 }
+  - { key: delta, name: Delta, website: delta.com, industry: Travel, stage: mature, size: enterprise, low: 35, high: 55 }
+  - { key: hilton, name: Hilton, website: hilton.com, industry: Hospitality, stage: mature, size: enterprise, low: 35, high: 55 }
+  - { key: marriott, name: Marriott, website: marriott.com, industry: Hospitality, stage: mature, size: enterprise, low: 40, high: 60 }
+  - { key: chevron, name: Chevron, website: chevron.com, industry: Energy, stage: mature, size: enterprise, low: 45, high: 60 }
+  - { key: shell, name: Shell, website: shell.com, industry: Energy, stage: mature, size: enterprise, low: 40, high: 60 }

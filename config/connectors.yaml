@@ -9,28 +9,140 @@ defaults:
   max_retries: 2
   min_interval_seconds: 0.5
   respect_robots: true
-  max_document_bytes: 3000000
+  max_document_bytes: 12000000  # annual and transparency reports are large PDFs
+  # Per document and criterion: the strongest supporting passages, and a few neutral mentions.
+  max_supporting_links: 24
+  max_neutral_links: 3
 
 connectors:
   - code: WEBSITE
     name: Organization website
     enabled: true
     publisher_type: org_disclosure
-    access_terms: Public pages of the organization's own website; robots.txt is honoured.
-    limits: { pages: 25, time_seconds: 60 }
-    max_discovered_links: 20  # per page; the shared page/time budgets bound the whole crawl
-    max_discovery_depth: 2
-    # Follow published evidence links before probing guessed paths. AI-specific
-    # links take priority over generic navigation when the crawl is bounded.
-    priority_link_keywords:
+    access_terms: Public pages of the organization's own websites; robots.txt is honoured and a refusing host is not probed.
+    limits: { pages: 45, time_seconds: 150 }
+    max_discovered_links: 30  # per page; the shared page/time budgets bound the whole crawl
+    max_discovery_depth: 3
+    # No section of a site (host plus first path segment) may take more than this many pages,
+    # so one news archive or help centre cannot use up the budget. AI governance links are exempt.
+    max_pages_per_section: 6
+    # The submitted domain is often a storefront. Governance pages commonly live on these hosts
+    # of the same registrable domain; each is tried once and a miss costs nothing.
+    corporate_hosts: [corporate, about, investor, investors, ir, sustainability, esg, impact, responsibility,
+                      policies, policy, compliance, ethics, privacy, trust, transparency, safety, ai, news, newsroom]
+    # A governance report linked from these pages but hosted on another domain (a CDN, an
+    # investor-relations host) is fetched as the organization's own disclosure. PDFs only.
+    max_offsite_reports: 6
+    # When the site answers in another language and declares no English edition, try these.
+    english_paths: [/en-us, /en, /en-US, /english, /global/en]
+    # Sitemaps are published for crawlers. Only governance pages listed there are queued.
+    sitemap_paths: [/sitemap.xml, /sitemap_index.xml]
+    no_sitemap_hosts: [news, newsroom]  # a news host's sitemap lists articles, not governance pages
+    max_sitemap_files: 2
+    max_sitemap_links: 40
+    # A small site may file its methodology or controls under any name. While fewer documents than
+    # this have been collected and governance links are exhausted, its other pages are read too.
+    read_whole_site_below_documents: 20
+    # Rank 0: AI governance. Fetched first, wherever they are found.
+    priority_link_keywords: &priority_link_keywords
       - responsible ai
+      - responsible use of ai
+      - responsible artificial intelligence
       - ai governance
       - ai policy
       - ai principle*
       - ai ethic*
+      - ethical ai
+      - trustworthy ai
+      - trusted ai
+      - ai safety
+      - ai transparency
+      - ai risk*
+      - ai standard*
+      - ai guideline*
+      - ai accountability
+      - generative ai guideline*
+      - model card*
+      - transparency report*
+      - transparency note*
+      - algorithmic accountability
+      - algorithmic transparency
+      - human oversight
+      - system card*
+      - safety report*
+      - preparedness report*
+      - safety framework*
+      - frontier safety
+      - red team*
+      - impact assessment*
+    # Rank 1: governance, ethics, risk, privacy, impact and AI pages in general.
+    governance_link_keywords: &governance_link_keywords
+      - ai
       - artificial intelligence
       - machine learning
-      - model card*
+      - generative ai
+      - algorithm*
+      - automated decision*
+      - ethic*
+      - code of conduct
+      - code of business conduct
+      - code of ethics
+      - integrity
+      - governance
+      - corporate governance
+      - compliance
+      - human rights
+      - privacy
+      - data protection
+      - data ethics
+      - data responsibility
+      - security
+      - trust
+      - trust center
+      - transparency
+      - accountability
+      - oversight
+      - risk
+      - risk management
+      - responsibility
+      - corporate responsibility
+      - responsible business
+      - responsible
+      - sustainability
+      - esg
+      - impact
+      - social impact
+      - community impact
+      - mission
+      - purpose
+      - values
+      - our values
+      - principle*
+      - safety
+      - fairness
+      - accessibility
+      - audit*
+      - assurance
+      - annual report
+      - sustainability report
+      - impact report
+      - esg report
+      - integrated report*
+      - policies
+      - policy
+      - public policy
+      - regulatory
+      - standards
+      - commitments
+      - committee*
+      - board of directors
+      - stewardship
+      - citizenship
+      - methodology
+      - certification
+      - our approach
+      - how we work
+      - framework
     # Phase 6 FORCED_PATHS (scraper.js:44-84), minus Humaital-specific slugs
     seed_paths:
       - /responsible-ai
@@ -65,55 +177,93 @@ connectors:
       - /public-policy
       - /impact
       - /governance
-    # Phase 6 GOVERNANCE_KEYWORDS (scraper.js:15-31), matched as whole words in link text or href
-    link_keywords:
-      - ai
+    # Rank 2: general company pages. Phase 6 GOVERNANCE_KEYWORDS (scraper.js:15-31) that are not
+    # listed above, matched as whole words in link text or href.
+    link_keywords: &link_keywords
       - about
-      - safety
-      - impact
-      - model card*
-      - audit*
-      - assurance
-      - privacy
-      - trust
-      - security
-      - governance
-      - compliance
-      - transparency
-      - ethic*
-      - principle*
-      - legal
-      - policy
-      - terms of use
-      - terms of service
-      - responsible
-      - responsibility
-      - corporate responsibility
-      - artificial intelligence
-      - ai policy
-      - ai governance
-      - machine learning
-      - algorithm*
-      - automated
-      - risk
-      - risk management
-      - esg
-      - sustainability
-      - annual report
-      - public policy
-      - regulatory
       - about us
-      - our values
-      - mission
-      - purpose
-      - human rights
-      - data ethics
-      - fairness
-      - accountability
-      - oversight
+      - company
+      - who we are
+      - our story
+      - leadership
       - board
       - investor relations
+      - investors
       - newsroom
+      - legal
+      - terms of use
+      - terms of service
+      - automated
+      - research
+      - technology
+      - innovation
+      - reports
+      - resources
+    # A link that also matches one of these drops three ranks: it is fetched only when the
+    # budget is not needed for governance pages.
+    low_value_link_keywords: &low_value_link_keywords
+      - careers
+      - career
+      - jobs
+      - job search
+      - locations
+      - location
+      - store*
+      - shop*
+      - product*
+      - pricing
+      - cart
+      - checkout
+      - sign in
+      - login
+      - log in
+      - register
+      - subscribe
+      - account
+      - contact
+      - contact us
+      - help
+      - support
+      - faq*
+      - returns
+      - return policy
+      - shipping
+      - price match
+      - press release*
+      - events
+      - event
+      - webinar*
+      - podcast*
+      - video*
+      - history
+      - museum
+      - timeline
+      - awards
+      - case stud*
+      - customer stor*
+      - download*
+      - blog
+      - story
+      - stories
+      - article
+      - news
+      - terms of use
+      - terms of service
+      - cookie*
+      - california
+      - opt out
+      - preference*
+      - exercise my
+      - learning center
+      - viewpoints
+      - insights
+      - library
+      - education
+      - solutions
+      - services
+      - industries
+      - marketplace
+      - brand
     # Phase 6 HARD_SKIP_PATHS (scraper.js:144-147)
     # Privacy and legal disclosures can be criterion evidence; keep them.
     skip_paths: [/cookie-policy, /cookie, /sitemap, /careers, /press-release]
@@ -139,16 +289,28 @@ connectors:
     limits: { pages: 10, time_seconds: 30 }
 
   - code: EDGAR
-    name: SEC EDGAR full-text search
+    name: SEC EDGAR filings
     enabled: true
     publisher_type: org_disclosure
     access_terms: SEC fair-access policy; identify with a User-Agent that names the operator.
+    # The registrant is the verified CIK, else the filer whose annual report cites the submitted
+    # domain as its own website, else the one filer whose name equals the organization's name.
+    annual_forms: ["10-K", "20-F", "40-F"]
+    max_registrant_checks: 3
+    tickers_url: https://www.sec.gov/files/company_tickers.json
+    # Then the newest filing of each governance form from the registrant's submissions index.
+    submissions_url: https://data.sec.gov/submissions/CIK{cik}.json
+    governance_forms: ["DEF 14A", "10-K", "20-F", "40-F"]
+    # Last resort: full-text search, accepted only when the filer's name equals the organization's.
     search_url: https://efts.sec.gov/LATEST/search-index
     archive_url: https://www.sec.gov/Archives/edgar/data
-    forms: ["10-K", "DEF 14A", "8-K", "20-F"]
+    forms: ["10-K", "DEF 14A", "20-F"]
     query_terms: '"artificial intelligence" OR "responsible AI" OR "AI governance" OR "machine learning"'
     max_filings: 3
-    limits: { pages: 6, time_seconds: 40 }
+    # A filing is read from the top: the proxy's governance sections and the annual report's
+    # business, risk and cybersecurity items come first; the financial statements follow.
+    max_filing_bytes: 4000000
+    limits: { pages: 12, time_seconds: 90 }
 
   - code: NEWS
     name: Google News RSS
@@ -195,6 +357,20 @@ connectors:
     max_paths: 5
     min_year: 2015
     limits: { pages: 10, time_seconds: 45 }
+    # When the WEBSITE run returned fewer documents than this (the site refused the crawler,
+    # failed or served an empty shell), crawl the archive's recent captures in its place.
+    # Link ranking is shared with the WEBSITE connector through the anchors below.
+    fallback_below_documents: 3
+    fallback_pages: 40
+    fallback_time_seconds: 180
+    max_discovery_depth: 3
+    max_discovered_links: 30
+    max_pages_per_section: 6
+    corporate_hosts: [corporate, about, investor, investors, ir, sustainability, esg, news, newsroom]
+    priority_link_keywords: *priority_link_keywords
+    governance_link_keywords: *governance_link_keywords
+    link_keywords: *link_keywords
+    low_value_link_keywords: *low_value_link_keywords
 
   - code: UPLOAD
     name: Evidence portal uploads

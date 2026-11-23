@@ -59,7 +59,7 @@ from hai_pipeline.entity_resolution import EntityProfile, EntityResolver
 from hai_pipeline.extraction import ExtractedDocument, extract
 from hai_pipeline.http import Budget, Fetcher
 from hai_pipeline.incidents import build_incident
-from hai_pipeline.proposals import LinkProposal, evidence_class_for, heuristic_proposals
+from hai_pipeline.proposals import LinkProposal, bounded_proposals, evidence_class_for, heuristic_proposals
 from hai_pipeline.publishers import classify_publisher, independence_for, source_tier_for
 from hai_pipeline.spans import split_spans
 from hai_pipeline.urls import canonical_url, registrable_domain
@@ -200,6 +200,9 @@ class AcquisitionService:
                     if sd is not None:
                         staged.append(sd)
                 items_returned = len([s for s in staged if s.run_id == run.id])
+                if cfg.code == "WEBSITE":
+                    ctx.primary_outcome = result.outcome
+                    ctx.primary_documents = items_returned
                 required_source = cfg.code == "WEBSITE" or (cfg.code == "DIRECT_URL" and bool(ctx.direct_urls))
                 if required_source and result.outcome == ConnectorRunOutcome.SUCCEEDED.value and not items_returned:
                     result.outcome = ConnectorRunOutcome.FAILED.value
@@ -292,7 +295,15 @@ class AcquisitionService:
                 publisher_type=sd.publisher_type.value,
                 source_tier=tier.value,
                 section_headings=[c.section_heading for c in candidates],
-                require_ai_context=sd.connector_code == "EDGAR",
+                # A filing is mostly financial. Until the methodology gates the upper rungs on AI
+                # context itself, only its AI passages may be proposed at all.
+                require_ai_context=sd.connector_code == "EDGAR"
+                and self.manifest.methodology.lexicons.ai_context.required_from_rung is None,
+            )
+            proposals = bounded_proposals(
+                proposals,
+                max_supporting=self.connectors.defaults.max_supporting_links,
+                max_neutral=self.connectors.defaults.max_neutral_links,
             )
             published = sd.fetched.published_at or sd.extracted.published_at
             admissible_proposals: list[LinkProposal] = []
@@ -425,7 +436,7 @@ class AcquisitionService:
             extracted.published_at = doc.published_at
         raw = self.blobs.put(doc.content)
         txt = self.blobs.put_text(extracted.text)
-        if doc.url.startswith("upload://") or code == "EDGAR":
+        if doc.url.startswith("upload://") or code == "EDGAR" or doc.published_by_organization:
             # The SEC hosts issuer-authored 10-K/proxy/8-K filings. Hosting
             # does not make the issuer's assertions regulator verification.
             info_type, name, domain, is_org = PublisherType.ORG_DISCLOSURE, org.display_name, org.primary_domain, True

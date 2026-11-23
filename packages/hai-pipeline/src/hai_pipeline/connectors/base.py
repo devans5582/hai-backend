@@ -29,6 +29,9 @@ class FetchedDocument:
     note: str | None = None  # for example "archived snapshot of <url> at <ts>"
     archived_original_url: str | None = None
     certificate_valid_until: date | None = None
+    # A report the organization links from its own governance pages but hosts elsewhere (a CDN or an
+    # investor-relations host). It is the organization's disclosure, not a second source.
+    published_by_organization: bool = False
     claim_text: str | None = None  # uploads enter as claims
     upload_id: str | None = None
 
@@ -49,6 +52,10 @@ class ConnectorContext:
     api_tokens: dict[str, str] = field(default_factory=dict)
     as_of: date | None = None
     freshness_window_months: int = 24
+    # Set by the orchestrator once the WEBSITE run ends, so later connectors know whether the
+    # organization's own site could be read. None means the website has not been attempted.
+    primary_outcome: str | None = None
+    primary_documents: int = 0
 
 
 @dataclass

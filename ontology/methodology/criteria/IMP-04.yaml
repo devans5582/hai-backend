@@ -48,6 +48,22 @@ criterion:
     - "long-term impact"
     - "durable benefit"
     - "lasting change"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "long-term"
+    - "sustain*"
+    - "lasting"
+    - "endur*"
+    - "multi-year"
+    - "by 20\\d\\d"
+    - "since \\d{4}"
+    - "ongoing"
+    - "continu*"
+    - "future"
+    - "generation*"
+    - "resilien*"
+    - "decade*"
+    - "legacy"
+    - "for over \\d+ years"
   indicators:
     - code: I4_R1
       kind: legacy_r

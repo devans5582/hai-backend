@@ -22,7 +22,7 @@ from hai_engine.rules.context import (
 )
 from hai_engine.rules.registry import criterion_rule, resolve
 from hai_engine.scoring import aggregate, calibrate_score, criterion_ratio
-from hai_ontology.meta import CriterionDef, Manifest, ScoringCalibration
+from hai_ontology.meta import Corroboration, CriterionDef, Manifest, Methodology, ScoringCalibration
 from hai_ontology.validator import validate
 from hai_pipeline.proposals import heuristic_proposals
 
@@ -87,6 +87,13 @@ def runs(**outcomes: str) -> tuple[ConnectorSummary, ...]:
     )
 
 
+def single_passage(manifest: Manifest) -> Methodology:
+    """The methodology with corroboration off. These tests exercise one rule at a time with one
+    link per rung; the corroboration rule has its own tests below."""
+    scoring = manifest.methodology.scoring.model_copy(update={"corroboration": Corroboration()})
+    return manifest.methodology.model_copy(update={"scoring": scoring})
+
+
 def ctx(
     manifest: Manifest,
     code: str = "SAF-01",
@@ -98,10 +105,11 @@ def ctx(
     omitted: int = 0,
     inputs: dict[str, Any] | None = None,
     criterion: CriterionDef | None = None,
+    methodology: Methodology | None = None,
 ) -> CriterionContext:
     return CriterionContext(
         criterion=criterion or manifest.criterion(code),
-        methodology=manifest.methodology,
+        methodology=methodology or single_passage(manifest),
         links=tuple(links or []),
         incidents=tuple(incidents or []),
         connector_runs=connector_runs if connector_runs is not None else runs(WEBSITE="succeeded", NEWS="succeeded"),
@@ -888,9 +896,9 @@ def test_calibration_follows_live_pillar_weight_renormalization(manifest: Manife
         incidents=(),
         as_of=AS_OF,
     )
-    # Trust's 25 baseline points have 20/80 of the live pillar weight, then round once.
+    # Trust's 25 points have 20/80 of the live pillar weight. Methodology 6.0.0 applies no multiplier.
     assert result.state.baseline_score == 6.2
-    assert result.state.hai_score == 31.0
+    assert result.state.hai_score == 6.2 and result.state.calibration_multiplier == 1.0
     assert result.state.pillar_scores["TRU"][0] == 25.0
     assert result.state.pillar_scores["IMP"][2:4] == (0, 4)
     assert result.state.counted_criteria == 16 and result.state.excluded_criteria == 4
@@ -1411,3 +1419,63 @@ def test_stage_profile_weights_are_switchable(manifest: Manifest) -> None:
     ]
     assert aggregate(profiled, manifest.pillars, states, stage_band="mature").hai_score == 20.0
     assert aggregate(md, manifest.pillars, states, stage_band="mature").hai_score == 15.0
+
+
+# --------------------------------------------------- methodology 6.0.0: corroboration and coverage (ADR 0021)
+
+
+def test_one_passage_does_not_set_a_control_or_execution_level(manifest: Manifest) -> None:
+    """Two separate passages must carry a control or execution rung; a lone one counts as the rung below."""
+    assert manifest.methodology.scoring.corroboration.required("specified_control") == 2
+    assert manifest.methodology.scoring.corroboration.required("stated_commitment") == 1
+    live = manifest.methodology
+    lone_execution = ctx(manifest, links=[link("SAF-01", "documented_execution")], methodology=live)
+    assert lone_execution.ladder_level == 2  # still a statement that the organization does this
+    with_a_control = ctx(
+        manifest,
+        links=[link("SAF-01", "documented_execution"), link("SAF-01", "specified_control")],
+        methodology=live,
+    )
+    assert with_a_control.ladder_level == 3  # two passages reach the control rung; only one reaches execution
+    corroborated = ctx(
+        manifest,
+        links=[link("SAF-01", "documented_execution"), link("SAF-01", "documented_execution")],
+        methodology=live,
+    )
+    assert corroborated.ladder_level == 4
+    commitment = ctx(manifest, links=[link("SAF-01", "stated_commitment")], methodology=live)
+    assert commitment.ladder_level == 2
+
+
+def test_the_same_passage_linked_twice_is_one_passage(manifest: Manifest) -> None:
+    first = link("SAF-01", "specified_control")
+    twin = replace(first, link_id=str(uuid4()))  # same span, a second link row
+    c = ctx(manifest, links=[first, twin], methodology=manifest.methodology)
+    assert c.ladder_level == 2
+
+
+def test_no_overall_score_without_coverage(manifest: Manifest, engine: RuleEngine) -> None:
+    """Chevron under 5.0.0: one criterion assessed, nineteen unavailable, displayed score 100."""
+    outcomes = _full_outcomes(manifest, engine)
+    for i, outcome in enumerate(outcomes):
+        if i == 2:
+            outcome.state.level = 3
+            outcome.state.confidence = 48.5
+            continue
+        outcome.state.level = None
+        outcome.state.coverage_state = "unavailable"
+        outcome.state.excluded = True
+    result = engine.run_assessment(
+        outcomes,
+        stage_band="mature",
+        size_band="enterprise",
+        certification_requested=False,
+        signed_certification=False,
+        connector_runs=runs(WEBSITE="blocked", EDGAR="succeeded"),
+        incidents=(),
+        as_of=AS_OF,
+    )
+    assert result.state.hai_score is None and result.state.baseline_score is None
+    assert result.state.outcome_status == "access_limited"
+    assert "no overall score is published" in result.trace[0].note
+    assert any("no score computed" in reason for reason in result.state.gate_reasons)

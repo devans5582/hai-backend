@@ -46,6 +46,21 @@ criterion:
     - "ethical principles"
     - "responsible ai"
     - "ai principles"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "ethic*"
+    - "code of conduct"
+    - "code of business conduct"
+    - "standards of conduct"
+    - "integrity"
+    - "our values"
+    - "core values"
+    - "do the right thing"
+    - "anti-corruption"
+    - "anti-bribery"
+    - "human rights"
+    - "responsible business"
+    - "act* responsibly"
+    - "honest*"
   indicators:
     - code: T3_R1
       kind: legacy_r

@@ -50,6 +50,24 @@ criterion:
     - "societal impact"
     - "existential"
     - "broader safety"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "societ*"
+    - "long-term"
+    - "sustainab*"
+    - "climate"
+    - "environment*"
+    - "future generations"
+    - "public health"
+    - "human rights"
+    - "systemic"
+    - "responsible innovation"
+    - "emerging risk*"
+    - "net zero"
+    - "emissions"
+    - "public interest"
+    - "public safety"
+    - "global challenges"
+    - "planet"
   indicators:
     - code: S3_R1
       kind: legacy_r

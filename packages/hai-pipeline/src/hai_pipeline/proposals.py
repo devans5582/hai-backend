@@ -76,7 +76,9 @@ def heuristic_proposals(
         if heading:
             # A local section heading supplies relevance, while evidence of a
             # control or its operation must still be present in the quoted span.
-            signals = replace(signals, hints=matcher.language(context, criteria).hints)
+            signals = replace(signals, hints=matcher.hints(context, criteria))
+        # A risk factor says what could go wrong. It is recorded, never counted as support.
+        cautionary = bool(matcher.caution(text))
         negative = assessment_negative(matcher, text, publisher_type, source_tier, section_heading=heading)
         negative_targets: set[str] = set()
         if negative is not None:
@@ -95,7 +97,7 @@ def heuristic_proposals(
             if is_negative_target:
                 polarity = "contradicts"
                 relevance = min(1.0, 0.7 + 0.1 * len(hints))
-            elif (
+            elif not cautionary and (
                 signals.has_commitment
                 or signals.has_specified_control
                 or signals.has_documented_execution
@@ -119,6 +121,53 @@ def heuristic_proposals(
                 )
             )
     return out
+
+
+def bounded_proposals(proposals: list[LinkProposal], *, max_supporting: int, max_neutral: int) -> list[LinkProposal]:
+    """Keep the strongest proposals of one document for each criterion.
+
+    A long report matches a criterion hundreds of times, and every link stored is audited,
+    classified and frozen. Supporting proposals are kept by the strength of their language
+    (a record, then a control, then a commitment) in equal shares, so a run of look-alike
+    passages cannot crowd out the rest; neutral mentions are kept by relevance; contradicting
+    proposals are always kept. Zero means no bound. The original order is preserved.
+    """
+    if max_supporting <= 0 and max_neutral <= 0:
+        return proposals
+    keep: set[int] = set()
+    by_criterion: dict[str, list[tuple[int, LinkProposal]]] = {}
+    for position, proposal in enumerate(proposals):
+        by_criterion.setdefault(proposal.criterion_code, []).append((position, proposal))
+    for items in by_criterion.values():
+        supporting: dict[int, list[tuple[int, LinkProposal]]] = {3: [], 2: [], 1: []}
+        neutral: list[tuple[int, LinkProposal]] = []
+        for position, proposal in items:
+            if proposal.polarity == "supports":
+                signals = proposal.signals
+                strength = 3 if signals.has_documented_execution else 2 if signals.has_specified_control else 1
+                supporting[strength].append((position, proposal))
+            elif proposal.polarity == "neutral":
+                neutral.append((position, proposal))
+            else:
+                keep.add(position)
+        if max_supporting > 0:
+            share = max(1, max_supporting // 3)
+            spare = max_supporting
+            leftovers: list[tuple[int, LinkProposal]] = []
+            for strength in (3, 2, 1):
+                ranked = sorted(supporting[strength], key=lambda item: (-item[1].relevance, item[0]))
+                keep.update(position for position, _ in ranked[:share])
+                spare -= min(share, len(ranked))
+                leftovers.extend(ranked[share:])
+            keep.update(position for position, _ in leftovers[: max(0, spare)])
+        else:
+            keep.update(position for group in supporting.values() for position, _ in group)
+        if max_neutral > 0:
+            ranked = sorted(neutral, key=lambda item: (-item[1].relevance, item[0]))
+            keep.update(position for position, _ in ranked[:max_neutral])
+        else:
+            keep.update(position for position, _ in neutral)
+    return [proposal for position, proposal in enumerate(proposals) if position in keep]
 
 
 def merge_model_proposals(

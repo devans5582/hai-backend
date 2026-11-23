@@ -403,10 +403,15 @@ console. The console proxy refreshes Docker DNS when the API container is
 recreated. Gateway errors show the HTTP status and a support reference that
 matches `X-Request-Id` in the API logs.
 
-Scores use 5x the original evidence baseline, capped at 100. The multiplier
-is stored with each result; refreshing an old assessment does not rescore
-it. Restart both API and worker after a methodology update. For local
-development, apply `make migrate seed` before restarting `make dev`.
+Since methodology 6.0.0 the score is the evidence-derived aggregate; no
+multiplier is applied (ADR 0021). A result made under 4.0.0 or 5.0.0 keeps
+its stored multiplier and is not rescored by refreshing it: reassess the
+organization. Restart both API and worker after a methodology update. For
+local development, apply `make migrate seed` before restarting `make dev`.
+
+An assessment whose sources could mostly not be read publishes no overall
+score. Its connector runs say why (for example `blocked: http_403`), and
+supplying direct URLs or uploading documents gives it evidence to assess.
 
 Reassess opens the new run immediately. As soon as it has a result, the new
 assessment replaces the organization's current score and default PDF, even
@@ -488,6 +493,66 @@ Acceptance tests AT-01 to AT-16 are listed in the manifest with the test
 functions that prove them; a guard test fails when a listed function does not
 exist. `docs/architecture.md` renders the mapping.
 
+### Calibration Against Expected Ranges
+
+`tests/calibration/ground_truth.yaml` lists organizations with the score
+range Humaital expects for each. Nothing in the pipeline, the rules or the
+report reads that file. `make calibrate` runs every organization through the
+real job chain against a throwaway database and prints the stored score next
+to its range; it exits non-zero while any organization is outside.
+
+```bash
+make db                              # or any Postgres 16; HAI_TEST_DATABASE_URL names it
+make calibrate                       # the whole set, about 25 minutes of crawling the first time
+make calibrate ONLY=costco,microsoft # some of it
+```
+
+HTTP responses are cached under `var/calibration/http-cache`, so a rerun
+after a lexicon or scoring change replays the same evidence in a few minutes.
+Delete the cache to collect again. To add an organization, add a row; mark it
+`holdout: true` if it must not be used for tuning.
+
+Result of the run of 2026-11-22 (heuristic provider, crawled that day). The 5.0.0
+column is the same organizations re-run under the previous methodology on the same
+day; it differs from the owner's sheet by a few points where a crawl differed.
+
+| Organization | 5.0.0 Rerun | Expected | 6.0.0 | Against Range | Documents | Website | Criteria At Level 4 |
+|---|---:|---|---:|---|---:|---|---:|
+| Humaital | 63.5 | 65 to 75 | 40.0 | -25.0 | 20 | succeeded | 0 |
+| Accenture | 12.5 | 55 to 70 | 54.0 | -1.0 | 36 | succeeded | 3 |
+| PWC | N/A | 55 to 70 | 47.7 | -7.3 | 26 | blocked | 0 |
+| Pfizer | 51.5 | 50 to 70 | 50.0 | in range | 35 | succeeded | 0 |
+| Roche | 30 | 50 to 70 | 50.0 | in range | 41 | succeeded | 0 |
+| Costco | 38.5 | 35 to 55 | 47.7 | in range | 23 | succeeded | 0 |
+| Walmart | 19.5 | 40 to 60 | 51.3 | in range | 30 | succeeded | 1 |
+| Home Depot | 18.5 | 35 to 55 | 52.9 | in range | 21 | succeeded | 2 |
+| Microsoft | 100 | 65 to 80 | 55.1 | -9.9 | 44 | succeeded | 4 |
+| Meta | 7.5 | 50 to 70 | 50.0 | in range | 47 | succeeded | 0 |
+| Fidelity | 25.5 | 50 to 70 | 42.6 | -7.4 | 34 | succeeded | 0 |
+| Goldman Sachs | N/A | 55 to 75 | 50.0 | -5.0 | 35 | blocked | 0 |
+| MIT | 5.5 | 45 to 65 | 46.0 | in range | 40 | succeeded | 2 |
+| Harvard | 0 | 40 to 60 | 39.1 | -0.9 | 29 | succeeded | 0 |
+| Foxconn | 0 | 25 to 45 | 46.1 | +1.1 | 29 | succeeded | 0 |
+| Siemens | 17.5 | 50 to 70 | 47.4 | -2.6 | 34 | succeeded | 1 |
+| AA | N/A | 35 to 55 | 50.0 | in range | 10 | succeeded | 0 |
+| Delta | N/A | 35 to 55 | 50.0 | in range | 38 | succeeded | 0 |
+| Hilton | N/A | 35 to 55 | 50.0 | in range | 29 | succeeded | 0 |
+| Marriott | N/A | 40 to 60 | 50.0 | in range | 21 | blocked | 0 |
+| Chevron | 100 | 45 to 60 | 50.0 | in range | 13 | blocked | 0 |
+| Shell | N/A | 40 to 60 | 50.0 | in range | 2 | succeeded | 0 |
+
+13 of 22 are inside their range and 4 more are within 3 points. Under 5.0.0, 2 were
+inside, 7 had no score and 2 showed 100. A run takes about two minutes for one
+organization (the slowest took four and a half).
+
+Read the table with three limits in mind (ADR 0021 has the detail). The
+default provider reads evidence with lexicons, so a score of about 50 means
+"the public record describes controls for every criterion", and most large
+organizations reach it. Scores above that need records of AI practice, which
+few organizations publish in a form lexicons can recognise. And the set was
+used to write the 6.0.0 vocabulary, so agreement on it overstates agreement
+on a new organization.
+
 ## Configuration
 
 Every setting is an environment variable with the `HAI_` prefix;
@@ -519,12 +584,13 @@ Every setting is an environment variable with the `HAI_` prefix;
 ## Status And Ownership
 
 The platform is feature complete for v1 and green on every gate. The
-methodology version is `5.0.0` with status `draft`: the overall score uses a
-disclosed 5x calibration of the original baseline, rounded to one decimal and
-capped at 100. Reports retain the baseline score; certification thresholds
-use that baseline. Criterion definitions, level descriptors, some weights
-and the framework crosswalk are placeholders
-until Humaital approves them. Nothing is presented as approved content.
+methodology version is `6.0.0` with status `draft`: the overall score is the
+evidence-derived aggregate with no multiplier, and the evidence path was
+calibrated against the ranges Humaital expects for 22 organizations (ADR
+0021, `make calibrate`). Criterion definitions, level descriptors, some
+weights, the retrieval vocabulary and the framework crosswalk are
+placeholders until Humaital approves them. Nothing is presented as approved
+content.
 
 Copyright Humaital. Proprietary. The HAI methodology, its criteria, level
 descriptors and weights are Humaital intellectual property.

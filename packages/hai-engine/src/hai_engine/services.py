@@ -47,6 +47,7 @@ WHERE r.assessment_id = :a
 def classify_links(conn: Connection, store: Store, manifest: Manifest, assessment_id: UUID) -> int:
     classifier = LinkClassifier(manifest.methodology)
     rows = conn.execute(text(LINKS_SQL), {"a": assessment_id}).all()
+    names = _organization_names(conn, assessment_id)
     n = 0
     for link_id, quote, polarity, publisher_type, independence, criterion_code, section_heading, title in rows:
         result = classifier.classify(
@@ -57,6 +58,7 @@ def classify_links(conn: Connection, store: Store, manifest: Manifest, assessmen
             criterion=manifest.criterion(str(criterion_code)),
             section_heading=str(section_heading) if section_heading else None,
             document_title=str(title) if title else None,
+            organization_names=names,
         )
         store.update(
             EvidenceLink,
@@ -70,6 +72,21 @@ def classify_links(conn: Connection, store: Store, manifest: Manifest, assessmen
         )
         n += 1
     return n
+
+
+def _organization_names(conn: Connection, assessment_id: UUID) -> tuple[str, ...]:
+    """Names the organization is written about under; a result stated about it is in its own voice."""
+    row = conn.execute(
+        text(
+            "SELECT o.display_name, o.legal_name, o.aliases FROM hai.organizations o "
+            "JOIN hai.assessments a ON a.org_id = o.id WHERE a.id = :a"
+        ),
+        {"a": assessment_id},
+    ).first()
+    if row is None:
+        return ()
+    names = [row[0], row[1], *(row[2] or [])]
+    return tuple(dict.fromkeys(str(n).strip() for n in names if n and str(n).strip()))
 
 
 @dataclass

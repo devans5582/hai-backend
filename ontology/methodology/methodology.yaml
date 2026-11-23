@@ -1,4 +1,4 @@
-# Methodology 5.0.0 (draft 5x baseline calibration requested on 2026-11-16).
+# Methodology 6.0.0 (draft evidence calibration of 2026-11-22, ADR 0021).
 # Scoring, confidence, certification, outcome,
 # freshness, review triggers and lexicons. Numbers marked "Phase 6" are imported
 # exactly from legacy/express-api; see docs/porting-from-phase6.md for the lines.
@@ -7,12 +7,16 @@
 # Humaital supplies content. 2.0.0 records the scoring review of 2026-11-09
 # (ADR 0016): materiality-weighted pillar means, the published confidence
 # components, evidence in every pillar before certification, pillar status.
+# 6.0.0 removes the overall multiplier of 4.0.0 and 5.0.0: the score is again the
+# evidence-derived aggregate. What changed instead is what the pipeline can find
+# and recognise as evidence (broader retrieval vocabulary, guards on the control
+# and execution rungs, AI context for the upper rungs, corroboration).
 methodology:
-  version: 5.0.0
+  version: 6.0.0
   status: draft
-  effective_from: 2026-11-16
+  effective_from: 2026-11-22
   approved_by: null
-  change_record_uri: docs/adr/0020-current-assessment-and-fivefold-calibration.md
+  change_record_uri: docs/adr/0021-evidence-calibration-against-expected-ranges.md
   product:
     report_name: HAI Score
     long_name: Human Alignment Index
@@ -34,11 +38,16 @@ methodology:
         mature: { TRU: 0.18, ACC: 0.20, PUR: 0.12, SAF: 0.18, TRN: 0.17, IMP: 0.15 }
     score_scale: 100
     score_cap: 100                               # Published v3 scale: all 100 points are attainable
-    # User-requested draft calibration: multiply the aggregate baseline, round half up
-    # to one decimal and cap at 100. Pillars and certification retain the baseline.
+    # 6.0.0: no overall multiplier. 4.0.0 and 5.0.0 multiplied the aggregate by 4.5 and 5;
+    # that turned a baseline of 20 into 100 and could not separate organizations. The
+    # mechanism stays for replaying those releases; 1.0 is the identity.
     calibration:
-      multiplier: 5.0
+      multiplier: 1.0
       certification_basis: baseline
+    # 6.0.0 (draft): the ladder credits a control or execution rung only when two separate
+    # passages carry it. One sentence can match a lexicon by accident.
+    corroboration:
+      min_passages: { specified_control: 2, documented_execution: 2 }
     low_confidence_cap:                          # Confidence gates certification, not the alignment score
       confidence_below: 70
       cap: 100
@@ -123,6 +132,8 @@ methodology:
     access_limited_unavailable_share: 0.5        # draft
     insufficient_min_observed_criteria: 4        # draft
     governance_baseline_min_admissible_links: 1  # raw score 0 but signals exist
+    # 6.0.0: access limited or insufficient evidence publishes no overall score (N/A).
+    withhold_score_without_coverage: true
     content_status: draft
 
   freshness:
@@ -175,35 +186,54 @@ methodology:
   lexicons:
     # Terms compile to whole-word regular expressions. A trailing * is a prefix wildcard.
     commitment:
-      terms: ["we are committed to", "we commit to", "committed to", "we aim to", "our policy is",
-              "we will", "we strive to", "we pledge", "we believe", "principles", "policy",
-              "code of conduct", "we do not", "we never", "our mission is", "our purpose is",
-              "we publish", "we provide", "we maintain", "we implement", "we disclose",
-              "transparency notes are created", "we require", "we use", "we apply",
-              "are addressed through documented review", "are subject to documented oversight",
-              "operates under a governance framework", "is maintained under the oversight",
-              "oversight includes monitoring"]
+      terms: ["we are committed to", "we commit to", "committed to", "we aim to", "our policy is", "we will",
+               "we strive to", "we pledge", "we believe", "principles", "policy", "code of conduct", "we do not",
+               "we never", "our mission is", "our purpose is", "we publish", "we provide", "we maintain",
+               "we implement", "we disclose", "transparency notes are created", "we require", "we use",
+               "we apply", "are addressed through documented review", "are subject to documented oversight",
+               "operates under a governance framework", "is maintained under the oversight",
+               "oversight includes monitoring", "commitment*", "our mission", "our purpose", "our vision",
+               "our values", "our goal", "our approach", "our priority", "we seek to", "we work to", "we expect",
+               "we value", "we respect", "we protect", "we ensure", "we support", "we are dedicated",
+               "dedicated to", "we prioriti[sz]e", "we are guided by", "we recogni[sz]e", "we collect",
+               "we share", "we may", "we continue to", "we comply", "we follow", "we adhere",
+               "we are responsible", "we encourage", "is required", "are required", "are expected to",
+               "is prohibited", "prohibit*", "zero tolerance", "does not tolerate", "do not tolerate",
+               "designed to", "aims to", "seeks to", "strives to", "is committed", "are committed", "policies",
+               "standards", "guidelines", "is responsible for", "are responsible for", "oversees"]
     control:
-      owner_terms: ["chief * officer", "head of *", "responsible ai lead", "accountable executive",
-                    "owner", "owned by", "responsible for", "reports to the board", "committee",
-                    "council", "review board", "director of *", "vp of *", "vice president",
-                    "the board", "designated human oversight", "responsible ai team"]
+      owner_terms: ["chief * officer", "head of *", "responsible ai lead", "accountable executive", "owner",
+                     "owned by", "responsible for", "reports to the board", "committee", "council",
+                     "review board", "director of *", "vp of *", "vice president", "the board",
+                     "designated human oversight", "responsible ai team", "board of directors", "committees",
+                     "* officer", "office of *", "general counsel", "internal audit", "task force",
+                     "working group", "steering group", "trustees", "president", "ceo", "provost", "dean",
+                     "ombuds*", "senior leadership", "executive leadership", "we"]
       threshold_terms: ["at least \\d+", "within \\d+ (hours|days|weeks)", "no more than \\d+",
                         "\\d+\\s?%", "threshold", "must not exceed", "minimum of \\d+", "every \\d+ (months|weeks|days)",
                         "annually", "quarterly", "monthly"]
       # Defined governance procedures do not need a numeric threshold to be documented controls.
       procedure_terms: ["requires human approval", "approval process", "escalation procedure",
-                        "release approval", "pre-deployment review", "oversees risks", "oversees ai",
-                        "reviewing material findings", "review and appropriate corrective action",
-                        "certification decisions follow approved standards", "reviews model*",
-                        "review* (each|every) (ai|model|system|release)", "reviews ai", "approves deployment*"]
+                         "release approval", "pre-deployment review", "oversees risks", "oversees ai",
+                         "reviewing material findings", "review and appropriate corrective action",
+                         "certification decisions follow approved standards", "reviews model*",
+                         "review* (each|every) (ai|model|system|release)", "reviews ai", "approves deployment*",
+                         "oversee*", "oversight of", "review*", "approv*", "audit*", "assess*", "monitor*",
+                         "reports to", "report* to the", "escalat*", "investigat*", "procedure*", "training",
+                         "hotline", "helpline", "due diligence", "impact assessment*", "risk assessment*",
+                         "evaluat*", "enforce*", "verif*", "certif*", "test*", "inspect*"]
     execution_dates:
       terms: ["in (q[1-4]|january|february|march|april|may|june|july|august|september|october|november|december) 20\\d\\d",
               "as of (q[1-4] )?20\\d\\d", "on \\d{1,2} (january|february|march|april|may|june|july|august|september|october|november|december) 20\\d\\d",
               "(january|february|march|april|may|june|july|august|september|october|november|december) \\d{1,2},? 20\\d\\d",
               "20\\d\\d-\\d\\d-\\d\\d", "fy ?20\\d\\d", "during 20\\d\\d", "since 20\\d\\d"]
+      # 6.0.0 (draft): a counted result is a record too ("14 model reviews were completed").
+      # A single-digit percentage is usually a threshold ("a 2% disparate impact threshold"), not a count.
+      quantity_terms: ["\\d{2,}(\\.\\d+)?\\s?(%|percent)", "\\d{2,}[\\d,]*", "(two|three|four|five|six|seven|eight|nine|ten|dozens|hundreds|thousands|millions) (of )?\\w+"]
       result_terms: ["completed", "conducted", "performed", "reviewed", "audited", "tested", "resolved",
-                     "reported", "measured", "confirmed", "found", "identified", "remediated", "achieved"]
+                      "reported", "measured", "confirmed", "found", "identified", "remediated", "achieved",
+                      "published", "assessed", "evaluated", "trained", "certified", "investigated", "implemented",
+                      "established", "adopted", "updated"]
     independent_verification:
       terms: ["independent audit*", "independently audited", "third-party audit*", "external audit*",
               "certified to", "certification awarded", "attestation", "soc 2", "iso 42001", "iso 27001",
@@ -267,9 +297,48 @@ methodology:
     # Phase 6 FIX-9 severity map (legacy negative-signal-overrides.js:60-141, :171-186) as
     # incident rules. publisher_types replaces the legacy source codes. First match wins.
     ai_context:
+      # 6.0.0 (draft): evidence at this rung or above must be about AI. General corporate
+      # governance earns stated commitment and specified control only.
+      required_from_rung: documented_execution
+      # Phrases that show a passage is about AI being governed, built or used, not a passing mention.
+      practice_terms: ["responsible ai", "responsible use of ai", "responsible artificial intelligence",
+                        "responsible use of artificial intelligence", "ai governance", "ai principle*",
+                        "ai ethic*", "ethical ai", "trustworthy ai", "trusted ai", "ai policy", "ai policies",
+                        "ai risk*", "ai safety", "ai system*", "ai model*", "ai tool*", "ai use", "ai uses",
+                        "ai use case*", "use of ai", "uses of ai", "using ai", "use of artificial intelligence",
+                        "use of generative ai", "ai-powered", "ai-enabled", "ai-driven", "ai-generated",
+                        "ai-based", "generative ai", "genai", "gen ai", "machine learning model*", "ml model*",
+                        "model card*", "algorithmic *", "automated decision*", "ai oversight", "ai review*",
+                        "ai council", "ai committee", "ai board", "ai standard*", "ai impact assessment*",
+                        "ai transparency", "ai accountability", "red team*", "large language model*", "llm*",
+                        "foundation model*", "ai agent*", "agentic", "copilot*", "chatbot*", "ai assistant*",
+                        "ai feature*", "ai product*", "ai technolog*", "ai capabilit*", "ai solution*",
+                        "ai application*", "ai deployment*", "deploy* ai", "ai development", "develop* ai",
+                        "ai strategy", "ai research", "our ai", "ai guideline*", "ai framework", "ai program",
+                        "ai literacy", "ai training", "ai assessment*", "ai audit*", "ai incident*",
+                        "ai compliance", "ai act", "human oversight", "human in the loop", "human-in-the-loop",
+                        "model risk*", "model governance", "model validation", "model monitoring",
+                        "model evaluation*", "model review*"]
       terms: ["artificial intelligence", "ai", "machine learning", "algorithmic", "algorithm*",
-              "automated decision*", "generative ai", "large language model*", "llm*",
-              "facial recognition", "responsible ai", "neural network*"]
+               "automated decision*", "generative ai", "large language model*", "llm*", "facial recognition",
+               "responsible ai", "neural network*"]
+    # 6.0.0 (draft): guards a quoted passage must pass before it earns a control or execution rung.
+    evidence_quality:
+      min_words_for_control: 8
+      min_prose_share: 0.6                     # running prose; a table row or name list is not a control
+      hint_in_quote_from_rung: specified_control
+      control_max_gap_chars: 100               # the owner stands beside the procedure
+      execution_max_gap_chars: 160             # the date stands beside the result
+      execution_voice_terms: ["we", "our", "us"]
+      reported_speech_terms: ["said", "says", "according to", "told"]
+      # Risk-factor language says what could go wrong. It is recorded and never counted as support.
+      caution_terms: ["adversely affect*", "adverse effect*", "material adverse", "materially and adversely",
+                       "could harm", "may harm", "could result in", "may result in", "could be subject to",
+                       "may be subject to", "no assurance", "cannot assure", "cannot guarantee",
+                       "may not be able", "might not", "may not be successful", "if we fail", "failure to",
+                       "we may fail", "uncertaint*", "could cause", "could negatively", "could disrupt",
+                       "could lead to", "risk of loss", "exposes us", "expose us", "subject us to",
+                       "there is a risk", "could materially", "may materially", "forward-looking statement*"]
     negative_signals:
       # Risk warnings and possible future actions do not establish an incident.
       hypothetical_terms: ["may take enforcement action", "may be subject to", "could be subject to",

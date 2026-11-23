@@ -59,6 +59,7 @@ make test-integration   Postgres-backed tests, roles not enforced (HAI_TEST_DATA
 make test-enforced      Postgres-backed tests with SET LOCAL ROLE enforced
 make test               all three
 make check              fmt check, lint, typecheck, ontology gate, all tests
+make calibrate          run tests/calibration/ground_truth.yaml through the real pipeline (ONLY=key,key)
 make frontend-check     typecheck, lint, vitest, build
 make dev                api, worker and frontend with hot reload
 make up / down / logs / reset / smoke    docker compose

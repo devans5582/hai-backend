@@ -39,9 +39,31 @@ def compile_terms(terms: list[str]) -> list[re.Pattern[str]]:
 
 
 def matches_any(text: str, terms: list[str]) -> bool:
-    return any(p.search(text) for p in compile_terms(terms))
+    return bool(find_terms(text, terms))
+
+
+@lru_cache(maxsize=8192)
+def _anchor(term: str) -> str | None:
+    """A literal every match of ``term`` must contain, or None when the term is a regular expression.
+
+    A substring test against the lower-cased text is far cheaper than a regular-expression scan, and
+    most terms of a lexicon do not occur in most passages.
+    """
+    t = term.strip().lower()
+    if _REGEX_HINT.search(t) or "\\" in t:
+        return None
+    words = [w for piece in t.split("*") for w in piece.split()]
+    return max(words, key=len) if words else None
 
 
 def find_terms(text: str, terms: list[str]) -> list[str]:
     """Return the terms that match ``text``, in lexicon order."""
-    return [t for t in terms if compile_term(t).search(text)]
+    lowered = text.lower()
+    out: list[str] = []
+    for term in terms:
+        anchor = _anchor(term)
+        if anchor is not None and anchor not in lowered:
+            continue
+        if compile_term(term).search(text):
+            out.append(term)
+    return out

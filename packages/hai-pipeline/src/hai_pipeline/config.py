@@ -41,6 +41,10 @@ class Defaults(BaseModel):
     min_interval_seconds: float = 0.5
     respect_robots: bool = True
     max_document_bytes: int = 3_000_000
+    # Links kept per document and criterion. A long report matches a criterion hundreds of times;
+    # the strongest passages carry the level and every stored link is audited and classified.
+    max_supporting_links: int = 0  # 0 keeps every proposal
+    max_neutral_links: int = 0
 
 
 class ConnectorsFile(BaseModel):

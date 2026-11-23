@@ -55,6 +55,22 @@ criterion:
     - "board oversight of ai"
     - "oversight of technology-related risks"
     - "human oversight"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "board of directors"
+    - "the board"
+    - "committee*"
+    - "audit committee"
+    - "governance"
+    - "oversee*"
+    - "corporate governance"
+    - "council"
+    - "internal audit"
+    - "compliance program"
+    - "independent director*"
+    - "trustees"
+    - "governing"
+    - "steering"
+    - "charter"
   indicators:
     - code: A3_R1
       kind: legacy_r

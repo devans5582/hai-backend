@@ -5,6 +5,43 @@ methodology are versioned separately with semver. A diff tool classifies each
 change (patch, minor, major) and CI refuses a version that did not move far
 enough.
 
+## Ontology 1.3.0, Methodology 6.0.0, Ruleset 5.0.0 (2026-11-22)
+
+Evidence calibration against the ranges Humaital expects for 22 organizations.
+ADR 0021. Draft: none of this is canonical methodology text.
+
+* The overall multiplier of 4.0.0 and 5.0.0 is removed
+  (`scoring.calibration.multiplier: 1.0`). The score is the evidence-derived
+  aggregate again. The criterion curve, pillar and materiality weights, the
+  missing level, confidence and certification are unchanged.
+* `lexicons.ai_context.required_from_rung: documented_execution` with
+  `practice_terms`: general corporate governance earns stated commitment and
+  specified control; documented execution and independent verification must be
+  about the organization's AI practice (decision D14). The check used to cover
+  the Safety pillar only.
+* `lexicons.evidence_quality`: guards a quoted passage must pass before it
+  earns a control or execution rung (prose, the criterion's vocabulary in the
+  quote, owner beside procedure, date or quantity beside result, the
+  organization's own voice, no reported speech, no risk-factor language), and
+  `scoring.corroboration`: two separate passages before the ladder credits a
+  control or execution rung (decision D15).
+* `lexicons.execution_dates.quantity_terms`: a counted result is a record even
+  without a date. `lexicons.control.owner_terms` accepts the organization
+  speaking for itself, following the published definition of documented
+  controls.
+* `outcome.withhold_score_without_coverage`: an access-limited assessment, or
+  one with fewer than four counted criteria, publishes no overall score
+  (decision D16).
+* Retrieval hints gained general governance vocabulary for all 20 criteria,
+  marked in each file. The commitment, owner, procedure and result lexicons
+  were widened; the AI context lexicon gained practice terms.
+* Ruleset 5.0.0: CAP-MATURITY and GATE-COVERAGE read the corroborated ladder;
+  scoring withholds the overall score without coverage. Signing a certified
+  decision now checks the evidence score against the threshold for every
+  methodology, not only calibrated ones.
+* Ship metadata migration `0010_methodology_6.sql`. Stored results keep their
+  pins and multipliers; reassess to obtain a 6.0.0 result.
+
 ## Ontology 1.3.0, Methodology 5.0.0, Ruleset 4.0.0 (2026-11-16)
 
 Increase the draft overall calibration from 4.5x to 5x of the original

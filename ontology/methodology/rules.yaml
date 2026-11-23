@@ -1,10 +1,10 @@
-# Ruleset 4.0.0. Rules are data; implementations are pure Python functions in
+# Ruleset 5.0.0. Rules are data; implementations are pure Python functions in
 # hai_engine.rules.builtin registered under the same code. The validator refuses
 # an expression_ref that does not resolve to a function registered under the code.
 # Criterion-scope rules run in run_order for every criterion; assessment-scope
 # rules run once afterwards. Every run is recorded in the decision trace (IC-14).
 ruleset:
-  version: 4.0.0
+  version: 5.0.0
   rules:
     # --------------------------------------------------------------- criterion
     - code: GATE-APPLICABILITY
@@ -41,7 +41,7 @@ ruleset:
       scope: criterion
       run_order: 50
       expression_ref: hai_engine.rules.builtin:cap_maturity
-      description: Cap the level at the highest level whose required maturity rung is reached by an admissible supporting link (decision D1). Source tier never sets maturity.
+      description: "Cap the level at the highest level whose required maturity rung is reached by admissible supporting links (decision D1). A rung counts when as many separate passages carry it as scoring.corroboration requires (decision D15). Source tier never sets maturity."
       parameters: {}
     - code: CAP-FAILED-EXECUTION
       kind: cap

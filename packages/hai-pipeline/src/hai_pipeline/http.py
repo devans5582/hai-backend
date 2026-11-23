@@ -79,6 +79,10 @@ class Budget:
     def spend(self) -> None:
         self.used_pages += 1
 
+    def refund(self) -> None:
+        """Give back a page spent on a guessed URL that turned out not to exist."""
+        self.used_pages = max(0, self.used_pages - 1)
+
 
 class Fetcher:
     def __init__(
@@ -162,26 +166,34 @@ class Fetcher:
 
     # ------------------------------------------------------------------- fetch
     async def fetch(
-        self, url: str, *, budget: Budget | None = None, method: str = "GET", headers: dict[str, str] | None = None
+        self,
+        url: str,
+        *,
+        budget: Budget | None = None,
+        method: str = "GET",
+        headers: dict[str, str] | None = None,
+        max_retries: int | None = None,
     ) -> FetchResult:
+        """Fetch one URL. ``max_retries`` overrides the default for guessed URLs that should fail fast."""
         canonical = canonical_url(url)
         if budget is not None:
             budget.check()
             budget.spend()
         started = time.monotonic()
+        retries = self.max_retries if max_retries is None else max_retries
         if budget is None:
-            return await self._fetch(canonical, budget=budget, method=method, headers=headers)
+            return await self._fetch(canonical, budget=budget, method=method, headers=headers, retries=retries)
         try:
             # The connector's deadline includes robots, pacing and retry sleeps,
             # not just the time before its first request.
             async with asyncio.timeout(budget.remaining_seconds):
-                return await self._fetch(canonical, budget=budget, method=method, headers=headers)
+                return await self._fetch(canonical, budget=budget, method=method, headers=headers, retries=retries)
         except TimeoutError:
             elapsed = int((time.monotonic() - started) * 1000)
             return FetchResult(canonical, canonical, None, b"", "", "failed", "time_budget_exhausted", elapsed)
 
     async def _fetch(
-        self, canonical: str, *, budget: Budget | None, method: str, headers: dict[str, str] | None
+        self, canonical: str, *, budget: Budget | None, method: str, headers: dict[str, str] | None, retries: int
     ) -> FetchResult:
         host = urlsplit(canonical).hostname or ""
         started = time.monotonic()
@@ -193,7 +205,7 @@ class Fetcher:
             return FetchResult(canonical, canonical, None, b"", "", "blocked", "robots_disallow", 0)
         attempt = 0
         last_error = "unknown"
-        while attempt <= self.max_retries:
+        while attempt <= retries:
             attempt += 1
             await self._pace(host)
             try:
@@ -201,13 +213,13 @@ class Fetcher:
                 self.requests_made += 1
             except httpx.TimeoutException:
                 last_error = "timeout"
-                if attempt <= self.max_retries:
+                if attempt <= retries:
                     await self._sleep(min(self.retry_backoff * attempt, 5.0))  # type: ignore[operator]
                     continue
                 break
             except httpx.HTTPError as exc:
                 last_error = type(exc).__name__.lower()
-                if attempt <= self.max_retries:
+                if attempt <= retries:
                     await self._sleep(min(self.retry_backoff * attempt, 5.0))  # type: ignore[operator]
                     continue
                 break
@@ -221,11 +233,7 @@ class Fetcher:
                 self._rate_limited_until[host] = time.monotonic() + delay
                 # Honour short server-requested waits. A long cooldown should
                 # stop probes to this host rather than consume the entire run.
-                if (
-                    attempt <= self.max_retries
-                    and delay <= 5.0
-                    and (budget is None or delay < budget.remaining_seconds)
-                ):
+                if attempt <= retries and delay <= 5.0 and (budget is None or delay < budget.remaining_seconds):
                     await self._sleep(delay)  # type: ignore[operator]
                     continue
                 return FetchResult(
@@ -250,7 +258,7 @@ class Fetcher:
                     f"http_{resp.status_code}",
                     elapsed,
                 )
-            if resp.status_code in RETRYABLE_STATUS and attempt <= self.max_retries:
+            if resp.status_code in RETRYABLE_STATUS and attempt <= retries:
                 last_error = f"http_{resp.status_code}"
                 await self._sleep(min(self.retry_backoff * attempt, 5.0))  # type: ignore[operator]
                 continue

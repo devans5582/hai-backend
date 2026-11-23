@@ -7,15 +7,19 @@ canonical URL, the title and a published date when the page asserts one.
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from io import BytesIO
 
 from selectolax.lexbor import LexborHTMLParser as HTMLParser
 from selectolax.lexbor import LexborNode as Node
 
-EXTRACTOR_VERSION = "hai-extract-1.1.0"
+EXTRACTOR_VERSION = "hai-extract-1.2.0"
+# A long report is read up to this many pages: governance sections come first and time is bounded.
+MAX_PDF_PAGES = 200
 
 _DROP_TAGS = (
     "script",
@@ -77,6 +81,7 @@ _DATE_META = (
     "parsely-pub-date",
 )
 _WS = re.compile(r"[ \t\r\f\v]+")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _BLANKS = re.compile(r"\n{3,}")
 
 _DATE_PATTERNS = [
@@ -271,7 +276,7 @@ def _has_block_children(node: Node) -> bool:
 
 
 def _clean(text: str) -> str:
-    return _WS.sub(" ", text.replace("\xa0", " ")).strip()
+    return _WS.sub(" ", _CONTROL.sub(" ", text.replace("\xa0", " "))).strip()
 
 
 def _published(tree: HTMLParser) -> date | None:
@@ -293,9 +298,13 @@ def _published(tree: HTMLParser) -> date | None:
 def extract_pdf(data: bytes) -> ExtractedDocument:
     from pypdf import PdfReader
 
+    logging.getLogger("pypdf").setLevel(logging.ERROR)  # a damaged object is skipped, not reported per object
+
     reader = PdfReader(BytesIO(data))
     pages: list[str] = []
-    for page in reader.pages:
+    for number, page in enumerate(reader.pages):
+        if number >= MAX_PDF_PAGES:
+            break
         try:
             pages.append(_clean_pdf(page.extract_text() or ""))
         except Exception:
@@ -316,7 +325,8 @@ def extract_pdf(data: bytes) -> ExtractedDocument:
 
 
 def _clean_pdf(text: str) -> str:
-    lines = [_WS.sub(" ", ln).strip() for ln in text.splitlines()]
+    # PDF text can carry NUL and other control bytes that PostgreSQL text columns refuse.
+    lines = [_WS.sub(" ", _CONTROL.sub(" ", ln)).strip() for ln in text.splitlines()]
     out: list[str] = []
     para: list[str] = []
     for ln in lines:
@@ -331,15 +341,35 @@ def _clean_pdf(text: str) -> str:
     return "\n\n".join(out)
 
 
+_CACHE: dict[tuple[str, str, str | None], ExtractedDocument] = {}
+_CACHE_SIZE = 64
+
+
 def extract(content: bytes, content_type: str, *, base_url: str | None = None) -> ExtractedDocument:
+    """Extract text once per document. A connector checks that a page is readable and the
+    orchestrator stores it; both need the same extraction, and a long PDF is slow to parse."""
+    key = (hashlib.sha256(content).hexdigest(), (content_type or "").lower(), base_url)
+    cached = _CACHE.get(key)
+    if cached is None:
+        cached = _extract(content, content_type, base_url=base_url)
+        if len(_CACHE) >= _CACHE_SIZE:
+            _CACHE.pop(next(iter(_CACHE)))
+        _CACHE[key] = cached
+    # Callers fill in the title or date from connector metadata; hand each its own copy.
+    return replace(cached, headings=list(cached.headings), links=list(cached.links))
+
+
+def _extract(content: bytes, content_type: str, *, base_url: str | None = None) -> ExtractedDocument:
     ctype = (content_type or "").lower()
     if "pdf" in ctype or content[:5] == b"%PDF-":
         return extract_pdf(content)
     if "json" in ctype:
-        return ExtractedDocument(text=content.decode("utf-8", errors="replace"), content_type="application/json")
+        return ExtractedDocument(
+            text=_CONTROL.sub(" ", content.decode("utf-8", errors="replace")), content_type="application/json"
+        )
     if "xml" in ctype and "html" not in ctype:
         return extract_html(content, base_url=base_url)
     if "text/plain" in ctype:
-        text = content.decode("utf-8", errors="replace")
+        text = _CONTROL.sub(" ", content.decode("utf-8", errors="replace"))
         return ExtractedDocument(text=_BLANKS.sub("\n\n", text).strip(), content_type="text/plain")
     return extract_html(content, base_url=base_url)

@@ -392,3 +392,53 @@ def test_independence_comes_from_the_publisher_not_the_tier(manifest: Manifest) 
         independence_for(PublisherType.ARCHIVE, publisher_is_org=False, archived_publisher_is_org=True)
         is Independence.SELF
     )
+
+
+# ------------------------------------------------------------------ methodology 6.0.0 (ADR 0021)
+
+
+def test_control_bytes_never_reach_stored_text() -> None:
+    """A PDF that yields NUL bytes used to crash the acquisition job: PostgreSQL text refuses them."""
+    from hai_pipeline.extraction import extract
+
+    html = b"<main><p>Our policy\x00 requires human\x0b review of every model release before deployment.</p></main>"
+    doc = extract(html, "text/html")
+    assert "\x00" not in doc.text and "\x0b" not in doc.text and "requires human review" in doc.text
+    plain = extract(b"Policy\x00 text that is long enough to be a paragraph of evidence.", "text/plain")
+    assert "\x00" not in plain.text
+    for span in split_spans(doc):
+        assert span.verify(doc.text)
+
+
+def test_extraction_is_cached_and_each_caller_gets_its_own_copy() -> None:
+    from hai_pipeline.extraction import extract
+
+    html = (
+        b"<html><head><title>T</title></head><body><main>"
+        b"<p>We publish model cards for every system.</p></main></body></html>"
+    )
+    first = extract(html, "text/html", base_url="https://acme.example/a")
+    first.title = "changed by a caller"
+    second = extract(html, "text/html", base_url="https://acme.example/a")
+    assert second.title == "T" and second.text == first.text
+
+
+def test_a_long_document_keeps_its_strongest_passages_per_criterion(manifest: Manifest) -> None:
+    from hai_pipeline.proposals import bounded_proposals
+
+    commitment = "We are committed to managing risk across the business and to reporting on it every year."
+    control = "The Risk Committee reviews enterprise risk assessments each quarter and reports to the Board."
+    mention = "This section lists the principal risk categories that appear in the tables below for reference."
+    lawsuit = "A lawsuit filed this year alleges that the company's AI hiring algorithm ranked applicants unfairly."
+    spans = [commitment] * 40 + [control] * 3 + [mention] * 30 + [lawsuit]
+    proposals = heuristic_proposals(
+        spans, [manifest.criterion("SAF-01")], manifest.methodology, publisher_type="press", source_tier="T3"
+    )
+    assert len(proposals) > 60
+    kept = bounded_proposals(proposals, max_supporting=12, max_neutral=3)
+    by_polarity = {p: [k for k in kept if k.polarity == p] for p in ("supports", "neutral", "contradicts")}
+    assert len(by_polarity["supports"]) == 12 and len(by_polarity["neutral"]) <= 3
+    assert sum(k.signals.has_specified_control for k in by_polarity["supports"]) == 3  # every control survives
+    assert len(by_polarity["contradicts"]) == len([p for p in proposals if p.polarity == "contradicts"])
+    assert [k.span_index for k in kept] == sorted(k.span_index for k in kept)  # original order
+    assert bounded_proposals(proposals, max_supporting=0, max_neutral=0) == proposals

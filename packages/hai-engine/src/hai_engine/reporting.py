@@ -74,6 +74,9 @@ def score_calibration_from_trace(trace: Any) -> dict[str, Any] | None:
     keys = ("baseline_score", "multiplier", "calibrated_score", "cap", "certification_basis", "pillar_basis")
     if not all(key in recorded for key in keys):
         return None
+    if recorded["multiplier"] == 1:
+        # The identity: the score is the evidence-derived aggregate and there is nothing to disclose.
+        return None
     return {**{key: recorded[key] for key in keys}, "threshold": recorded.get("threshold")}
 
 

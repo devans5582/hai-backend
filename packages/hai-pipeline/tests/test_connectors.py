@@ -11,11 +11,12 @@ import httpx
 import pytest
 
 from hai_ontology.loader import find_repo_root
-from hai_pipeline.config import load_connectors
+from hai_pipeline.config import ConnectorConfig, load_connectors
 from hai_pipeline.connectors import CONNECTORS, build_connector
 from hai_pipeline.connectors.base import ConnectorContext
-from hai_pipeline.connectors.edgar import filer_matches
+from hai_pipeline.connectors.edgar import filer_matches, own_site_mentions
 from hai_pipeline.connectors.news import parse_rss
+from hai_pipeline.connectors.website import LinkRanker, is_foreign_locale, section_of
 from hai_pipeline.entity_resolution import EntityResolver, name_match_score
 from hai_pipeline.http import Budget, Fetcher, _retry_after_seconds
 from tests.fixtures.fake_internet import (
@@ -59,6 +60,36 @@ def ctx(**overrides: object) -> ConnectorContext:
 
 def budget() -> Budget:
     return Budget(time_seconds=30, pages=50)
+
+
+def links_only(**overrides: object) -> ConnectorConfig:
+    """The WEBSITE configuration with sitemaps, corporate hosts and edition probes switched off, so a
+    test sees link following alone."""
+    base = {"sitemap_paths": [], "corporate_hosts": [], "english_paths": [], "read_whole_site_below_documents": 0}
+    return CONFIG.get("WEBSITE").model_copy(update={**base, **overrides})
+
+
+def site(pages: dict[str, str], *, default: int = 404) -> httpx.MockTransport:
+    """A one-host site: path -> HTML. PDFs are served for paths ending in .pdf."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        key = request.url.path if request.url.host == ORG_DOMAIN else f"{request.url.host}{request.url.path}"
+        if key not in pages:
+            return httpx.Response(default, text="")
+        return httpx.Response(200, text=pages[key], headers={"content-type": "text/html"})
+
+    return httpx.MockTransport(handler)
+
+
+def plain_fetcher(transport: httpx.MockTransport) -> Fetcher:
+    return Fetcher(user_agent="t", respect_robots=False, min_interval_seconds=0, max_retries=0, transport=transport)
+
+
+PROSE = (
+    "<main><p>"
+    + "We are committed to responsible AI and human oversight across every product we build. " * 3
+    + "</p></main>"
+)
 
 
 async def test_http_errors_are_classified() -> None:
@@ -282,8 +313,7 @@ async def test_website_follows_governance_hubs_before_guessing_paths() -> None:
         "/privacy": "<main><p>Our privacy policy explains the categories of personal data used in AI training "
         "and how users may request deletion of their data.</p></main>",
     }
-    config = CONFIG.get("WEBSITE")
-    config = config.model_copy(update={"seed_paths": ["/guessed"], "min_text_chars": 0})
+    config = links_only(seed_paths=["/guessed"], min_text_chars=0)
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=pages.get(request.url.path, ""), headers={"content-type": "text/html"})
@@ -309,8 +339,7 @@ async def test_website_prioritises_ai_links_before_the_discovery_limit() -> None
         '<main><a href="/privacy">Privacy</a><a href="/legal">Legal</a>'
         '<a href="/responsible-ai-report">Responsible AI report</a></main>'
     )
-    config = CONFIG.get("WEBSITE")
-    config = config.model_copy(update={"max_discovered_links": 1, "seed_paths": [], "min_text_chars": 0})
+    config = links_only(max_discovered_links=1, seed_paths=[], min_text_chars=0)
 
     def handler(request: httpx.Request) -> httpx.Response:
         text = home if request.url.path == "/" else "<p>We are committed to responsible AI and human oversight.</p>"
@@ -485,3 +514,328 @@ async def test_identifiers_verified_only_on_domain_match() -> None:
     assert any("does not match" in w for w in profile.warnings)
     assert name_match_score("Acme Corp", "Acme Corporation") == 1.0
     assert name_match_score("Acme Corp", "Acme Growth Fund") < 0.6
+
+
+# ------------------------------------------------------------------ crawl ranking (methodology 6.0.0, ADR 0021)
+
+
+def test_governance_links_outrank_storefront_and_career_pages() -> None:
+    ranker = LinkRanker.from_config(CONFIG.get("WEBSITE"))
+    responsible_ai = ranker.rank("Responsible AI", "https://x.example/en/about/responsible-ai")
+    ethics = ranker.rank("Code of Conduct", "https://x.example/ethics/code-of-conduct")
+    about = ranker.rank("Leadership", "https://x.example/company/leadership")
+    locations = ranker.rank("Locations", "https://x.example/en/about/location")
+    shop = ranker.rank("Shop AI glasses", "https://x.example/ai-glasses/shop-all")
+    assert responsible_ai == 0 and ethics == 1 and about == 2
+    assert locations is not None and shop is not None and min(locations, shop) > about
+    assert ranker.rank("Winter sale", "https://x.example/deals/winter") is None
+    # a link naming more governance topics is fetched first
+    several = ranker.score("Ethics and compliance", "https://x.example/ethics-compliance")
+    one = ranker.score("Ethics", "https://x.example/ethics")
+    assert several is not None and one is not None and several < one
+
+
+def test_locale_section_and_dated_path_helpers() -> None:
+    assert is_foreign_locale("/de-de/ai") and is_foreign_locale("/zh-tw") and is_foreign_locale("/fr/ethique")
+    assert not is_foreign_locale("/en-us/ai") and not is_foreign_locale("/us-en/about") and not is_foreign_locale("/ai")
+    assert section_of("https://x.example/about/history/timeline") == "x.example/about"
+    assert section_of("https://x.example/en-us/about/ethics") == "x.example/about"
+    assert section_of("https://x.example/governance") is None  # a top-level page is in no section
+
+
+async def test_one_section_cannot_take_the_page_budget() -> None:
+    pages = {"/": "<main>" + "".join(f'<a href="/privacy/notice-{i}">Privacy notice {i}</a>' for i in range(12))}
+    pages["/"] += '<a href="/ethics/code">Code of ethics</a></main>'
+    pages.update({f"/privacy/notice-{i}": PROSE.replace("product", f"product {i}") for i in range(12)})
+    pages["/ethics/code"] = PROSE.replace("product", "policy")
+    async with plain_fetcher(site(pages)) as f:
+        result = await build_connector("WEBSITE").run(ctx(), f, links_only(seed_paths=[]), budget())
+    urls = [d.url for d in result.documents]
+    assert sum("/privacy/" in u for u in urls) == CONFIG.get("WEBSITE").opt("max_pages_per_section")
+    assert f"{ORG_SITE}/ethics/code" in urls
+
+
+async def test_a_flat_small_site_is_read_in_full() -> None:
+    """Top-level pages are in no section, and a small site's oddly named pages are read too."""
+    names = [
+        "rating-scoring",
+        "how-assessment-works",
+        "why-us",
+        "our-story",
+        "method-notes",
+        "scale-notes",
+        "team-notes",
+    ]
+    pages = {"/": "<main>" + "".join(f'<a href="/{n}">{n}</a>' for n in names) + "</main>"}
+    pages.update({f"/{n}": PROSE.replace("product", n) for n in names})
+    config = links_only(seed_paths=[], read_whole_site_below_documents=20)
+    async with plain_fetcher(site(pages)) as f:
+        result = await build_connector("WEBSITE").run(ctx(), f, config, budget())
+    assert {d.url for d in result.documents} == {f"{ORG_SITE}/", *(f"{ORG_SITE}/{n}" for n in names)}
+    # a large site stops at its governance pages: unranked links are not followed
+    async with plain_fetcher(site(pages)) as f:
+        bounded = await build_connector("WEBSITE").run(ctx(), f, links_only(seed_paths=[]), budget())
+    assert {d.url for d in bounded.documents} <= {f"{ORG_SITE}/", f"{ORG_SITE}/our-story"}
+
+
+async def test_query_variants_of_one_page_are_fetched_once() -> None:
+    home = "<main>" + "".join(f'<a href="/responsible-ai?country={c}">Responsible AI</a>' for c in ("au", "be", "ca"))
+    pages = {"/": home + "</main>", "/responsible-ai": PROSE}
+    async with plain_fetcher(site(pages)) as f:
+        result = await build_connector("WEBSITE").run(ctx(), f, links_only(seed_paths=[]), budget())
+    assert [u for u in result.attempted_urls if "responsible-ai" in u] == [f"{ORG_SITE}/responsible-ai?country=au"]
+
+
+async def test_pages_filed_under_an_old_year_are_skipped() -> None:
+    pages = {
+        "/": '<main><a href="/news/1997/security-framework">Security framework</a>'
+        '<a href="/news/2026/ai-governance-report">AI governance report</a></main>',
+        "/news/1997/security-framework": PROSE,
+        "/news/2026/ai-governance-report": PROSE.replace("product", "model"),
+    }
+    async with plain_fetcher(site(pages)) as f:
+        result = await build_connector("WEBSITE").run(
+            ctx(as_of=date(2026, 11, 22)), f, links_only(seed_paths=[]), budget()
+        )
+    assert [d.url for d in result.documents] == [f"{ORG_SITE}/news/2026/ai-governance-report"]
+
+
+async def test_corporate_host_and_sitemap_are_read_when_the_storefront_has_no_governance() -> None:
+    sitemap = "<urlset><url><loc>https://corporate.acme.example/purpose/ethics-integrity</loc></url></urlset>"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        host, path = request.url.host, request.url.path
+        if host == ORG_DOMAIN and path == "/":
+            return httpx.Response(
+                200, text="<main><a href='/deals'>Deals</a></main>", headers={"content-type": "text/html"}
+            )
+        if host == "corporate.acme.example" and path == "/":
+            return httpx.Response(200, text=PROSE, headers={"content-type": "text/html"})
+        if host == "corporate.acme.example" and path == "/sitemap.xml":
+            return httpx.Response(200, text=sitemap, headers={"content-type": "application/xml"})
+        if host == "corporate.acme.example" and path == "/purpose/ethics-integrity":
+            return httpx.Response(200, text=PROSE.replace("product", "store"), headers={"content-type": "text/html"})
+        return httpx.Response(404)
+
+    config = CONFIG.get("WEBSITE").model_copy(update={"seed_paths": [], "corporate_hosts": ["corporate"]})
+    async with plain_fetcher(httpx.MockTransport(handler)) as f:
+        result = await build_connector("WEBSITE").run(ctx(), f, config, budget())
+    assert result.outcome == "succeeded"
+    assert "https://corporate.acme.example/purpose/ethics-integrity" in [d.url for d in result.documents]
+    assert any("corporate host found" in n for n in result.notes)
+
+
+async def test_a_refusing_host_is_not_probed_and_stays_blocked() -> None:
+    """The homepage refused the crawler: no seed path is tried on that host, and a sibling host that
+    answers with an empty shell does not turn the refusal into something else."""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.host == ORG_DOMAIN:
+            return httpx.Response(403, text="<title>Access Denied</title>", headers={"content-type": "text/html"})
+        return httpx.Response(
+            200, text="<html><body><div id='app'></div></body></html>", headers={"content-type": "text/html"}
+        )
+
+    config = CONFIG.get("WEBSITE").model_copy(update={"corporate_hosts": ["corporate"], "sitemap_paths": []})
+    async with plain_fetcher(httpx.MockTransport(handler)) as f:
+        result = await build_connector("WEBSITE").run(ctx(), f, config, budget())
+    assert result.outcome == "blocked" and result.error_code == "http_403" and not result.documents
+    assert [u for u in seen if ORG_DOMAIN in u and "corporate" not in u] == [ORG_SITE + "/"]
+
+
+async def test_a_report_hosted_elsewhere_is_the_organizations_own_disclosure() -> None:
+    home = (
+        '<main><a href="https://cdn.assets.example/reports/responsible-ai-transparency-report.pdf">'
+        "Responsible AI Transparency Report</a>"
+        '<a href="https://www.nist.gov/ai-rmf.pdf">AI risk framework</a>'
+        '<a href="https://partner.example/ai-governance">AI governance at our partner</a></main>'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == ORG_DOMAIN:
+            return httpx.Response(200, text=home, headers={"content-type": "text/html"})
+        if request.url.host == "cdn.assets.example":
+            text = "We completed 14 model reviews in 2026 and published the results for every AI system. " * 5
+            return httpx.Response(200, text=text, headers={"content-type": "text/plain"})
+        return httpx.Response(200, text=PROSE, headers={"content-type": "text/html"})
+
+    async with plain_fetcher(httpx.MockTransport(handler)) as f:
+        result = await build_connector("WEBSITE").run(ctx(), f, links_only(seed_paths=[]), budget())
+    # the test host serves text, not a PDF: the link is followed but only a real PDF is kept
+    assert "https://cdn.assets.example/reports/responsible-ai-transparency-report.pdf" in result.attempted_urls
+    assert not any("nist.gov" in u or "partner.example" in u for u in result.attempted_urls)
+    assert all(not d.published_by_organization for d in result.documents)
+
+
+async def test_english_edition_is_used_when_the_site_answers_in_another_language() -> None:
+    pages = {
+        "/": '<html lang="zh-TW"><body><main><p>' + "鴻海科技集團 " * 30 + "</p></main></body></html>",
+        "/en-us": '<html lang="en"><body>'
+        + PROSE
+        + '<a href="/en-us/governance">Corporate governance</a></body></html>',
+        "/en-us/governance": PROSE.replace("product", "board"),
+    }
+    config = links_only(seed_paths=[], english_paths=["/en-us"])
+    async with plain_fetcher(site(pages)) as f:
+        result = await build_connector("WEBSITE").run(ctx(), f, config, budget())
+    assert any("English edition used" in n for n in result.notes)
+    assert f"{ORG_SITE}/en-us/governance" in [d.url for d in result.documents]
+
+
+# ------------------------------------------------------------------ archive fallback
+
+
+async def test_wayback_crawls_the_archive_when_the_live_site_is_unreadable() -> None:
+    archived = {
+        f"https://{ORG_DOMAIN}/": '<main><a href="/ethics/code-of-conduct">Code of conduct</a>'
+        '<a href="/careers">Careers</a></main>' + PROSE,
+        f"https://{ORG_DOMAIN}/ethics/code-of-conduct": PROSE.replace("product", "colleague"),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if request.url.host != "web.archive.org":
+            return httpx.Response(404)
+        original = url.split("id_/", 1)[1].replace("https:/a", "https://a")  # the fetcher folds "//"
+        body = archived.get(original) or archived.get(original + "/")
+        if body is None:
+            return httpx.Response(404)
+        return httpx.Response(
+            200,
+            text=body,
+            headers={"content-type": "text/html", "content-location": url},
+            request=request,
+        )
+
+    config = CONFIG.get("WAYBACK").model_copy(update={"corporate_hosts": [], "paths": []})
+    context = ctx(as_of=date(2026, 11, 22), primary_outcome="blocked", primary_documents=0)
+    async with plain_fetcher(httpx.MockTransport(handler)) as f:
+        result = await build_connector("WAYBACK").run(context, f, config, budget())
+    originals = sorted((d.archived_original_url or "").rstrip("/") for d in result.documents)
+    assert originals == [f"https://{ORG_DOMAIN}", f"https://{ORG_DOMAIN}/ethics/code-of-conduct"]
+    assert all(d.published_at == date(2026, 11, 22) and "archived copy" in (d.note or "") for d in result.documents)
+    assert any("live site unreadable (blocked)" in n for n in result.notes)
+
+
+async def test_wayback_keeps_to_fixed_paths_when_the_live_site_was_read() -> None:
+    net = FakeInternet()
+    context = ctx(primary_outcome="succeeded", primary_documents=12)
+    async with fetcher(net) as f:
+        result = await build_connector("WAYBACK").run(context, f, CONFIG.get("WAYBACK"), budget())
+    assert len(result.documents) == 1 and not any("live site unreadable" in n for n in result.notes)
+
+
+# ------------------------------------------------------------------ SEC registrant
+
+
+def test_a_one_word_name_cannot_borrow_another_companys_filings() -> None:
+    assert not filer_matches("HARVARD BIOSCIENCE INC  (HBIO)  (CIK 0001123494)", "Harvard")
+    assert not filer_matches("MARRIOTT VACATIONS WORLDWIDE Corp  (VAC)", "Marriott")
+    assert filer_matches("GOLDMAN SACHS GROUP INC", "Goldman Sachs")
+    assert filer_matches("HOME DEPOT, INC.", "Home Depot")
+    assert filer_matches("CHEVRON CORP /NEW/", "Chevron")
+
+
+def test_own_site_mentions_tell_an_owner_from_a_mention() -> None:
+    assert own_site_mentions("Available Information Our U.S. website is www.costco.com. We make", "costco.com") == (
+        1,
+        1,
+    )
+    assert own_site_mentions("We sell through Costco.com and other retailers.", "costco.com") == (0, 1)
+    assert own_site_mentions("our direct-to-consumer channel, Meta.com, and our stores", "meta.com")[0] == 1
+    assert own_site_mentions("Contact the auditor at partner@pwc.com for details.", "pwc.com") == (0, 1)
+    assert own_site_mentions("see marriottvacationsworldwide.com for our website", "marriott.com") == (0, 0)
+
+
+def _edgar_net(filings: dict[str, str]) -> httpx.MockTransport:
+    """Full-text search returns two filers that mention aa.example; ``filings`` maps a CIK to its 10-K text."""
+
+    def hit(cik: str, name: str) -> dict[str, object]:
+        return {
+            "_id": f"000{cik}-26-000001:annual.htm",
+            "_source": {"adsh": f"000{cik}-26-000001", "ciks": [cik.zfill(10)], "display_names": [name]},
+        }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        host, path = request.url.host, request.url.path
+        if host == "efts.sec.gov":
+            hits = [hit("111", "Regional Partner Airways Inc  (RPA)"), hit("222", "Skyline Airlines Group Inc.  (SKY)")]
+            return httpx.Response(200, json={"hits": {"hits": hits}})
+        if host == "data.sec.gov":
+            cik = path.rsplit("CIK", 1)[1].split(".")[0].lstrip("0")
+            recent = {
+                "form": ["8-K", "DEF 14A", "10-K"],
+                "filingDate": ["2026-10-01", "2026-04-20", "2026-02-18"],
+                "accessionNumber": ["0000000000-26-000009", "0000000000-26-000002", "0000000000-26-000001"],
+                "primaryDocument": ["earnings.htm", "proxy.htm", "annual.htm"],
+            }
+            return httpx.Response(200, json={"name": f"Filer {cik}", "filings": {"recent": recent}})
+        if host == "www.sec.gov" and "/Archives/edgar/data/" in path:
+            cik = path.split("/Archives/edgar/data/")[1].split("/")[0]
+            body = filings.get(cik, "") if path.endswith("annual.htm") else "<p>Our Board oversees risk.</p>"
+            return httpx.Response(200, text=body, headers={"content-type": "text/html"})
+        return httpx.Response(404)
+
+    return httpx.MockTransport(handler)
+
+
+async def test_edgar_identifies_the_registrant_that_cites_the_domain_as_its_own() -> None:
+    filings = {
+        "111": "<p>We operate regional flights. Tickets are sold through aa.example and other carriers.</p>",
+        "222": "<p>Our website is www.aa.example. Reports are available free of charge on our website "
+        "at www.aa.example.</p>" + "<p>Customers book at aa.example.</p>" * 5,
+    }
+    context = ctx(organization_name="AA", organization_domain="aa.example", as_of=date(2026, 11, 22))
+    async with plain_fetcher(_edgar_net(filings)) as f:
+        result = await build_connector("EDGAR").run(context, f, CONFIG.get("EDGAR"), budget())
+    assert any("CIK 0000000222 identified" in n for n in result.notes)
+    # the proxy statement and the annual report, not the newest filing (an earnings release)
+    assert [d.url.rsplit("/", 1)[1] for d in result.documents] == ["proxy.htm", "annual.htm"]
+    assert all("/222/" in d.url and d.publisher_type_hint == "org_disclosure" for d in result.documents)
+
+
+async def test_edgar_returns_nothing_when_no_filer_owns_the_domain() -> None:
+    filings = {"111": "<p>Sold through aa.example.</p>", "222": "<p>Our auditor can be reached at x@aa.example.</p>"}
+    context = ctx(organization_name="AA", organization_domain="aa.example", as_of=date(2026, 11, 22))
+    async with plain_fetcher(_edgar_net(filings)) as f:
+        result = await build_connector("EDGAR").run(context, f, CONFIG.get("EDGAR"), budget())
+    assert result.documents == []
+    assert any("none cites it as its own website" in n for n in result.notes)
+
+
+# ------------------------------------------------------------------ entity resolution by domain
+
+
+async def test_the_owner_of_the_submitted_domain_wins_over_a_better_name_match() -> None:
+    def claims(site_url: str, cik: str) -> dict[str, object]:
+        return {
+            "P856": [{"mainsnak": {"datavalue": {"value": site_url}}}],
+            "P5531": [{"mainsnak": {"datavalue": {"value": cik}}}],
+        }
+
+    entities = {
+        "Q1": {"labels": {"en": {"value": "Delta"}}, "claims": claims("https://delta.gr", "0000000001")},
+        "Q2": {
+            "labels": {"en": {"value": "Delta Air Lines"}},
+            "claims": claims("https://www.delta.example", "0000027904"),
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        host, query = request.url.host, parse_qs(request.url.query.decode())
+        if host == "query.wikidata.org":
+            binding = {"item": {"value": "http://www.wikidata.org/entity/Q2"}}
+            return httpx.Response(200, json={"results": {"bindings": [binding]}})
+        if host == "www.wikidata.org" and query.get("action") == ["wbsearchentities"]:
+            return httpx.Response(200, json={"search": [{"id": "Q1", "label": "Delta", "description": "company"}]})
+        if host == "www.wikidata.org":
+            qid = query["ids"][0]
+            return httpx.Response(200, json={"entities": {qid: entities[qid]}})
+        return httpx.Response(200, json={"data": []})
+
+    async with plain_fetcher(httpx.MockTransport(handler)) as f:
+        profile = await EntityResolver(f).resolve("Delta", "delta.example")
+    assert profile.wikidata_qid == "Q2" and profile.resolved_name == "Delta Air Lines"
+    assert profile.domain_verified and profile.cik == "0000027904"

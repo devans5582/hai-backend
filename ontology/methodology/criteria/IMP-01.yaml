@@ -52,6 +52,25 @@ criterion:
     - "social good"
     - "measurable human benefit"
     - "benefit for people"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "improv* * lives"
+    - "impact"
+    - "benefit*"
+    - "help* people"
+    - "help* customers"
+    - "help* patients"
+    - "help* communities"
+    - "outcomes"
+    - "save lives"
+    - "access to"
+    - "opportunit*"
+    - "empower*"
+    - "quality of life"
+    - "well-being"
+    - "wellbeing"
+    - "livelihood*"
+    - "better health"
+    - "served"
   indicators:
     - code: I1_R1
       kind: legacy_r

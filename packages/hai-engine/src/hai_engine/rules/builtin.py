@@ -551,6 +551,30 @@ def _rung_name(rank: int) -> str:
     return "none"
 
 
+def _withhold_without_coverage(ctx: AssessmentContext, state: AssessmentState) -> str:
+    """Publish no overall score when most criteria could not be assessed.
+
+    Excluded criteria leave the remaining weights renormalised, so one assessable criterion would
+    otherwise speak for all twenty. Pillar scores, coverage states and confidence are kept: they
+    show exactly what was and was not reachable.
+    """
+    cfg = ctx.methodology.outcome
+    if not cfg.withhold_score_without_coverage or state.hai_score is None:
+        return ""
+    total = len(ctx.criteria)
+    share = state.unavailable_criteria / total if total else 0.0
+    if share >= cfg.access_limited_unavailable_share:
+        reason = f"{state.unavailable_criteria}/{total} criteria unavailable"
+    elif state.counted_criteria < cfg.insufficient_min_observed_criteria:
+        reason = f"only {state.counted_criteria} criteria counted"
+    else:
+        return ""
+    state.hai_score = None
+    state.baseline_score = None
+    state.score_before_caps = None
+    return f"{reason}: no overall score is published"
+
+
 def compute_scores(ctx: AssessmentContext, state: AssessmentState) -> str:
     """Scores before the assessment rules run. Not a rule: pure aggregation (scoring.py)."""
     result = aggregate(
@@ -576,6 +600,9 @@ def compute_scores(ctx: AssessmentContext, state: AssessmentState) -> str:
     state.admissible_links = sum(
         len(o.context.admissible_support) + len(o.context.admissible_contradicting) for o in ctx.criteria
     )
+    withheld = _withhold_without_coverage(ctx, state)
+    if withheld:
+        return f"{result.note}; {withheld}"
     if state.calibration_multiplier == 1.0:
         return result.note
     return (

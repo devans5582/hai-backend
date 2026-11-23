@@ -24,7 +24,7 @@ API_KEY_ARGS = --name $(call shell_quote,$(or $(NAME),demo)) $(if $(SCOPES),--sc
 
 .PHONY: help install install-frontend hooks ontology-validate codegen codegen-check check-bump ontology-diff migrate-plan \
         baseline db db-stop migrate seed seed-docker owner owner-docker api-key api-key-docker verify-audit run-api run-worker run-frontend dev-info dev fmt fmt-check lint typecheck \
-        test-unit test-integration test-enforced test coverage frontend-check check build up login-info down logs reset smoke bundle clean
+        test-unit test-integration test-enforced test coverage frontend-check check calibrate build up login-info down logs reset smoke bundle clean
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nTargets:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
@@ -151,6 +151,9 @@ frontend-check: ## Typecheck, lint, test and build the console
 	cd frontend && $(NPM) run typecheck && $(NPM) run lint && $(NPM) run test && $(NPM) run build
 
 check: fmt-check lint typecheck ontology-validate codegen-check test-unit test-integration test-enforced ## The full gate
+
+calibrate: ## Run the calibration set through the real pipeline and compare with expected ranges (ONLY=key,key)
+	$(UV) run python -m tests.calibration.harness $(if $(ONLY),--only $(ONLY),) $(CALIBRATE_ARGS)
 
 # ------------------------------------------------------------------ docker
 build: ## Build the api, worker, tools and frontend images

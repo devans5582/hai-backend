@@ -243,7 +243,7 @@ def test_ontology_endpoints(client: TestClient, manifest: Manifest) -> None:
     assert client.get("/v1/methodology/pillars").json()["total"] == 6
     rules = client.get("/v1/methodology/rules").json()
     assert rules["total"] == 19 and all(r["implementation"] for r in rules["items"])
-    assert client.get("/v1/methodology/decisions").json()["total"] == 13
+    assert client.get("/v1/methodology/decisions").json()["total"] == 16
     assert client.get("/v1/methodology/scoring").json()["scoring"]["score_cap"] == 100
     ics = client.get("/v1/ontology/integrity-constraints").json()
     assert ics["total"] == 19

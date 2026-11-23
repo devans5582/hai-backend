@@ -51,6 +51,24 @@ criterion:
     - "ai-generated content"
     - "content provenance"
     - "disclosure notice*"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "honest*"
+    - "truthful"
+    - "accurate"
+    - "not misleading"
+    - "mislead*"
+    - "transparen*"
+    - "disclos*"
+    - "open communication"
+    - "clear communication"
+    - "fair disclosure"
+    - "public report*"
+    - "we report"
+    - "candid"
+    - "openly"
+    - "inform* *"
+    - "notify"
+    - "notice"
   indicators:
     - code: TR3_R1
       kind: legacy_r

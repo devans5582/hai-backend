@@ -54,6 +54,28 @@ criterion:
     - "model evaluation"
     - "reliability testing"
     - "model monitoring"
+    # 6.0.0 (draft, ADR 0021): general governance vocabulary. Retrieval terms, not methodology content.
+    - "quality assurance"
+    - "quality control"
+    - "quality management"
+    - "quality standards"
+    - "internal controls"
+    - "tested"
+    - "testing"
+    - "validation"
+    - "validated"
+    - "monitoring"
+    - "continuous improvement"
+    - "consistent*"
+    - "standardi[sz]ed"
+    - "benchmark*"
+    - "accuracy"
+    - "reliab*"
+    - "inspection*"
+    - "performance review*"
+    - "regularly review*"
+    - "periodic review*"
+    - "evaluat*"
   indicators:
     - code: T2_R1
       kind: legacy_r

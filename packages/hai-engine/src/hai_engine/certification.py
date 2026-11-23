@@ -94,9 +94,14 @@ class CertificationService:
                 "gates failed: " + "; ".join(result.gate_reasons), details={"gate_reasons": list(result.gate_reasons)}
             )
         calibration = score_calibration(result)
-        if decision == CertificationOutcome.CERTIFIED.value and self.methodology.scoring.calibration.multiplier != 1:
-            # A displayed uplift cannot substitute for certification's original evidence score.
-            baseline = calibration.get("baseline_score") if calibration is not None else None
+        if decision == CertificationOutcome.CERTIFIED.value:
+            # The signature checks the evidence score itself, not only the recorded gate reasons.
+            # A displayed uplift (methodology 4.0.0 and 5.0.0) cannot substitute for it either.
+            baseline: object = (
+                calibration.get("baseline_score")
+                if calibration is not None
+                else (float(result.hai_score) if result.hai_score is not None else None)
+            )
             threshold = self.methodology.certification.threshold_for(
                 str(assessment.stage_band), str(assessment.size_band)
             )
@@ -105,8 +110,7 @@ class CertificationService:
                 or not isinstance(baseline, (int, float))
                 or not math.isfinite(baseline)
                 or baseline < threshold
-                or calibration is None
-                or calibration.get("certification_basis") != "baseline"
+                or (calibration is not None and calibration.get("certification_basis") != "baseline")
             ):
                 raise ValidationFailedError(
                     "certification requires the baseline score to meet its threshold",
